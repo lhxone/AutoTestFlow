@@ -1,0 +1,879 @@
+{
+  "common": {
+    "ok": "OK",
+    "cancel": "Cancel",
+    "save": "Save",
+    "delete": "Delete",
+    "edit": "Edit",
+    "add": "Add",
+    "search": "Search",
+    "refresh": "Refresh",
+    "query": "Query",
+    "create": "Create",
+    "update": "Update",
+    "view": "View",
+    "detail": "Detail",
+    "submit": "Submit",
+    "back": "Back",
+    "loading": "Loading...",
+    "noData": "No data",
+    "error": "Error",
+    "success": "Success",
+    "warning": "Warning",
+    "info": "Info",
+    "status": "Status",
+    "action": "Action",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "unassigned": "Unassigned",
+    "confirmDelete": "Confirm deletion?",
+    "requestFailed": "Request failed",
+    "networkError": "Network error",
+    "saveSuccess": "Saved successfully",
+    "createSuccess": "Created successfully",
+    "updateSuccess": "Updated successfully",
+    "deleteSuccess": "Deleted successfully",
+    "operationFailed": "Operation failed",
+    "language": "Language",
+    "id": "ID"
+  },
+  "layout": {
+    "appName": "AutoTestFlow",
+    "menu": {
+      "dashboard": "Dashboard",
+      "projects": "Projects",
+      "issues": "Issues",
+      "agents": "Agents",
+      "workflows": "Workflows",
+      "reviews": "Reviews",
+      "testTasks": "Test Tasks",
+      "testCases": "Test Cases",
+      "executions": "Executions",
+      "users": "Users",
+      "settings": "System Management",
+      "zentao": "Zentao Settings",
+      "gitlab": "GitLab Settings",
+      "mail": "Mail Settings",
+      "ai": "AI Settings",
+      "cliRuntime": "CLI Runtime",
+      "syncLogs": "Sync Logs"
+    },
+    "logout": "Log out"
+  },
+  "login": {
+    "title": "AutoTestFlow",
+    "subtitle": "AI-powered automated testing platform",
+    "username": "Username",
+    "password": "Password",
+    "usernameRequired": "Please enter your username",
+    "passwordRequired": "Please enter your password",
+    "submit": "Sign In",
+    "success": "Signed in successfully",
+    "defaultHint": "Default account: admin / admin123"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "subtitle": "Project overview and quick actions",
+    "stats": {
+      "projects": "Projects",
+      "pendingReviews": "Pending Reviews",
+      "interventionNeeded": "Manual Interventions Needed",
+      "passRate": "Today's Pass Rate"
+    },
+    "quickActions": {
+      "title": "Quick Actions",
+      "issues": "View Issues",
+      "reviews": "Review Reviews",
+      "testTasks": "Test Tasks"
+    },
+    "recentActivities": {
+      "title": "Recent Activities",
+      "empty": "No data"
+    },
+    "issueSync": {
+      "title": "Project Issue Sync Status",
+      "empty": "No sync records",
+      "lastSyncCounts": "Last sync issue counts",
+      "added": "Added",
+      "updated": "Updated",
+      "deleted": "Deleted",
+      "completedAt": "Last completed at",
+      "startedAt": "Started at",
+      "errorMessage": "Error",
+      "status": {
+        "success": "Healthy",
+        "failed": "Error",
+        "running": "Running",
+        "unknown": "Not synced"
+      }
+    }
+  },
+  "issue": {
+    "list": {
+      "title": "Issue List",
+      "search": "Search title",
+      "zentaoStatus": "Zentao Status",
+      "testStatus": "Test Status",
+      "projectSet": "Project Set",
+      "branch": "Branch",
+      "sync": "Sync Zentao",
+      "syncModal": {
+        "title": "Sync Zentao Issues",
+        "selectProject": "Select Project",
+        "fullSync": "Full Sync"
+      },
+      "genTestModal": {
+        "title": "Generate Test",
+        "selectAgent": "Select Agent",
+        "agentPlaceholder": "Select Agent (leave blank to use system default)",
+        "agentHint": "If left blank, the system default agent and global CLI Runtime settings will be used",
+        "start": "Start Generation",
+        "taskCreated": "Test generation task created. Streaming output..."
+      },
+      "columns": {
+        "id": "ID",
+        "title": "Title",
+        "type": "Type",
+        "severity": "Severity",
+        "zentaoStatus": "Zentao Status",
+        "testStatus": "Test Status",
+        "assignee": "Assignee",
+        "reporter": "Reporter",
+        "action": "Action"
+      },
+      "action": {
+        "generateTest": "Generate Test",
+        "viewTask": "View Run"
+      },
+      "messages": {
+        "projectSetLoadFailed": "Failed to load project sets",
+        "branchLoadFailed": "Failed to load project branches",
+        "selectProjectWarning": "Please select a project",
+        "syncTriggered": "Sync task triggered. Please refresh to see results.",
+        "noTaskFound": "No generation task found for this issue"
+      },
+      "status": {
+        "active": "Active",
+        "resolved": "Resolved",
+        "closed": "Closed"
+      },
+      "type": {
+        "bug": "Bug",
+        "task": "Task",
+        "story": "Story",
+        "feedback": "Feedback"
+      },
+      "severity": {
+        "critical": "Critical",
+        "major": "Major",
+        "normal": "Normal",
+        "minor": "Minor"
+      }
+    }
+  },
+  "project": {
+    "list": {
+      "title": "Projects",
+      "searchPlaceholder": "Search project name",
+      "create": "Create Project",
+      "edit": "Edit Project",
+      "syncIssues": "Sync Issues",
+      "viewSyncLogs": "Sync History",
+      "columns": {
+        "id": "ID",
+        "name": "Project Name",
+        "zentaoProject": "Zentao Project",
+        "owner": "Owner",
+        "status": "Status",
+        "action": "Action"
+      },
+      "form": {
+        "name": "Project Name",
+        "description": "Description",
+        "funcDocPath": "Feature Doc Path",
+        "designDocPath": "Design Doc Path",
+        "dbDocPath": "Database Doc Path",
+        "testDocPath": "Test Doc Path",
+        "gitRepoUrl": "Git Repository URL",
+        "gitBranch": "Git Branch",
+        "zentaoProject": "Zentao Project",
+        "zentaoBranch": "Zentao Branch",
+        "selectZentaoProject": "Select a Zentao project",
+        "selectZentaoBranch": "Select a Zentao branch",
+        "zentaoProjectHint": "Loaded from the Zentao product API when expanded",
+        "zentaoBranchHint": "Please select a Zentao project first"
+      },
+      "syncHistory": {
+        "title": "Issue Sync History for {name}",
+        "defaultTitle": "Issue Sync History",
+        "logListTitle": "Sync Records",
+        "detailTitle": "Sync Details",
+        "viewDetail": "View Details",
+        "viewing": "Viewing",
+        "noRecords": "No sync records",
+        "mode": {
+          "full": "Full Sync",
+          "incremental": "Incremental Sync"
+        },
+        "status": {
+          "success": "Success",
+          "failed": "Failed",
+          "running": "Running"
+        },
+        "actionType": {
+          "added": "Added",
+          "updated": "Updated",
+          "deleted": "Deleted"
+        },
+        "summary": {
+          "mode": "Sync Mode",
+          "startedAt": "Started At",
+          "completedAt": "Completed At",
+          "totalChanges": "Total Changes",
+          "added": "Added",
+          "updated": "Updated",
+          "deleted": "Deleted",
+          "errorMessage": "Error Message"
+        },
+        "detail": {
+          "action": "Change Type",
+          "zentaoId": "Zentao ID",
+          "issueTitle": "Issue Title",
+          "changedFields": "Change Details",
+          "oldValue": "Before",
+          "newValue": "After",
+          "addedHint": "This issue was added during the sync",
+          "deletedHint": "This local issue record was deleted during the sync",
+          "emptyValue": "Empty"
+        }
+      },
+      "messages": {
+        "loadProductsFailed": "Failed to load Zentao products. Please check the Zentao settings.",
+        "loadBranchesFailed": "Failed to load Zentao branches",
+        "syncDisabled": "This project is not bound to a Zentao project and cannot sync issues.",
+        "syncSuccess": "Issue sync completed. {count} issues synced.",
+        "syncTriggered": "Sync task triggered. Check sync history for progress."
+      }
+    }
+  },
+  "syncLog": {
+    "list": {
+      "title": "Sync Logs",
+      "selectProject": "Select Project",
+      "logListTitle": "Sync Records",
+      "detailTitle": "Sync Details",
+      "viewDetail": "View Details",
+      "viewing": "Viewing",
+      "noRecords": "No sync records"
+    },
+    "mode": {
+      "full": "Full Sync",
+      "incremental": "Incremental Sync"
+    },
+    "status": {
+      "success": "Success",
+      "failed": "Failed",
+      "running": "Running"
+    },
+    "actionType": {
+      "added": "Added",
+      "updated": "Updated",
+      "deleted": "Deleted"
+    },
+    "summary": {
+      "project": "Project",
+      "mode": "Sync Mode",
+      "startedAt": "Started At",
+      "completedAt": "Completed At",
+      "totalChanges": "Total Changes",
+      "added": "Added",
+      "updated": "Updated",
+      "deleted": "Deleted",
+      "errorMessage": "Error Message"
+    },
+    "detail": {
+      "action": "Change Type",
+      "zentaoId": "Zentao ID",
+      "issueTitle": "Issue Title",
+      "changedFields": "Change Details",
+      "oldValue": "Before",
+      "newValue": "After",
+      "addedHint": "This issue was added during the sync",
+      "deletedHint": "This local issue record was deleted during the sync",
+      "emptyValue": "Empty"
+    },
+    "viewDetail": "View Details",
+    "viewing": "Viewing"
+  },
+  "user": {
+    "list": {
+      "title": "Users",
+      "searchPlaceholder": "Search username / name / email",
+      "create": "Create User",
+      "edit": "Edit User",
+      "columns": {
+        "id": "ID",
+        "username": "Username",
+        "realName": "Name",
+        "email": "Email",
+        "roles": "Roles",
+        "status": "Status",
+        "action": "Action"
+      },
+      "form": {
+        "username": "Username",
+        "password": "Password",
+        "realName": "Name",
+        "email": "Email",
+        "phone": "Phone",
+        "roles": "Roles",
+        "rolesPlaceholder": "Select roles"
+      }
+    },
+    "loginLog": {
+      "open": "Login Logs",
+      "title": "Login Logs",
+      "username": "Username",
+      "action": "Log Type",
+      "result": {
+        "success": "Success"
+      },
+      "columns": {
+        "username": "Username",
+        "action": "Action",
+        "result": "Result",
+        "ip": "IP Address",
+        "userAgent": "User Agent",
+        "createdAt": "Time"
+      },
+      "actions": {
+        "login_success": "Login Success",
+        "login_failed": "Login Failed",
+        "logout": "Logout"
+      }
+    },
+    "roles": {
+      "admin": "Administrator",
+      "test_lead": "Test Lead",
+      "tester": "Test Engineer",
+      "dev_lead": "Development Lead",
+      "viewer": "Viewer"
+    }
+  },
+  "agent": {
+    "list": {
+      "title": "Agents",
+      "searchPlaceholder": "Search agent name",
+      "create": "Create Agent",
+      "edit": "Edit Agent",
+      "columns": {
+        "id": "ID",
+        "name": "Name",
+        "model": "Model",
+        "cliCommand": "CLI Command",
+        "globalDefault": "Global Default",
+        "workflows": "Workflows",
+        "mcpServers": "MCP Servers",
+        "status": "Status",
+        "action": "Action"
+      },
+      "form": {
+        "name": "Name",
+        "description": "Description",
+        "modelProvider": "Model Provider",
+        "modelName": "Model Name",
+        "selectProvider": "Select a model provider",
+        "selectModel": "Select a model",
+        "apiKeyRef": "API Key",
+        "apiKeyRefPlaceholder": "Enter an API key, or a configured key name",
+        "baseUrl": "Base URL",
+        "maxTokens": "Max Tokens",
+        "temperature": "Temperature",
+        "workflows": "Workflows",
+        "workflowsPlaceholder": "Select the workflows available to this agent",
+        "custom": "Custom",
+        "testConnection": "Test Connection",
+        "testSuccess": "Agent connection test succeeded",
+        "testFailed": "Agent connection test failed",
+        "latency": "Latency",
+        "sampleOutput": "Sample Output"
+      },
+      "section": {
+        "aiModel": "AI Model Configuration",
+        "cliRuntime": "CLI Runtime Configuration"
+      },
+      "cliRuntime": {
+        "hint": "Configure the CLI command and parameters for this Agent. Leave empty to use global defaults.",
+        "command": "CLI Command",
+        "commandPlaceholder": "e.g. codex or claude",
+        "timeout": "Timeout",
+        "argsJson": "Args (JSON Array)",
+        "argsJsonPlaceholder": "JSON array, supports template variables",
+        "envJson": "Environment Variables (JSON Object)",
+        "envJsonPlaceholder": "JSON object",
+        "workspaceRoot": "Workspace Root",
+        "workspaceRootPlaceholder": "/tmp/auto-test-flow/repos",
+        "preserveWorkspace": "Preserve Workspace"
+      }
+    }
+  },
+  "workflow": {
+    "list": {
+      "title": "Workflows",
+      "searchPlaceholder": "Search workflow name / description",
+      "create": "Create Workflow",
+      "edit": "Edit Workflow",
+      "columns": {
+        "id": "ID",
+        "name": "Name",
+        "type": "Type",
+        "description": "Description",
+        "promptTemplate": "Prompt Template",
+        "status": "Status",
+        "action": "Action"
+      },
+      "form": {
+        "name": "Name",
+        "type": "Type",
+        "description": "Description",
+        "promptTemplate": "Prompt Template",
+        "promptPlaceholder": "Enter the workflow prompt template with Markdown editing and live preview",
+        "inputSchema": "Input Schema (JSON)",
+        "outputSchema": "Output Schema (JSON)",
+        "configJson": "Config (JSON)"
+      },
+      "messages": {
+        "nameRequired": "Please enter a workflow name",
+        "invalidJson": "Invalid JSON format",
+        "schemaParseFailed": "Failed to parse schema / config JSON"
+      }
+    }
+  },
+  "review": {
+    "list": {
+      "title": "Reviews",
+      "statusPlaceholder": "Review status",
+      "goReview": "Review",
+      "view": "View",
+      "messages": {
+        "notFound": "No review task was found for this test task"
+      },
+      "columns": {
+        "id": "ID",
+        "title": "Title",
+        "issue": "Related Issue",
+        "status": "Status",
+        "reviewer": "Reviewer",
+        "createdAt": "Created At",
+        "action": "Action"
+      }
+    },
+    "detail": {
+      "title": "Review Detail",
+      "issue": "Related Issue",
+      "testCases": "Test Cases",
+      "precondition": "Precondition",
+      "steps": "Steps",
+      "expected": "Expected Result",
+      "selfTestResult": "Self-test Result",
+      "source": "Source",
+      "noTestCases": "No test cases",
+      "testScripts": "Test Scripts",
+      "noTestScripts": "No test scripts",
+      "testDocs": "Test Documents",
+      "noTestDocs": "No test documents",
+      "records": "Review Records",
+      "noRecords": "No review records",
+      "execute": "Perform Review",
+      "comment": "Review Comment",
+      "commentPlaceholder": "Enter your review comment...",
+      "approve": "Approve",
+      "reject": "Reject",
+      "requestChanges": "Request Changes",
+      "onlyComment": "Comment Only",
+      "approveSuccess": "Review approved",
+      "actionSuccess": "Operation succeeded",
+      "stepColumns": {
+        "step": "Test Step",
+        "expected": "Expected Result"
+      },
+      "actions": {
+        "approve": "approved the review",
+        "reject": "rejected the review",
+        "requestChanges": "requested changes",
+        "comment": "left a comment"
+      }
+    }
+  },
+  "testTask": {
+    "list": {
+      "title": "Test Tasks",
+      "statusPlaceholder": "Task status",
+      "columns": {
+        "id": "ID",
+        "issue": "Related Issue",
+        "workflow": "Workflow",
+        "status": "Status",
+        "retryCount": "Retries",
+        "createdAt": "Created At",
+        "action": "Action"
+      },
+      "detail": "Details",
+      "drawerTitle": "Task Details",
+      "taskId": "Task ID",
+      "workflow": "Workflow",
+      "startedAt": "Started At",
+      "completedAt": "Completed At",
+      "retryCount": "Retry Count",
+      "errorMessage": "Error Message",
+      "liveProgress": "Live Progress",
+      "noEvents": "No task events yet",
+      "testCases": "Test Cases",
+      "editCase": "Edit Test Case",
+      "eventStatus": {
+        "idle": "Realtime stream is idle",
+        "connecting": "Connecting realtime stream",
+        "connected": "Realtime stream connected",
+        "closed": "Realtime stream closed",
+        "error": "Realtime stream connection failed"
+      },
+      "eventType": {
+        "status": "Status",
+        "stage": "Stage",
+        "log": "Log",
+        "error": "Error",
+        "snapshot": "Snapshot"
+      },
+      "form": {
+        "title": "Title",
+        "precondition": "Precondition",
+        "steps": "Test Steps",
+        "expected": "Expected Result",
+        "changeNote": "Change Note",
+        "changeReasonPlaceholder": "Please describe the reason for this change"
+      },
+      "messages": {
+        "changeNoteRequired": "Please enter a change note",
+        "updateSuccess": "Updated successfully"
+      },
+      "caseColumns": {
+        "title": "Title",
+        "category": "Category",
+        "selfTest": "Self-test",
+        "action": "Action"
+      }
+    }
+  },
+  "testCase": {
+    "list": {
+      "title": "Test Cases",
+      "searchPlaceholder": "Search issue title",
+      "statusPlaceholder": "Task status",
+      "edit": "Edit Test Case",
+      "regenerate": "Regenerate",
+      "form": {
+        "title": "Title",
+        "precondition": "Precondition",
+        "steps": "Test Steps",
+        "expected": "Expected Result",
+        "changeNote": "Change Note",
+        "changeReasonPlaceholder": "Please describe the reason for this change"
+      },
+      "messages": {
+        "changeNoteRequired": "Please enter a change note",
+        "updateSuccess": "Updated successfully",
+        "regenerateConfirm": "Are you sure you want to regenerate test cases? This will overwrite the existing test cases for this issue.",
+        "regenerateSuccess": "Regeneration triggered, please check results shortly"
+      },
+      "columns": {
+        "id": "ID",
+        "issue": "Issue Title",
+        "issueId": "Issue ID",
+        "taskStatus": "Task Status",
+        "updatedAt": "Updated At",
+        "action": "Action"
+      }
+    },
+    "detail": {
+      "title": "Edit Test Cases",
+      "issueInfo": "Issue Information",
+      "taskId": "Task ID",
+      "issueTitle": "Issue Title",
+      "issueId": "Issue ID",
+      "caseGroupTitle": "Test Cases",
+      "scriptGroupTitle": "Test Scripts",
+      "scriptContent": "Script Content",
+      "caseTitle": "Case Title",
+      "precondition": "Precondition",
+      "stepTableTitle": "Step Details",
+      "addStep": "Add Step",
+      "changeNote": "Change Note",
+      "changeNotePlaceholder": "Describe the reason for this update",
+      "changeNoteRequired": "Please enter a change note",
+      "stepRequired": "Please keep at least one test step",
+      "saveSuccess": "Test case saved successfully",
+      "columns": {
+        "step": "Test Step",
+        "expected": "Expected Result"
+      }
+    },
+    "category": {
+      "main_flow": "Main Flow",
+      "exception": "Exception Flow",
+      "boundary": "Boundary Condition",
+      "regression": "Regression"
+    },
+    "source": {
+      "ai": "AI",
+      "manual": "Manual"
+    },
+    "selfTest": {
+      "pass": "Pass",
+      "fail": "Fail",
+      "skip": "Skip",
+      "pending": "Pending"
+    }
+  },
+  "execution": {
+    "list": {
+      "title": "Execution Records",
+      "statusPlaceholder": "Execution status",
+      "columns": {
+        "id": "ID",
+        "trigger": "Trigger",
+        "branch": "Branch",
+        "status": "Status",
+        "totalCases": "Total Cases",
+        "passedCases": "Passed",
+        "failedCases": "Failed",
+        "passRate": "Pass Rate",
+        "duration": "Duration",
+        "createdAt": "Executed At"
+      }
+    }
+  },
+  "settings": {
+    "zentao": {
+      "title": "Zentao Settings",
+      "subtitle": "Configure Zentao connection and sync strategy",
+      "connection": "Connection",
+      "baseUrl": "Zentao Server URL",
+      "baseUrlHint": "Homepage URL of Zentao. Do not include paths such as /my.html",
+      "account": "Account",
+      "password": "Password",
+      "passwordPlaceholder": "Enter password (leave unchanged to keep current value)",
+      "token": "API Token",
+      "tokenPlaceholder": "Auto-generated",
+      "tokenHint": "Fetched automatically by Test Connection. No manual input required.",
+      "testConnection": "Test Connection",
+      "syncStrategy": "Sync Strategy",
+      "autoSync": "Auto Sync",
+      "syncEnabled": "On",
+      "syncDisabled": "Off",
+      "syncInterval": "Sync Interval (minutes)",
+      "syncIntervalHint": "Minimum 5 minutes, maximum 1440 minutes (24 hours). Changes take effect on the next scheduled run.",
+      "save": "Save Settings",
+      "messages": {
+        "required": "Please enter the server URL, account, and password"
+      }
+    },
+    "gitlab": {
+      "title": "GitLab Settings",
+      "subtitle": "Configure GitLab connection and token",
+      "connection": "Connection",
+      "baseUrl": "GitLab Server URL",
+      "baseUrlHint": "GitLab homepage URL",
+      "accessToken": "Personal Access Token",
+      "accessTokenHint": "Create it in GitLab -> Settings -> Access Tokens with api and read_repository permissions",
+      "apiVersion": "API Version",
+      "recommended": "Recommended",
+      "testConnection": "Test Connection",
+      "save": "Save Settings",
+      "messages": {
+        "required": "Please enter the server URL and access token"
+      }
+    },
+    "mail": {
+      "title": "Mail Settings",
+      "subtitle": "Configure SMTP, mail templates, and test sending",
+      "connection": "Connection",
+      "templates": "Templates",
+      "host": "SMTP Host",
+      "port": "Port",
+      "username": "Username",
+      "password": "Password",
+      "passwordPlaceholder": "Enter password (leave unchanged to keep current value)",
+      "from": "From Address",
+      "useSsl": "Use SSL",
+      "defaultRecipients": "Default Recipients",
+      "defaultRecipientsPlaceholder": "Separate multiple emails with commas, semicolons, or new lines",
+      "defaultRecipientsHint": "These recipients are appended to review result notifications.",
+      "reviewSubject": "Review Subject Template",
+      "reviewBody": "Review Body Template",
+      "reportSubject": "Report Subject Template",
+      "reportBody": "Report Body Template",
+      "templateVars": "Available variables: {'{{'}title{'}}'}  {'{{'}status{'}}'}  {'{{'}review_note{'}}'}  {'{{'}git_summary{'}}'}  {'{{'}issue_title{'}}'}  {'{{'}project_name{'}}'}  {'{{'}summary{'}}'}  {'{{'}total_cases{'}}'}  {'{{'}passed_cases{'}}'}  {'{{'}failed_cases{'}}'}  {'{{'}pass_rate{'}}'}  {'{{'}has_intervention{'}}'}  {'{{'}report_url{'}}'}" ,
+      "sendTestMail": "Send Test Mail",
+      "sendReviewTestMail": "Send Review Template Test Mail",
+      "sendReportTestMail": "Send Report Template Test Mail",
+      "testRecipient": "Recipient",
+      "templateType": "Template Type",
+      "templateReview": "Review Result Template",
+      "templateReport": "Test Report Template",
+      "testConnection": "Test Connection",
+      "save": "Save Settings",
+      "messages": {
+        "required": "Please enter the SMTP host, port, and sender address",
+        "recipientRequired": "Please enter a recipient email"
+      }
+    },
+    "ai": {
+      "title": "AI Settings",
+      "subtitle": "Configure AI model and API key",
+      "configuration": "AI Configuration",
+      "provider": "AI Provider",
+      "apiKey": "API Key",
+      "apiKeyPlaceholder": "Enter API Key",
+      "baseUrl": "Base URL",
+      "baseUrlPlaceholder": "Optional, custom API endpoint",
+      "baseUrlHint": "Leave empty for default. Claude default: https://api.anthropic.com, OpenAI default: https://api.openai.com",
+      "model": "Model Name",
+      "modelPlaceholder": "e.g. claude-sonnet-4-20250514",
+      "modelHint": "Leave empty for default. Claude default: claude-sonnet-4-20250514, OpenAI default: gpt-4o",
+      "maxTokens": "Max Tokens",
+      "temperature": "Temperature",
+      "save": "Save Settings",
+      "messages": {
+        "required": "Please enter the AI provider and API key"
+      }
+    },
+    "cliRuntime": {
+      "title": "CLI Runtime Settings",
+      "subtitle": "Configure the CLI command and workspace behavior for test generation",
+      "helpTitle": "How To Configure",
+      "helpContent": "1) Set command to your CLI executable, such as codex or claude.\n2) args_json must be a JSON array and can use template variables like repo_dir, prompt_file, result_file.\n3) env_json must be a JSON object and will be injected into CLI process environment variables.\n4) The workspace root is a Git repository base directory.\n5) New test-generation tasks will use this configuration after saving.",
+      "configuration": "Runtime Configuration",
+      "command": "Command",
+      "commandPlaceholder": "e.g. codex",
+      "timeout": "Timeout",
+      "argsJson": "Args (JSON Array)",
+      "argsJsonPlaceholder": "JSON array, supports template variables like repo_dir, prompt_file, result_file",
+      "argsJsonHint": "Please provide a valid JSON array string.",
+      "envJson": "Environment Variables (JSON Object)",
+      "envJsonPlaceholder": "JSON object for environment variables",
+      "workspaceRoot": "Workspace Root",
+      "workspaceRootDescription": "Base directory path where repositories are cloned",
+      "workspaceRootPlaceholder": "e.g. /tmp/auto-test-flow/repos",
+      "preserveWorkspace": "Preserve Workspace",
+      "repoDirName": "Repo Directory Name",
+      "controlDirName": "Control Directory Name",
+      "inputFileName": "Input File Name",
+      "promptFileName": "Prompt File Name",
+      "resultFileName": "Result File Name",
+      "logFileName": "Log File Name",
+      "save": "Save Settings",
+      "messages": {
+        "commandRequired": "Please fill in command first",
+        "argsInvalid": "args_json must be a valid JSON array",
+        "envInvalid": "env_json must be a valid JSON object"
+      }
+    }
+  },
+  "taskRun": {
+    "drawerTitle": "Task Run Details",
+    "noLogs": "Waiting for task output...",
+    "viewScript": "View",
+    "scriptPreview": "Script Content",
+    "scriptName": "Script Name",
+    "scriptLang": "Language",
+    "stages": {
+      "workspace": "Workspace Ready",
+      "cliStarted": "CLI Started",
+      "artifacts": "Artifacts Saved",
+      "done": "Done"
+    },
+    "connStatus": {
+      "idle": "Not connected",
+      "connecting": "Connecting",
+      "connected": "Streaming",
+      "closed": "Stream closed",
+      "error": "Connection error"
+    },
+    "tabs": {
+      "testCases": "Test Cases",
+      "testScripts": "Test Scripts"
+    }
+  },
+  "markdownEditor": {
+    "toolbar": {
+      "bold": "Bold",
+      "italic": "Italic",
+      "list": "List",
+      "quote": "Quote",
+      "codeBlock": "Code Block",
+      "link": "Link",
+      "table": "Table"
+    },
+    "mode": {
+      "edit": "Edit",
+      "split": "Split",
+      "preview": "Preview"
+    },
+    "previewEmpty": "Preview will appear here after you enter Markdown",
+    "placeholder": "Please enter Markdown content",
+    "defaults": {
+      "text": "text",
+      "heading": "Heading",
+      "listItem": "List item",
+      "quote": "Quoted content",
+      "code": "Code or example",
+      "linkText": "Link text",
+      "table": "| Column 1 | Column 2 |\n| --- | --- |\n| Value 1 | Value 2 |"
+    }
+  },
+  "status": {
+    "test": {
+      "pending": "Not Started",
+      "generating": "Generating",
+      "review_pending": "Review Pending",
+      "review_approved": "Review Approved",
+      "review_rejected": "Review Rejected",
+      "testing": "Testing",
+      "passed": "Passed",
+      "partial_passed": "Partially Passed",
+      "all_failed": "All Failed",
+      "intervention_needed": "Manual Intervention Needed",
+      "intervention_in_progress": "Manual Fix In Progress",
+      "error": "Error"
+    },
+    "review": {
+      "pending": "Pending",
+      "approved": "Approved",
+      "rejected": "Rejected",
+      "changes_requested": "Changes Requested"
+    },
+    "task": {
+      "pending": "Pending",
+      "running": "Running",
+      "completed": "Completed",
+      "failed": "Failed"
+    },
+    "execution": {
+      "pending": "Queued",
+      "running": "Running",
+      "passed": "Passed",
+      "failed": "Failed",
+      "error": "Error"
+    },
+    "trigger": {
+      "manual": "Manual",
+      "schedule": "Scheduled",
+      "webhook": "Webhook",
+      "pipeline": "Pipeline"
+    },
+    "workflowType": {
+      "builtin": "Built-in",
+      "custom": "Custom"
+    }
+  }
+}

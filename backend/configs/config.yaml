@@ -1,0 +1,61 @@
+server:
+  port: 8080
+  mode: debug  # debug / release
+
+database:
+  host: 127.0.0.1
+  port: 3306
+  user: root
+  password: root
+  dbname: auto_test_flow
+  max_idle_conns: 10
+  max_open_conns: 100
+
+jwt:
+  secret: "auto-test-flow-jwt-secret-change-in-production"
+  expire_hours: 24
+  refresh_expire_hours: 168  # 7 days
+
+zentao:
+  base_url: "http://zentao.example.com"
+  api_token: ""
+  sync_interval: "*/30 * * * *"  # 每30分钟同步一次
+
+ai:
+  provider: "claude"  # claude / openai
+  api_key: ""
+  base_url: "https://api.anthropic.com"
+  model: "claude-sonnet-4-20250514"
+  max_tokens: 8192
+  temperature: 0.3
+
+git:
+  work_dir: "/tmp/auto-test-flow/repos"
+  commit_author: "AutoTestFlow"
+  commit_email: "autotest@example.com"
+
+cli_runtime:
+  command: ""
+  args: []
+  timeout: "20m"
+  workspace_root: "/tmp/auto-test-flow/cli-runtime"
+  repo_dir_name: "repo"
+  control_dir_name: ".autotestflow"
+  input_file_name: "input.json"
+  prompt_file_name: "prompt.md"
+  result_file_name: "result.json"
+  log_file_name: "cli.log"
+  preserve_workspace: true
+  env: {}
+
+mail:
+  host: "smtp.example.com"
+  port: 465
+  username: ""
+  password: ""
+  from: "autotest@example.com"
+  use_ssl: true
+
+log:
+  level: "info"  # debug / info / warn / error
+  file: "logs/app.log"

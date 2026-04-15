@@ -1,0 +1,91 @@
+# ============================================================
+# AutoTestFlow CI/CD 配置
+# 用于测试仓库的每日自动化测试执行
+# ============================================================
+
+stages:
+  - test
+  - report
+
+variables:
+  PYTHON_VERSION: "3.11"
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
+cache:
+  paths:
+    - .cache/pip
+    - venv/
+
+# ====== 每日定时测试 ======
+daily-test:
+  stage: test
+  image: python:${PYTHON_VERSION}
+  rules:
+    # 每日定时触发(需在 GitLab CI/CD > Schedules 中配置)
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    # 手动触发
+    - if: $CI_PIPELINE_SOURCE == "web"
+    # autotest 分支推送触发
+    - if: $CI_COMMIT_BRANCH =~ /^autotest\//
+  before_script:
+    - python -m venv venv
+    - source venv/bin/activate
+    - pip install pytest pytest-html pytest-json-report requests
+    - pip install -r requirements.txt 2>/dev/null || true
+  script:
+    - echo "开始执行自动化测试..."
+    - >
+      pytest tests/
+      --tb=short
+      --json-report --json-report-file=report.json
+      --html=report.html --self-contained-html
+      -v
+      || true
+    - echo "测试执行完成"
+  after_script:
+    # 回调通知 AutoTestFlow 平台测试结果
+    - |
+      if [ -f report.json ]; then
+        curl -s -X POST "${ATF_CALLBACK_URL}/api/ci/callback" \
+          -H "Content-Type: application/json" \
+          -H "Authorization: Bearer ${ATF_CI_TOKEN}" \
+          -d @report.json || true
+      fi
+  artifacts:
+    when: always
+    paths:
+      - report.html
+      - report.json
+    reports:
+      junit: report.xml
+    expire_in: 30 days
+
+# ====== 生成测试报告 ======
+generate-report:
+  stage: report
+  image: python:${PYTHON_VERSION}
+  needs: ["daily-test"]
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - if: $CI_PIPELINE_SOURCE == "web"
+  script:
+    - echo "测试报告已生成，见 artifacts"
+    - |
+      if [ -f report.json ]; then
+        python -c "
+      import json
+      with open('report.json') as f:
+          data = json.load(f)
+      summary = data.get('summary', {})
+      total = summary.get('total', 0)
+      passed = summary.get('passed', 0)
+      failed = summary.get('failed', 0)
+      print(f'总用例: {total}, 通过: {passed}, 失败: {failed}')
+      if total > 0:
+          print(f'通过率: {passed/total*100:.1f}%')
+      "
+      fi
+  artifacts:
+    paths:
+      - report.html
+    expire_in: 30 days

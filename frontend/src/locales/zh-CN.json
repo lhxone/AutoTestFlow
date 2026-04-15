@@ -1,0 +1,879 @@
+{
+  "common": {
+    "ok": "确定",
+    "cancel": "取消",
+    "save": "保存",
+    "delete": "删除",
+    "edit": "编辑",
+    "add": "添加",
+    "search": "搜索",
+    "refresh": "刷新",
+    "query": "查询",
+    "create": "新建",
+    "update": "更新",
+    "view": "查看",
+    "detail": "详情",
+    "submit": "提交",
+    "back": "返回",
+    "loading": "加载中...",
+    "noData": "暂无数据",
+    "error": "错误",
+    "success": "成功",
+    "warning": "警告",
+    "info": "信息",
+    "status": "状态",
+    "action": "操作",
+    "enabled": "启用",
+    "disabled": "禁用",
+    "unassigned": "未分配",
+    "confirmDelete": "确认删除?",
+    "requestFailed": "请求失败",
+    "networkError": "网络错误",
+    "saveSuccess": "保存成功",
+    "createSuccess": "创建成功",
+    "updateSuccess": "更新成功",
+    "deleteSuccess": "删除成功",
+    "operationFailed": "操作失败",
+    "language": "语言",
+    "id": "ID"
+  },
+  "layout": {
+    "appName": "AutoTestFlow",
+    "menu": {
+      "dashboard": "工作台",
+      "projects": "项目管理",
+      "issues": "问题单",
+      "agents": "Agent 管理",
+      "workflows": "Workflow 管理",
+      "reviews": "Review 审核",
+      "testTasks": "测试任务",
+      "testCases": "测试用例管理",
+      "executions": "执行记录",
+      "users": "用户管理",
+      "settings": "系统管理",
+      "zentao": "禅道管理",
+      "gitlab": "GitLab 管理",
+      "mail": "邮件管理",
+      "ai": "AI 管理",
+      "cliRuntime": "CLI Runtime",
+      "syncLogs": "采集记录"
+    },
+    "logout": "退出登录"
+  },
+  "login": {
+    "title": "AutoTestFlow",
+    "subtitle": "AI 驱动自动化测试平台",
+    "username": "用户名",
+    "password": "密码",
+    "usernameRequired": "请输入用户名",
+    "passwordRequired": "请输入密码",
+    "submit": "登 录",
+    "success": "登录成功",
+    "defaultHint": "默认账号: admin / admin123"
+  },
+  "dashboard": {
+    "title": "工作台",
+    "subtitle": "项目概览与快捷操作",
+    "stats": {
+      "projects": "项目总数",
+      "pendingReviews": "待审核 Review",
+      "interventionNeeded": "待人工介入",
+      "passRate": "今日测试通过率"
+    },
+    "quickActions": {
+      "title": "快捷操作",
+      "issues": "查看问题单",
+      "reviews": "审核 Review",
+      "testTasks": "测试任务"
+    },
+    "recentActivities": {
+      "title": "最近活动",
+      "empty": "暂无数据"
+    },
+    "issueSync": {
+      "title": "项目问题单同步状态",
+      "empty": "暂无同步记录",
+      "lastSyncCounts": "上次同步问题单数量",
+      "added": "新增",
+      "updated": "更新",
+      "deleted": "删除",
+      "completedAt": "上次完成时间",
+      "startedAt": "开始时间",
+      "errorMessage": "异常信息",
+      "status": {
+        "success": "正常",
+        "failed": "异常",
+        "running": "进行中",
+        "unknown": "未同步"
+      }
+    }
+  },
+  "issue": {
+    "list": {
+      "title": "问题单列表",
+      "search": "搜索标题",
+      "zentaoStatus": "禅道状态",
+      "testStatus": "测试状态",
+      "projectSet": "项目集",
+      "branch": "分支",
+      "sync": "同步禅道",
+      "syncModal": {
+        "title": "同步禅道问题单",
+        "selectProject": "选择项目",
+        "fullSync": "全量同步"
+      },
+      "genTestModal": {
+        "title": "生成测试",
+        "selectAgent": "选择 Agent",
+        "agentPlaceholder": "选择 Agent（留空使用系统默认）",
+        "agentHint": "留空时将使用系统配置的默认 Agent 与全局 CLI Runtime 设置",
+        "start": "开始生成",
+        "taskCreated": "测试生成任务已创建，正在实时输出..."
+      },
+      "columns": {
+        "id": "ID",
+        "title": "标题",
+        "type": "类型",
+        "severity": "严重程度",
+        "zentaoStatus": "禅道状态",
+        "testStatus": "测试状态",
+        "assignee": "负责人",
+        "reporter": "提出人",
+        "action": "操作"
+      },
+      "action": {
+        "generateTest": "生成测试",
+        "viewTask": "查看运行"
+      },
+      "messages": {
+        "projectSetLoadFailed": "获取项目集失败",
+        "branchLoadFailed": "获取项目分支失败",
+        "selectProjectWarning": "请选择项目",
+        "syncTriggered": "同步任务已触发，请稍后刷新查看结果",
+        "noTaskFound": "该问题单暂无生成任务"
+      },
+      "status": {
+        "active": "活跃",
+        "resolved": "已解决",
+        "closed": "已关闭"
+      },
+      "type": {
+        "bug": "缺陷",
+        "task": "任务",
+        "story": "故事",
+        "feedback": "反馈"
+      },
+      "severity": {
+        "critical": "严重",
+        "major": "主要",
+        "normal": "一般",
+        "minor": "次要"
+      }
+    }
+  },
+  "project": {
+    "list": {
+      "title": "项目管理",
+      "searchPlaceholder": "搜索项目名称",
+      "create": "新增项目",
+      "edit": "编辑项目",
+      "syncIssues": "同步问题单",
+      "viewSyncLogs": "采集记录",
+      "columns": {
+        "id": "ID",
+        "name": "项目名称",
+        "zentaoProject": "禅道项目集",
+        "owner": "负责人",
+        "status": "状态",
+        "action": "操作"
+      },
+      "form": {
+        "name": "项目名称",
+        "description": "描述",
+        "funcDocPath": "功能文档路径",
+        "designDocPath": "设计文档路径",
+        "dbDocPath": "数据库文档路径",
+        "testDocPath": "测试文档路径",
+        "gitRepoUrl": "Git 仓库地址",
+        "gitBranch": "Git 分支",
+        "zentaoProject": "禅道项目集",
+        "zentaoBranch": "禅道分支",
+        "selectZentaoProject": "选择禅道项目集",
+        "selectZentaoBranch": "选择禅道分支",
+        "zentaoProjectHint": "从禅道产品接口获取，点击展开加载",
+        "zentaoBranchHint": "请先选择禅道项目集"
+      },
+      "syncHistory": {
+        "title": "{name} 的问题单采集记录",
+        "defaultTitle": "问题单采集记录",
+        "logListTitle": "采集记录",
+        "detailTitle": "采集详情",
+        "viewDetail": "查看详情",
+        "viewing": "查看中",
+        "noRecords": "暂无采集记录",
+        "mode": {
+          "full": "全量采集",
+          "incremental": "增量采集"
+        },
+        "status": {
+          "success": "成功",
+          "failed": "失败",
+          "running": "进行中"
+        },
+        "actionType": {
+          "added": "新增",
+          "updated": "更新",
+          "deleted": "删除"
+        },
+        "summary": {
+          "mode": "采集方式",
+          "startedAt": "开始时间",
+          "completedAt": "完成时间",
+          "totalChanges": "变更总数",
+          "added": "新增",
+          "updated": "更新",
+          "deleted": "删除",
+          "errorMessage": "异常信息"
+        },
+        "detail": {
+          "action": "变更类型",
+          "zentaoId": "禅道ID",
+          "issueTitle": "问题单标题",
+          "changedFields": "变更详情",
+          "oldValue": "变更前",
+          "newValue": "变更后",
+          "addedHint": "本次采集新增了该问题单",
+          "deletedHint": "本次采集删除了本地问题单记录",
+          "emptyValue": "空"
+        }
+      },
+      "messages": {
+        "loadProductsFailed": "获取禅道产品列表失败，请检查禅道配置",
+        "loadBranchesFailed": "获取禅道分支列表失败",
+        "syncDisabled": "该项目未绑定禅道项目集，无法同步问题单",
+        "syncSuccess": "问题单同步完成，共同步 {count} 条",
+        "syncTriggered": "同步任务已触发，请在采集记录中查看进度"
+      }
+    }
+  },
+  "syncLog": {
+    "list": {
+      "title": "采集记录",
+      "selectProject": "选择项目",
+      "logListTitle": "采集记录",
+      "detailTitle": "采集详情",
+      "viewDetail": "查看详情",
+      "viewing": "查看中",
+      "noRecords": "暂无采集记录"
+    },
+    "mode": {
+      "full": "全量采集",
+      "incremental": "增量采集"
+    },
+    "status": {
+      "success": "成功",
+      "failed": "失败",
+      "running": "进行中"
+    },
+    "actionType": {
+      "added": "新增",
+      "updated": "更新",
+      "deleted": "删除"
+    },
+    "summary": {
+      "project": "项目",
+      "mode": "采集方式",
+      "startedAt": "开始时间",
+      "completedAt": "完成时间",
+      "totalChanges": "变更总数",
+      "added": "新增",
+      "updated": "更新",
+      "deleted": "删除",
+      "errorMessage": "异常信息"
+    },
+    "detail": {
+      "action": "变更类型",
+      "zentaoId": "禅道ID",
+      "issueTitle": "问题单标题",
+      "changedFields": "变更详情",
+      "oldValue": "变更前",
+      "newValue": "变更后",
+      "addedHint": "本次采集新增了该问题单",
+      "deletedHint": "本次采集删除了本地问题单记录",
+      "emptyValue": "空"
+    },
+    "viewDetail": "查看详情",
+    "viewing": "查看中"
+  },
+  "user": {
+    "list": {
+      "title": "用户管理",
+      "searchPlaceholder": "搜索用户名/姓名/邮箱",
+      "create": "新增用户",
+      "edit": "编辑用户",
+      "columns": {
+        "id": "ID",
+        "username": "用户名",
+        "realName": "姓名",
+        "email": "邮箱",
+        "roles": "角色",
+        "status": "状态",
+        "action": "操作"
+      },
+      "form": {
+        "username": "用户名",
+        "password": "密码",
+        "realName": "姓名",
+        "email": "邮箱",
+        "phone": "手机",
+        "roles": "角色",
+        "rolesPlaceholder": "选择角色"
+      }
+    },
+    "loginLog": {
+      "open": "登录日志",
+      "title": "登录日志",
+      "username": "用户名",
+      "action": "日志类型",
+      "result": {
+        "success": "成功"
+      },
+      "columns": {
+        "username": "用户名",
+        "action": "操作",
+        "result": "结果",
+        "ip": "IP 地址",
+        "userAgent": "User Agent",
+        "createdAt": "时间"
+      },
+      "actions": {
+        "login_success": "登录成功",
+        "login_failed": "登录失败",
+        "logout": "退出登录"
+      }
+    },
+    "roles": {
+      "admin": "管理员",
+      "test_lead": "测试负责人",
+      "tester": "测试工程师",
+      "dev_lead": "开发负责人",
+      "viewer": "查看者"
+    }
+  },
+  "agent": {
+    "list": {
+      "title": "Agent 管理",
+      "searchPlaceholder": "搜索 Agent 名称",
+      "create": "新增 Agent",
+      "edit": "编辑 Agent",
+      "columns": {
+        "id": "ID",
+        "name": "名称",
+        "model": "模型",
+        "cliCommand": "CLI 命令",
+        "globalDefault": "全局默认",
+        "workflows": "Workflows",
+        "mcpServers": "MCP Servers",
+        "status": "状态",
+        "action": "操作"
+      },
+      "form": {
+        "name": "名称",
+        "description": "描述",
+        "modelProvider": "模型提供商",
+        "modelName": "模型名称",
+        "selectProvider": "选择模型提供商",
+        "selectModel": "选择模型",
+        "apiKeyRef": "API Key",
+        "apiKeyRefPlaceholder": "输入 API Key，或填写已配置的 Key 名称",
+        "baseUrl": "Base URL",
+        "maxTokens": "Max Tokens",
+        "temperature": "Temperature",
+        "workflows": "关联 Workflows",
+        "workflowsPlaceholder": "选择这个 Agent 可用的 Workflow",
+        "custom": "自定义",
+        "testConnection": "测试连接",
+        "testSuccess": "Agent 连接测试成功",
+        "testFailed": "Agent 连接测试失败",
+        "latency": "耗时",
+        "sampleOutput": "返回内容"
+      },
+      "section": {
+        "aiModel": "AI 模型配置",
+        "cliRuntime": "CLI Runtime 配置"
+      },
+      "cliRuntime": {
+        "hint": "配置此 Agent 使用的 CLI 命令和参数，留空则使用全局默认配置",
+        "command": "CLI 命令",
+        "commandPlaceholder": "如 codex 或 claude",
+        "timeout": "超时时间",
+        "argsJson": "参数 (JSON 数组)",
+        "argsJsonPlaceholder": "JSON 数组，支持模板变量",
+        "envJson": "环境变量 (JSON 对象)",
+        "envJsonPlaceholder": "JSON 对象",
+        "workspaceRoot": "工作区根目录",
+        "workspaceRootPlaceholder": "/tmp/auto-test-flow/repos",
+        "preserveWorkspace": "保留工作区"
+      }
+    }
+  },
+  "workflow": {
+    "list": {
+      "title": "Workflow 管理",
+      "searchPlaceholder": "搜索 Workflow 名称/描述",
+      "create": "新增 Workflow",
+      "edit": "编辑 Workflow",
+      "columns": {
+        "id": "ID",
+        "name": "名称",
+        "type": "类型",
+        "description": "描述",
+        "promptTemplate": "Prompt 模板",
+        "status": "状态",
+        "action": "操作"
+      },
+      "form": {
+        "name": "名称",
+        "type": "类型",
+        "description": "描述",
+        "promptTemplate": "Prompt 模板",
+        "promptPlaceholder": "输入 Workflow 的 Prompt 模板，支持 Markdown 富文本编辑和实时预览",
+        "inputSchema": "Input Schema(JSON)",
+        "outputSchema": "Output Schema(JSON)",
+        "configJson": "配置(JSON)"
+      },
+      "messages": {
+        "nameRequired": "请填写 Workflow 名称",
+        "invalidJson": "JSON 格式不正确",
+        "schemaParseFailed": "Schema/配置 JSON 解析失败"
+      }
+    }
+  },
+  "review": {
+    "list": {
+      "title": "Review 审核",
+      "statusPlaceholder": "审核状态",
+      "goReview": "去审核",
+      "view": "查看",
+      "messages": {
+        "notFound": "未找到对应的审核任务"
+      },
+      "columns": {
+        "id": "ID",
+        "title": "标题",
+        "issue": "关联问题单",
+        "status": "状态",
+        "reviewer": "审核人",
+        "createdAt": "创建时间",
+        "action": "操作"
+      }
+    },
+    "detail": {
+      "title": "Review 详情",
+      "issue": "关联问题单",
+      "testCases": "测试用例",
+      "precondition": "前置条件",
+      "steps": "测试步骤",
+      "expected": "预期结果",
+      "selfTestResult": "自测结果",
+      "source": "来源",
+      "noTestCases": "暂无测试用例",
+      "testScripts": "测试脚本",
+      "noTestScripts": "暂无测试脚本",
+      "testDocs": "测试文档",
+      "noTestDocs": "暂无测试文档",
+      "records": "审核记录",
+      "noRecords": "暂无审核记录",
+      "execute": "执行审核",
+      "comment": "审核意见",
+      "commentPlaceholder": "填写审核意见...",
+      "approve": "通过",
+      "reject": "驳回",
+      "requestChanges": "需修改",
+      "onlyComment": "仅评论",
+      "approveSuccess": "审核通过",
+      "actionSuccess": "操作成功",
+      "stepColumns": {
+        "step": "测试步骤",
+        "expected": "预期结果"
+      },
+      "actions": {
+        "approve": "通过了审核",
+        "reject": "驳回了审核",
+        "requestChanges": "请求修改",
+        "comment": "发表了评论"
+      }
+    }
+  },
+  "testTask": {
+    "list": {
+      "title": "测试任务",
+      "statusPlaceholder": "任务状态",
+      "columns": {
+        "id": "ID",
+        "issue": "关联问题单",
+        "workflow": "Workflow",
+        "status": "状态",
+        "retryCount": "重试",
+        "createdAt": "创建时间",
+        "action": "操作"
+      },
+      "detail": "详情",
+      "drawerTitle": "任务详情",
+      "taskId": "任务ID",
+      "workflow": "Workflow",
+      "startedAt": "开始时间",
+      "completedAt": "完成时间",
+      "retryCount": "重试次数",
+      "errorMessage": "错误信息",
+      "liveProgress": "实时进度",
+      "noEvents": "当前暂无任务事件",
+      "testCases": "测试用例",
+      "editCase": "修改测试用例",
+      "eventStatus": {
+        "idle": "未连接事件流",
+        "connecting": "正在连接实时事件流",
+        "connected": "实时事件流已连接",
+        "closed": "实时事件流已关闭",
+        "error": "实时事件流连接异常"
+      },
+      "eventType": {
+        "status": "状态",
+        "stage": "阶段",
+        "log": "日志",
+        "error": "错误",
+        "snapshot": "快照"
+      },
+      "form": {
+        "title": "标题",
+        "precondition": "前置条件",
+        "steps": "测试步骤",
+        "expected": "预期结果",
+        "changeNote": "修改说明",
+        "changeReasonPlaceholder": "请填写修改原因"
+      },
+      "messages": {
+        "changeNoteRequired": "请填写修改说明",
+        "updateSuccess": "修改成功"
+      },
+      "caseColumns": {
+        "title": "标题",
+        "category": "分类",
+        "selfTest": "自测",
+        "action": "操作"
+      }
+    }
+  },
+  "testCase": {
+    "list": {
+      "title": "测试用例管理",
+      "searchPlaceholder": "搜索问题单标题",
+      "statusPlaceholder": "任务状态",
+      "edit": "修改测试用例",
+      "regenerate": "重新生成",
+      "form": {
+        "title": "标题",
+        "precondition": "前置条件",
+        "steps": "测试步骤",
+        "expected": "预期结果",
+        "changeNote": "修改说明",
+        "changeReasonPlaceholder": "请填写本次修改原因"
+      },
+      "messages": {
+        "changeNoteRequired": "请填写修改说明",
+        "updateSuccess": "修改成功",
+        "regenerateConfirm": "确定要重新生成测试用例吗？这将覆盖当前问题单的测试用例。",
+        "regenerateSuccess": "已触发重新生成，请稍候查看结果"
+      },
+      "columns": {
+        "id": "ID",
+        "issue": "问题单标题",
+        "issueId": "问题单ID",
+        "taskStatus": "任务状态",
+        "updatedAt": "更新时间",
+        "action": "操作"
+      }
+    },
+    "detail": {
+      "title": "测试用例编辑",
+      "issueInfo": "问题单信息",
+      "taskId": "任务ID",
+      "issueTitle": "问题单标题",
+      "issueId": "问题单ID",
+      "caseGroupTitle": "测试用例",
+      "scriptGroupTitle": "测试脚本",
+      "scriptContent": "脚本内容",
+      "caseTitle": "用例标题",
+      "precondition": "前置条件",
+      "stepTableTitle": "步骤明细",
+      "addStep": "新增步骤",
+      "changeNote": "修改说明",
+      "changeNotePlaceholder": "请填写本次修改原因",
+      "changeNoteRequired": "请填写修改说明",
+      "stepRequired": "请至少保留一条测试步骤",
+      "saveSuccess": "测试用例保存成功",
+      "columns": {
+        "step": "测试步骤",
+        "expected": "预期结果"
+      }
+    },
+    "category": {
+      "main_flow": "主流程",
+      "exception": "异常流程",
+      "boundary": "边界条件",
+      "regression": "回归验证"
+    },
+    "source": {
+      "ai": "AI",
+      "manual": "人工"
+    },
+    "selfTest": {
+      "pass": "通过",
+      "fail": "失败",
+      "skip": "跳过",
+      "pending": "待执行"
+    }
+  },
+  "execution": {
+    "list": {
+      "title": "测试执行记录",
+      "statusPlaceholder": "执行状态",
+      "columns": {
+        "id": "ID",
+        "trigger": "触发方式",
+        "branch": "分支",
+        "status": "状态",
+        "totalCases": "总用例",
+        "passedCases": "通过",
+        "failedCases": "失败",
+        "passRate": "通过率",
+        "duration": "耗时",
+        "createdAt": "执行时间"
+      }
+    }
+  },
+  "settings": {
+    "zentao": {
+      "title": "禅道管理",
+      "subtitle": "配置禅道服务器连接和同步策略",
+      "connection": "连接配置",
+      "baseUrl": "禅道服务器地址",
+      "baseUrlHint": "禅道首页地址，不要包含路径，如 /my.html",
+      "account": "登录账号",
+      "password": "登录密码",
+      "passwordPlaceholder": "输入密码(未修改则保持原值)",
+      "token": "API Token",
+      "tokenPlaceholder": "自动获取",
+      "tokenHint": "通过「测试连接」自动获取，无需手动填写",
+      "testConnection": "测试连接",
+      "syncStrategy": "同步策略",
+      "autoSync": "自动同步",
+      "syncEnabled": "启用",
+      "syncDisabled": "关闭",
+      "syncInterval": "同步频率(分钟)",
+      "syncIntervalHint": "最小5分钟，最大1440分钟(24小时)。修改后下次定时任务生效。",
+      "save": "保存配置",
+      "messages": {
+        "required": "请填写服务器地址、账号和密码"
+      }
+    },
+    "gitlab": {
+      "title": "GitLab 管理",
+      "subtitle": "配置 GitLab 服务器连接和 Token",
+      "connection": "连接配置",
+      "baseUrl": "GitLab 服务器地址",
+      "baseUrlHint": "GitLab 首页地址",
+      "accessToken": "Personal Access Token",
+      "accessTokenHint": "在 GitLab → Settings → Access Tokens 中创建，需要 api 和 read_repository 权限",
+      "apiVersion": "API 版本",
+      "recommended": "推荐",
+      "testConnection": "测试连接",
+      "save": "保存配置",
+      "messages": {
+        "required": "请填写服务器地址和 Access Token"
+      }
+    },
+    "mail": {
+      "title": "邮件管理",
+      "subtitle": "配置 SMTP、邮件模板与测试发送",
+      "connection": "连接配置",
+      "templates": "邮件模板",
+      "host": "SMTP 服务器",
+      "port": "端口",
+      "username": "用户名",
+      "password": "密码",
+      "passwordPlaceholder": "输入密码(未修改则保持原值)",
+      "from": "发件人邮箱",
+      "useSsl": "启用 SSL",
+      "defaultRecipients": "默认收件人",
+      "defaultRecipientsPlaceholder": "多个邮箱请用逗号、分号或换行分隔",
+      "defaultRecipientsHint": "Review 审核通知会自动附加这些默认收件人。",
+      "reviewSubject": "Review结果主题模板",
+      "reviewBody": "Review结果正文模板",
+      "reportSubject": "测试报告主题模板",
+      "reportBody": "测试报告正文模板",
+      "templateVars": "可用变量：{'{{'}title{'}}'}  {'{{'}status{'}}'}  {'{{'}review_note{'}}'}  {'{{'}git_summary{'}}'}  {'{{'}issue_title{'}}'}  {'{{'}project_name{'}}'}  {'{{'}summary{'}}'}  {'{{'}total_cases{'}}'}  {'{{'}passed_cases{'}}'}  {'{{'}failed_cases{'}}'}  {'{{'}pass_rate{'}}'}  {'{{'}has_intervention{'}}'}  {'{{'}report_url{'}}'}" ,
+      "sendTestMail": "发送测试邮件",
+      "sendReviewTestMail": "发送 Review 模板测试邮件",
+      "sendReportTestMail": "发送报告模板测试邮件",
+      "testRecipient": "测试收件人",
+      "templateType": "模板类型",
+      "templateReview": "Review结果模板",
+      "templateReport": "测试报告模板",
+      "testConnection": "测试连接",
+      "save": "保存配置",
+      "messages": {
+        "required": "请填写 SMTP 服务器、端口和发件人邮箱",
+        "recipientRequired": "请填写测试收件人邮箱"
+      }
+    },
+    "ai": {
+      "title": "AI 管理",
+      "subtitle": "配置 AI 模型和 API 密钥",
+      "configuration": "AI 配置",
+      "provider": "AI 提供商",
+      "apiKey": "API Key",
+      "apiKeyPlaceholder": "输入 API Key",
+      "baseUrl": "Base URL",
+      "baseUrlPlaceholder": "可选，自定义 API 地址",
+      "baseUrlHint": "留空使用默认地址。Claude 默认: https://api.anthropic.com，OpenAI 默认: https://api.openai.com",
+      "model": "模型名称",
+      "modelPlaceholder": "如 claude-sonnet-4-20250514",
+      "modelHint": "留空使用默认模型。Claude 默认: claude-sonnet-4-20250514，OpenAI 默认: gpt-4o",
+      "maxTokens": "Max Tokens",
+      "temperature": "Temperature",
+      "save": "保存配置",
+      "messages": {
+        "required": "请填写 AI 提供商和 API Key"
+      }
+    },
+    "cliRuntime": {
+      "title": "CLI Runtime",
+      "subtitle": "CLI Runtime Configuration",
+      "helpTitle": "Settings",
+      "helpContent": "Configure CLI command and parameters for test generation",
+      "configuration": "Configuration",
+      "command": "Command",
+      "commandPlaceholder": "e.g. codex",
+      "timeout": "Timeout",
+      "argsJson": "Args",
+      "argsJsonPlaceholder": "e.g. [\"exec\"]",
+      "argsJsonHint": "Valid JSON array required",
+      "envJson": "Environment",
+      "envJsonPlaceholder": "JSON object",
+      "workspaceRoot": "Workspace Root",
+      "workspaceRootDescription": "Repository base directory",
+      "workspaceRootPlaceholder": "/tmp/repos",
+      "preserveWorkspace": "Preserve",
+      "repoDirName": "Repo Dir",
+      "controlDirName": "Control Dir",
+      "inputFileName": "Input",
+      "promptFileName": "Prompt",
+      "resultFileName": "Result",
+      "logFileName": "Log",
+      "save": "Save",
+      "messages": {
+        "commandRequired": "Command required",
+        "argsInvalid": "Invalid args",
+        "envInvalid": "Invalid env"
+      }
+    }
+  },
+  "taskRun": {
+    "drawerTitle": "任务运行详情",
+    "noLogs": "等待任务输出...",
+    "viewScript": "查看",
+    "scriptPreview": "脚本内容",
+    "scriptName": "脚本名称",
+    "scriptLang": "语言",
+    "stages": {
+      "workspace": "工作区就绪",
+      "cliStarted": "CLI 已启动",
+      "artifacts": "产物已保存",
+      "done": "完成"
+    },
+    "connStatus": {
+      "idle": "未连接",
+      "connecting": "连接中",
+      "connected": "实时输出中",
+      "closed": "流已关闭",
+      "error": "连接异常"
+    },
+    "tabs": {
+      "testCases": "测试用例",
+      "testScripts": "测试脚本"
+    }
+  },
+  "markdownEditor": {
+    "toolbar": {
+      "bold": "加粗",
+      "italic": "斜体",
+      "list": "列表",
+      "quote": "引用",
+      "codeBlock": "代码块",
+      "link": "链接",
+      "table": "表格"
+    },
+    "mode": {
+      "edit": "编辑",
+      "split": "分屏",
+      "preview": "预览"
+    },
+    "previewEmpty": "输入 Markdown 后可在这里预览",
+    "placeholder": "请输入 Markdown 内容",
+    "defaults": {
+      "text": "文本",
+      "heading": "标题",
+      "listItem": "列表项",
+      "quote": "引用内容",
+      "code": "代码或示例",
+      "linkText": "链接文本",
+      "table": "| 列1 | 列2 |\n| --- | --- |\n| 内容1 | 内容2 |"
+    }
+  },
+  "status": {
+    "test": {
+      "pending": "未开始",
+      "generating": "生成中",
+      "review_pending": "待审核",
+      "review_approved": "审核通过",
+      "review_rejected": "审核驳回",
+      "testing": "测试中",
+      "passed": "通过",
+      "partial_passed": "部分通过",
+      "all_failed": "全部失败",
+      "intervention_needed": "待人工介入",
+      "intervention_in_progress": "人工修复中",
+      "error": "异常"
+    },
+    "review": {
+      "pending": "待审核",
+      "approved": "已通过",
+      "rejected": "已驳回",
+      "changes_requested": "需修改"
+    },
+    "task": {
+      "pending": "待执行",
+      "running": "执行中",
+      "completed": "已完成",
+      "failed": "失败"
+    },
+    "execution": {
+      "pending": "等待中",
+      "running": "执行中",
+      "passed": "通过",
+      "failed": "失败",
+      "error": "异常"
+    },
+    "trigger": {
+      "manual": "手动",
+      "schedule": "定时",
+      "webhook": "Webhook",
+      "pipeline": "流水线"
+    },
+    "workflowType": {
+      "builtin": "内置",
+      "custom": "自定义"
+    }
+  }
+}
