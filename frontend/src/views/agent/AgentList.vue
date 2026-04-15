@@ -18,6 +18,10 @@
         <template v-if="column.key === 'model'">
           {{ getProviderLabel(record.model_provider) }} / {{ record.model_name }}
         </template>
+        <template v-if="column.key === 'is_default'">
+          <a-tag v-if="record.is_default" color="gold">{{ t('agent.list.columns.defaultAgent') }}</a-tag>
+          <span v-else>-</span>
+        </template>
         <template v-if="column.key === 'cli_command'">
           <span v-if="getAgentCLICommand(record)">
             <a-tag color="cyan">{{ getAgentCLICommand(record) }}</a-tag>
@@ -54,6 +58,10 @@
         </a-form-item>
         <a-form-item :label="t('agent.list.form.description')">
           <a-input v-model:value="form.description" />
+        </a-form-item>
+        <a-form-item :label="t('agent.list.form.defaultAgent')">
+          <a-switch v-model:checked="form.is_default" />
+          <div class="ant-form-item-extra">{{ t('agent.list.form.defaultAgentHint') }}</div>
         </a-form-item>
         <a-row :gutter="16">
           <a-col :span="8">
@@ -237,7 +245,7 @@ const pagination = reactive({ current: 1, pageSize: 20, total: 0 })
 
 const form = reactive({
   name: '', description: '', model_provider: 'claude' as ProviderKey, model_name: '',
-  api_key_ref: '', base_url: '', max_tokens: 4096, temperature: 0.3, workflow_ids: [] as number[],
+  api_key_ref: '', base_url: '', max_tokens: 4096, temperature: 0.3, workflow_ids: [] as number[], is_default: false,
 })
 
 const cliForm = reactive({
@@ -284,6 +292,7 @@ const currentBaseUrlPlaceholder = computed(() => currentPreset.value?.baseUrl ||
 const columns = computed(() => [
   { title: t('agent.list.columns.id'), dataIndex: 'id', key: 'id', width: 60 },
   { title: t('agent.list.columns.name'), dataIndex: 'name', key: 'name' },
+  { title: t('agent.list.columns.default'), key: 'is_default', width: 120 },
   { title: t('agent.list.columns.model'), key: 'model' },
   { title: t('agent.list.columns.cliCommand'), key: 'cli_command' },
   { title: t('agent.list.columns.workflows'), key: 'workflows' },
@@ -358,6 +367,7 @@ function resetForm() {
     max_tokens: 4096,
     temperature: 0.3,
     workflow_ids: [],
+    is_default: false,
   })
   resetCliForm()
   testResult.value = null
@@ -451,6 +461,7 @@ function handleEdit(record: Agent) {
     api_key_ref: record.api_key_ref, base_url: record.base_url,
     max_tokens: record.max_tokens, temperature: record.temperature,
     workflow_ids: (record.workflows || []).map((workflow) => Number(workflow.id)),
+    is_default: !!record.is_default,
   })
   loadCliFormFromConfigJSON(record.config_json)
   testResult.value = null
@@ -467,6 +478,7 @@ function buildSubmitPayload() {
     base_url: form.base_url,
     max_tokens: form.max_tokens,
     temperature: form.temperature,
+    is_default: form.is_default,
     workflow_ids: form.workflow_ids,
   }
   const configJSON = buildConfigJSON()

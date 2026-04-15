@@ -403,6 +403,12 @@ func (s *GenTestService) resolveRequestedAgentID(agentID *uint64) (*uint64, erro
 		return &resolved, nil
 	}
 
+	defaultAgent, err := s.agentRepo.GetDefaultActive()
+	if err == nil {
+		resolved := defaultAgent.ID
+		return &resolved, nil
+	}
+
 	agent, err := s.agentRepo.GetFirstActive()
 	if err != nil {
 		return nil, nil
@@ -421,6 +427,13 @@ func (s *GenTestService) resolveAgentForTask(task *model.TestTask) (*model.Agent
 			return nil, fmt.Errorf("测试任务绑定的Agent已禁用: %s", agent.Name)
 		}
 		return agent, nil
+	}
+
+	defaultAgent, err := s.agentRepo.GetDefaultActive()
+	if err == nil {
+		task.AgentID = &defaultAgent.ID
+		_ = s.testTaskRepo.Update(task)
+		return s.agentRepo.GetByID(defaultAgent.ID)
 	}
 
 	agent, err := s.agentRepo.GetFirstActive()
@@ -678,7 +691,7 @@ func validateGeneratedScript(script model.TestScript) error {
 		if !strings.Contains(content, "test(") && !strings.Contains(content, "test.describe(") {
 			return fmt.Errorf("缺少可执行的测试声明")
 		}
-		if !strings.Contains(content, "expect(") {
+		if !hasJSAssertion(content, script.FilePath) {
 			return fmt.Errorf("缺少断言")
 		}
 	case "python":
@@ -690,6 +703,41 @@ func validateGeneratedScript(script model.TestScript) error {
 	}
 
 	return nil
+}
+
+func hasJSAssertion(content, filePath string) bool {
+	lowerContent := strings.ToLower(content)
+	assertionTokens := []string{
+		"expect(",
+		"assert(",
+		"assert.",
+		"should(",
+		".should(",
+		"verify(",
+		"check(",
+		"tobe(",
+		"toequal(",
+		"tohavetext(",
+		"tohavecount(",
+		"tohavevalue(",
+	}
+	for _, token := range assertionTokens {
+		if strings.Contains(lowerContent, token) {
+			return true
+		}
+	}
+
+	// 场景脚本通常把断言封装在共享步骤中，避免误判为“缺少断言”。
+	lowerPath := strings.ToLower(strings.TrimSpace(filePath))
+	if strings.HasSuffix(lowerPath, ".scenario.ts") {
+		hasScenarioEntry := strings.Contains(lowerContent, "scenario(") || strings.Contains(lowerContent, "test(")
+		hasSharedFlow := strings.Contains(lowerContent, "loginflow(") || strings.Contains(lowerContent, "logoutflow(") || strings.Contains(lowerContent, "step(")
+		if hasScenarioEntry && hasSharedFlow {
+			return true
+		}
+	}
+
+	return false
 }
 
 // buildInput 构建AI输入上下文

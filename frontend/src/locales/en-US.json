@@ -369,6 +369,8 @@
       "columns": {
         "id": "ID",
         "name": "Name",
+        "default": "Default",
+        "defaultAgent": "Default Agent",
         "model": "Model",
         "cliCommand": "CLI Command",
         "globalDefault": "Global Default",
@@ -380,6 +382,8 @@
       "form": {
         "name": "Name",
         "description": "Description",
+        "defaultAgent": "Set as Default Agent",
+        "defaultAgentHint": "Only one default agent is allowed. Enabling this will clear the default flag from others.",
         "modelProvider": "Model Provider",
         "modelName": "Model Name",
         "selectProvider": "Select a model provider",
@@ -597,9 +601,20 @@
     "detail": {
       "title": "Edit Test Cases",
       "issueInfo": "Issue Information",
+      "reviewTitle": "Review Actions",
       "taskId": "Task ID",
       "issueTitle": "Issue Title",
       "issueId": "Issue ID",
+      "selfTestReportTitle": "Self-test Report",
+      "selfTestNoReport": "No self-test report",
+      "selfTestNoSummary": "No self-test summary provided",
+      "selfTestChecks": "Checks",
+      "selfTestNoFrameworkReport": "No report for this framework",
+      "playwrightReport": "Playwright Report",
+      "midsceneReport": "Midscene Report",
+      "selfTestPass": "Passed",
+      "selfTestFail": "Failed",
+      "selfTestUnknown": "Unknown",
       "caseGroupTitle": "Test Cases",
       "scriptGroupTitle": "Test Scripts",
       "scriptContent": "Script Content",
@@ -788,7 +803,7 @@
     "scriptLang": "Language",
     "stages": {
       "workspace": "Workspace Ready",
-      "cliStarted": "CLI Started",
+      "cliStarted": "AGENT Started",
       "artifacts": "Artifacts Saved",
       "done": "Done"
     },
@@ -801,7 +816,23 @@
     },
     "tabs": {
       "testCases": "Test Cases",
-      "testScripts": "Test Scripts"
+      "testScripts": "Test Scripts",
+      "selfTest": "Self-test Report"
+    },
+    "selfTest": {
+      "noReport": "No self-test report available",
+      "noSummary": "No self-test summary provided",
+      "generalChecks": "General Checks",
+      "noChecks": "No checks available",
+      "playwright": "Playwright Report",
+      "midscene": "Midscene Report",
+      "viewReport": "View Report",
+      "reportLoadFailed": "Failed to load report",
+      "noReportContent": "Report content is empty",
+      "noFrameworkReport": "No framework-specific report available",
+      "pass": "Passed",
+      "fail": "Failed",
+      "unknown": "Unknown"
     }
   },
   "markdownEditor": {

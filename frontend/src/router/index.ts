@@ -78,7 +78,7 @@ const routes: RouteRecordRaw[] = [
         path: 'test-cases/tasks/:id/edit',
         name: 'TestCaseEdit',
         component: () => import('@/views/testTask/TestCaseEditPage.vue'),
-        meta: { titleKey: 'testCase.detail.title', permission: 'test:list' },
+        meta: { titleKey: 'testCase.detail.title', permissionAny: ['test:list', 'review:list'] },
       },
       {
         path: 'test-tasks/:id/run',

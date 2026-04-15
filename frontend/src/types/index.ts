@@ -180,6 +180,7 @@ export interface Agent {
   id: number
   name: string
   description: string
+  is_default: boolean
   model_provider: string
   model_name: string
   api_key_ref: string
@@ -285,9 +286,32 @@ export interface TestScriptVO {
 export interface TestDocVO {
   id: number
   title: string
+  file_path?: string
   content: string
   doc_type: string
   source: string
+}
+
+export interface SelfTestFrameworkReport {
+  passed?: boolean
+  summary?: string
+  checks?: string[]
+  report_path?: string
+  [key: string]: any
+}
+
+export interface SelfTestReport {
+  passed?: boolean
+  summary?: string
+  checks?: string[]
+  playwright?: SelfTestFrameworkReport
+  midscene?: SelfTestFrameworkReport
+  [key: string]: any
+}
+
+export interface TestTaskAIOutput {
+  self_test?: SelfTestReport
+  [key: string]: any
 }
 
 export interface ReviewRecordVO {
@@ -311,6 +335,7 @@ export interface TestTask {
   started_at: string | null
   completed_at: string | null
   created_at: string
+  ai_output?: TestTaskAIOutput | null
   issue: Issue | null
 }
 

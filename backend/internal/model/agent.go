@@ -59,6 +59,7 @@ type Agent struct {
 	ID            uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
 	Name          string    `gorm:"size:64;uniqueIndex;not null" json:"name"`
 	Description   string    `gorm:"size:255;default:''" json:"description"`
+	IsDefault     bool      `gorm:"default:false" json:"is_default"`
 	ModelProvider string    `gorm:"size:32;default:'claude'" json:"model_provider"`
 	ModelName     string    `gorm:"size:64;default:''" json:"model_name"`
 	APIKeyRef     string    `gorm:"size:128;default:''" json:"api_key_ref"`

@@ -4,9 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
+	"auto-test-flow/internal/config"
 	"auto-test-flow/internal/dto"
 	"auto-test-flow/internal/middleware"
 	"auto-test-flow/internal/model"
@@ -296,6 +301,143 @@ func (h *TestTaskHandler) GetTestScripts(c *gin.Context) {
 	}
 
 	pkg.OK(c, service.NormalizeTestScripts(scripts))
+}
+
+// GetSelfTestReport 获取任务自测报告内容
+// GET /api/test-tasks/:id/self-test-report?framework=playwright|midscene
+func (h *TestTaskHandler) GetSelfTestReport(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		pkg.Fail(c, pkg.CodeParamError, "无效的ID")
+		return
+	}
+
+	task, err := h.testTaskRepo.GetByID(id)
+	if err != nil {
+		pkg.Fail(c, pkg.CodeNotFound, "任务不存在")
+		return
+	}
+
+	framework := strings.ToLower(strings.TrimSpace(c.Query("framework")))
+	if framework != "playwright" && framework != "midscene" {
+		pkg.Fail(c, pkg.CodeParamError, "framework 仅支持 playwright 或 midscene")
+		return
+	}
+
+	var output map[string]any
+	if len(task.AIOutput) == 0 || json.Unmarshal(task.AIOutput, &output) != nil {
+		pkg.Fail(c, pkg.CodeNotFound, "任务未产出自测报告")
+		return
+	}
+
+	selfTest, ok := output["self_test"].(map[string]any)
+	if !ok {
+		pkg.Fail(c, pkg.CodeNotFound, "任务未产出自测报告")
+		return
+	}
+
+	reportPath := extractFrameworkReportPath(selfTest, framework)
+	if strings.TrimSpace(reportPath) == "" {
+		pkg.Fail(c, pkg.CodeNotFound, "该框架报告路径不存在")
+		return
+	}
+
+	repoDir := ""
+	if workspace, ok := output["workspace"].(map[string]any); ok {
+		repoDir, _ = workspace["repo_dir"].(string)
+		repoDir = strings.TrimSpace(repoDir)
+	}
+	if repoDir == "" {
+		repoDir = filepath.Join(config.Global.Git.WorkDir, "cli-runtime", fmt.Sprintf("project_%d", task.ProjectID), fmt.Sprintf("task_%d", task.ID), "repo")
+	}
+
+	normalizedPath := normalizeReportRelativePath(reportPath)
+	content, contentType, readErr := readTaskReportFile(repoDir, normalizedPath)
+	if readErr != nil {
+		pkg.Fail(c, pkg.CodeNotFound, readErr.Error())
+		return
+	}
+
+	pkg.OK(c, gin.H{
+		"framework":    framework,
+		"report_path":  normalizedPath,
+		"content":      content,
+		"content_type": contentType,
+	})
+}
+
+func extractFrameworkReportPath(report map[string]any, framework string) string {
+	var raw any
+	switch framework {
+	case "playwright":
+		raw = report["playwright"]
+	case "midscene":
+		raw = report["midscene"]
+	default:
+		return ""
+	}
+
+	obj, ok := raw.(map[string]any)
+	if !ok {
+		return ""
+	}
+	path, _ := obj["report_path"].(string)
+	return strings.TrimSpace(path)
+}
+
+func normalizeReportRelativePath(path string) string {
+	path = strings.TrimSpace(path)
+	path = strings.TrimPrefix(path, "./")
+	path = strings.TrimPrefix(path, ".\\")
+	return filepath.ToSlash(path)
+}
+
+func readTaskReportFile(repoDir, relativePath string) (string, string, error) {
+	if strings.TrimSpace(relativePath) == "" {
+		return "", "", fmt.Errorf("报告路径为空")
+	}
+
+	cleanRepo, err := filepath.Abs(repoDir)
+	if err != nil {
+		return "", "", fmt.Errorf("解析报告目录失败: %w", err)
+	}
+
+	targetPath := filepath.Join(cleanRepo, filepath.FromSlash(relativePath))
+	cleanTarget, err := filepath.Abs(targetPath)
+	if err != nil {
+		return "", "", fmt.Errorf("解析报告文件路径失败: %w", err)
+	}
+
+	repoPrefix := cleanRepo + string(filepath.Separator)
+	if cleanTarget != cleanRepo && !strings.HasPrefix(cleanTarget, repoPrefix) {
+		return "", "", fmt.Errorf("报告路径非法")
+	}
+
+	data, err := os.ReadFile(cleanTarget)
+	if err != nil {
+		return "", "", fmt.Errorf("读取报告文件失败: %w", err)
+	}
+
+	contentType := detectReportContentType(cleanTarget, data)
+	return string(data), contentType, nil
+}
+
+func detectReportContentType(path string, data []byte) string {
+	ext := strings.ToLower(filepath.Ext(path))
+	switch ext {
+	case ".html", ".htm":
+		return "text/html"
+	case ".md", ".markdown":
+		return "text/markdown"
+	case ".json":
+		return "application/json"
+	case ".txt", ".log":
+		return "text/plain"
+	}
+	if len(data) == 0 {
+		return "text/plain"
+	}
+	return http.DetectContentType(data)
 }
 
 // StreamEvents 测试任务事件流

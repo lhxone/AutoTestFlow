@@ -33,19 +33,11 @@
           {{ record.issue?.title || '-' }}
         </template>
         <template v-if="column.key === 'status'">
-          <a-tag :color="taskStatusColor(record.status)">{{ translateTaskStatus(t, record.status) }}</a-tag>
+          <a-tag :color="displayStatus(record).color">{{ displayStatus(record).label }}</a-tag>
         </template>
         <template v-if="column.key === 'action'">
-          <a-button type="link" size="small" @click="goToEdit(record)" v-if="canIntervene">{{ t('common.edit') }}</a-button>
-          <a-button type="link" size="small" @click="goToReview(record)" v-if="canReview">{{ t('review.list.goReview') }}</a-button>
+          <a-button type="link" size="small" @click="goToEdit(record)" v-if="canOpenEditor">{{ t('common.edit') }}</a-button>
           <a-button type="link" size="small" @click="goToExecutions(record)" v-if="canViewExecutions">{{ t('execution.list.title') }}</a-button>
-          <a-popconfirm
-            :title="t('testCase.list.messages.regenerateConfirm')"
-            @confirm="handleRegenerate(record)"
-            v-if="canTrigger"
-          >
-            <a-button type="link" size="small" danger :loading="regeneratingId === record.id">{{ t('testCase.list.regenerate') }}</a-button>
-          </a-popconfirm>
         </template>
       </template>
     </a-table>
@@ -54,13 +46,11 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { message } from 'ant-design-vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
-import { getReviewList } from '@/api/review'
-import { getTestTaskList, createTestTask } from '@/api/testTask'
+import { getTestTaskList } from '@/api/testTask'
 import type { TestTask } from '@/types'
-import { translateTaskStatus } from '@/types'
+import { getTestStatusMap, translateTaskStatus } from '@/types'
 import { useI18n } from 'vue-i18n'
 
 const userStore = useUserStore()
@@ -70,9 +60,10 @@ withDefaults(defineProps<{ embedded?: boolean }>(), {
 })
 const canIntervene = computed(() => userStore.hasPermission('test:intervene'))
 const canReview = computed(() => userStore.hasPermission('review:list'))
+const canOpenEditor = computed(() => canIntervene.value || canReview.value)
 const canViewExecutions = computed(() => userStore.hasPermission('test:list'))
-const canTrigger = computed(() => userStore.hasPermission('test:trigger'))
 const { t } = useI18n()
+const testStatusMap = computed(() => getTestStatusMap(t))
 
 const list = ref<TestTask[]>([])
 const loading = ref(false)
@@ -119,44 +110,11 @@ function goToEdit(record: TestTask) {
   router.push(`/test-cases/tasks/${record.id}/edit`)
 }
 
-async function goToReview(record: TestTask) {
-  try {
-    const res = await getReviewList({
-      task_id: record.id,
-      page: 1,
-      page_size: 1,
-    })
-    const review = res.data.data?.list?.[0]
-    if (!review?.id) {
-      message.warning(t('review.list.messages.notFound'))
-      return
-    }
-    router.push(`/reviews/${review.id}`)
-  } catch {
-    message.error(t('common.operationFailed'))
-  }
-}
-
 function goToExecutions(record: TestTask) {
   router.push({
     path: '/executions',
     query: { task_id: String(record.id) },
   })
-}
-
-const regeneratingId = ref<number | null>(null)
-
-async function handleRegenerate(record: TestTask) {
-  regeneratingId.value = record.id
-  try {
-    await createTestTask({ issue_id: record.issue_id })
-    message.success(t('testCase.list.messages.regenerateSuccess'))
-    fetchData()
-  } catch {
-    message.error(t('common.operationFailed'))
-  } finally {
-    regeneratingId.value = null
-  }
 }
 
 function taskStatusColor(status: string) {
@@ -167,5 +125,13 @@ function taskStatusColor(status: string) {
     failed: 'error',
   }
   return map[status] || 'default'
+}
+
+function displayStatus(record: TestTask) {
+  const issueStatus = record.issue?.test_status
+  if (issueStatus && testStatusMap.value[issueStatus]) {
+    return testStatusMap.value[issueStatus]
+  }
+  return { label: translateTaskStatus(t, record.status), color: taskStatusColor(record.status) }
 }
 </script>

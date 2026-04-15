@@ -67,6 +67,7 @@ func (h *AgentHandler) CreateAgent(c *gin.Context) {
 	agent := &model.Agent{
 		Name:          req.Name,
 		Description:   req.Description,
+		IsDefault:     req.IsDefault,
 		ModelProvider: req.ModelProvider,
 		ModelName:     req.ModelName,
 		APIKeyRef:     req.APIKeyRef,
@@ -84,6 +85,12 @@ func (h *AgentHandler) CreateAgent(c *gin.Context) {
 	if err := h.agentRepo.Create(agent); err != nil {
 		pkg.Fail(c, pkg.CodeDuplicate, "Agent名称已存在")
 		return
+	}
+	if req.IsDefault {
+		if err := h.agentRepo.SetDefault(agent.ID); err != nil {
+			pkg.Fail(c, pkg.CodeInternalError, "设置默认Agent失败: "+err.Error())
+			return
+		}
 	}
 
 	// 绑定Workflows
@@ -142,6 +149,9 @@ func (h *AgentHandler) UpdateAgent(c *gin.Context) {
 	if req.Description != "" {
 		agent.Description = req.Description
 	}
+	if req.IsDefault != nil {
+		agent.IsDefault = *req.IsDefault
+	}
 	if req.ModelProvider != "" {
 		agent.ModelProvider = req.ModelProvider
 	}
@@ -169,6 +179,12 @@ func (h *AgentHandler) UpdateAgent(c *gin.Context) {
 	if err := h.agentRepo.Update(agent); err != nil {
 		pkg.Fail(c, pkg.CodeInternalError, "更新Agent失败: "+err.Error())
 		return
+	}
+	if req.IsDefault != nil && *req.IsDefault {
+		if err := h.agentRepo.SetDefault(id); err != nil {
+			pkg.Fail(c, pkg.CodeInternalError, "设置默认Agent失败: "+err.Error())
+			return
+		}
 	}
 
 	_ = h.agentRepo.SetSkills(id, req.WorkflowIDs)

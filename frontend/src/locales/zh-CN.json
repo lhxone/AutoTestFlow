@@ -369,6 +369,8 @@
       "columns": {
         "id": "ID",
         "name": "名称",
+        "default": "默认",
+        "defaultAgent": "默认 Agent",
         "model": "模型",
         "cliCommand": "CLI 命令",
         "globalDefault": "全局默认",
@@ -380,6 +382,8 @@
       "form": {
         "name": "名称",
         "description": "描述",
+        "defaultAgent": "设为默认 Agent",
+        "defaultAgentHint": "一个系统只能有一个默认 Agent，开启后会自动取消其他 Agent 的默认状态",
         "modelProvider": "模型提供商",
         "modelName": "模型名称",
         "selectProvider": "选择模型提供商",
@@ -597,9 +601,20 @@
     "detail": {
       "title": "测试用例编辑",
       "issueInfo": "问题单信息",
+      "reviewTitle": "审核处理",
       "taskId": "任务ID",
       "issueTitle": "问题单标题",
       "issueId": "问题单ID",
+      "selfTestReportTitle": "自我测试报告",
+      "selfTestNoReport": "暂无自我测试报告",
+      "selfTestNoSummary": "未提供自测结论",
+      "selfTestChecks": "检查项",
+      "selfTestNoFrameworkReport": "暂无该框架报告",
+      "playwrightReport": "Playwright 报告",
+      "midsceneReport": "Midscene 报告",
+      "selfTestPass": "通过",
+      "selfTestFail": "失败",
+      "selfTestUnknown": "未知",
       "caseGroupTitle": "测试用例",
       "scriptGroupTitle": "测试脚本",
       "scriptContent": "脚本内容",
@@ -788,7 +803,7 @@
     "scriptLang": "语言",
     "stages": {
       "workspace": "工作区就绪",
-      "cliStarted": "CLI 已启动",
+      "cliStarted": "AGENT 已启动",
       "artifacts": "产物已保存",
       "done": "完成"
     },
@@ -801,7 +816,23 @@
     },
     "tabs": {
       "testCases": "测试用例",
-      "testScripts": "测试脚本"
+      "testScripts": "测试脚本",
+      "selfTest": "自我测试报告"
+    },
+    "selfTest": {
+      "noReport": "暂无自我测试报告",
+      "noSummary": "未提供自测结论",
+      "generalChecks": "总体检查项",
+      "noChecks": "暂无检查项",
+      "playwright": "Playwright 报告",
+      "midscene": "Midscene 报告",
+      "viewReport": "查看报告",
+      "reportLoadFailed": "加载报告失败",
+      "noReportContent": "报告内容为空",
+      "noFrameworkReport": "暂无该框架的报告详情",
+      "pass": "通过",
+      "fail": "失败",
+      "unknown": "未知"
     }
   },
   "markdownEditor": {

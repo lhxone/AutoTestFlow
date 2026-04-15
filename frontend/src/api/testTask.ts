@@ -46,6 +46,10 @@ export function getTaskLogs(taskId: number) {
   return request.get(`/test-tasks/${taskId}/logs`)
 }
 
+export function getSelfTestReport(taskId: number, framework: 'playwright' | 'midscene') {
+  return request.get(`/test-tasks/${taskId}/self-test-report`, { params: { framework } })
+}
+
 export interface CLIInteraction {
   id: number;
   task_id: number;

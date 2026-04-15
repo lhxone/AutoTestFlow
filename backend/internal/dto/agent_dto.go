@@ -6,6 +6,7 @@ import "encoding/json"
 type CreateAgentRequest struct {
 	Name          string          `json:"name" binding:"required,max=64"`
 	Description   string          `json:"description"`
+	IsDefault     bool            `json:"is_default"`
 	ModelProvider string          `json:"model_provider" binding:"required,oneof=claude openai zhipu custom"`
 	ModelName     string          `json:"model_name" binding:"required"`
 	APIKeyRef     string          `json:"api_key_ref"`
@@ -21,6 +22,7 @@ type CreateAgentRequest struct {
 type UpdateAgentRequest struct {
 	Name          string          `json:"name" binding:"max=64"`
 	Description   string          `json:"description"`
+	IsDefault     *bool           `json:"is_default"`
 	ModelProvider string          `json:"model_provider" binding:"omitempty,oneof=claude openai zhipu custom"`
 	ModelName     string          `json:"model_name"`
 	APIKeyRef     string          `json:"api_key_ref"`

@@ -53,7 +53,7 @@
         </template>
         <template v-if="column.key === 'action'">
           <a-button type="link" size="small" @click="handleGenTest(record)"
-                    :disabled="record.zentao_status !== 'resolved' || record.test_status !== 'pending'">
+                    :disabled="!canGenerateTest(record)">
             {{ $t('issue.list.action.generateTest') }}
           </a-button>
           <a-button
@@ -134,7 +134,7 @@ const router = useRouter()
 
 const list = ref<Issue[]>([])
 const loading = ref(false)
-const query = reactive({ keyword: '', zentao_status: undefined, test_status: undefined, project_set_id: undefined, branch: undefined })
+const query = reactive({ keyword: '', zentao_status: 'resolved', test_status: undefined, project_set_id: undefined, branch: undefined })
 const pagination = reactive({ current: 1, pageSize: 20, total: 0 })
 
 const syncModal = ref(false)
@@ -151,7 +151,7 @@ const genTestModal = ref(false)
 const genTestLoading = ref(false)
 const genTestIssue = ref<Issue | null>(null)
 const genTestForm = reactive({ agent_id: undefined as number | undefined })
-const agentList = ref<{ id: number; name: string; description?: string }[]>([])
+const agentList = ref<{ id: number; name: string; description?: string; is_default?: boolean }[]>([])
 const agentListLoading = ref(false)
 
 // 本地缓存 issueId -> taskId，避免重新查询
@@ -273,13 +273,24 @@ async function handleGenTest(record: Issue) {
 }
 
 async function fetchAgentList() {
-  if (agentList.value.length > 0) return
+  if (agentList.value.length > 0) {
+    applyDefaultAgentSelection()
+    return
+  }
   agentListLoading.value = true
   try {
     const res = await getAgentList({ status: 1, page: 1, page_size: 100 })
     agentList.value = res.data.data?.list || []
+    applyDefaultAgentSelection()
   } finally {
     agentListLoading.value = false
+  }
+}
+
+function applyDefaultAgentSelection() {
+  const defaultAgent = agentList.value.find((agent) => !!agent.is_default)
+  if (defaultAgent) {
+    genTestForm.agent_id = defaultAgent.id
   }
 }
 
@@ -359,6 +370,15 @@ function formatSeverity(severity: string) {
     'minor': t('issue.list.severity.minor')
   }
   return severityMap[severity] || severity
+}
+
+function canGenerateTest(issue: Issue) {
+  if (issue.zentao_status !== 'resolved') {
+    return false
+  }
+
+  // 允许首次生成(pending)和失败后重试(error)
+  return issue.test_status === 'pending' || issue.test_status === 'error'
 }
 </script>
 

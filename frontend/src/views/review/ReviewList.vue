@@ -28,7 +28,7 @@
           {{ record.reviewer?.real_name || t('common.unassigned') }}
         </template>
         <template v-if="column.key === 'action'">
-          <a-button type="link" size="small" @click="$router.push(`/reviews/${record.id}`)">
+          <a-button type="link" size="small" @click="$router.push(`/test-cases/tasks/${record.test_task_id}/edit?review_id=${record.id}`)">
             {{ record.status === 'pending' ? t('review.list.goReview') : t('review.list.view') }}
           </a-button>
         </template>

@@ -442,6 +442,7 @@ func (r *CLIRuntime) buildPrompt(workspace *CLIRuntimeWorkspace, task *model.Tes
 - 你可以在仓库内探索现有测试框架、共享工具、fixture 和文档目录。
 - 如已配置 MCP，请使用本地 CLI 的 MCP 能力完成探索，不要假设项目结构。
 - 必须把实际的测试脚本和测试文档写入仓库目录。
+- 生成的测试脚本必须包含至少一个可执行断言（例如 expect/assert/should 等）。
 - 最终必须把结构化结果写入 JSON 文件：%s
 
 ## 结果 JSON 格式
@@ -470,7 +471,19 @@ func (r *CLIRuntime) buildPrompt(workspace *CLIRuntimeWorkspace, task *model.Tes
   "self_test": {
     "passed": true,
     "summary": "自测结论",
-    "checks": ["检查项"]
+		"checks": ["检查项"],
+		"playwright": {
+			"passed": true,
+			"summary": "Playwright 自测结论",
+			"checks": ["Playwright 检查项"],
+			"report_path": "playwright-report/index.html"
+		},
+		"midscene": {
+			"passed": true,
+			"summary": "Midscene 自测结论",
+			"checks": ["Midscene 检查项"],
+			"report_path": "reports/midscene-report.md"
+		}
   },
   "summary": "生成总结"
 }
@@ -478,6 +491,8 @@ func (r *CLIRuntime) buildPrompt(workspace *CLIRuntimeWorkspace, task *model.Tes
 说明：
 - 如果文件已经直接写入仓库，可把 file_content/content 留空，系统会按 file_path 读取文件内容。
 - file_path 必须是仓库内相对路径。
+- test_script.file_content（或 file_path 指向的脚本）必须包含至少一个断言语句，禁止只写操作步骤不写校验。
+- self_test.playwright 与 self_test.midscene 必须填写；若当前任务不适用，请写明 passed=false 与原因。
 - 若执行失败，请尽量在 result.json 中写出已知错误上下文后退出。
 
 ## 当前任务

@@ -41,6 +41,9 @@ func (h *IssueHandler) List(c *gin.Context) {
 	if query.PageSize <= 0 {
 		query.PageSize = 20
 	}
+	if query.ZentaoStatus == "" {
+		query.ZentaoStatus = "resolved"
+	}
 	offset := (query.Page - 1) * query.PageSize
 
 	issues, total, err := h.issueRepo.List(

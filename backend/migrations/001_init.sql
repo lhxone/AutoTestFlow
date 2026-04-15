@@ -185,6 +185,7 @@ CREATE TABLE `agent` (
     `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'Agent ID',
     `name`        VARCHAR(64)     NOT NULL COMMENT 'Agent 名称',
     `description` VARCHAR(255)    NOT NULL DEFAULT '' COMMENT '描述',
+    `is_default`  TINYINT(1)      NOT NULL DEFAULT 0 COMMENT '是否默认 Agent: 1=是 0=否',
     `model_provider` VARCHAR(32)  NOT NULL DEFAULT 'claude' COMMENT '模型提供商: claude/openai/custom',
     `model_name`  VARCHAR(64)     NOT NULL DEFAULT '' COMMENT '模型名称: claude-sonnet-4-20250514 等',
     `api_key_ref` VARCHAR(128)    NOT NULL DEFAULT '' COMMENT 'API Key引用(不存明文, 引用配置名)',

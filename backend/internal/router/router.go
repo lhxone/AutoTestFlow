@@ -149,6 +149,7 @@ func Setup(logger *zap.Logger) *gin.Engine {
 				testTasks.GET("/:id/logs", middleware.RequirePermission("test:execute"), testTaskH.GetLogs)
 				testTasks.GET("/:id/cases", middleware.RequirePermission("test:execute"), testTaskH.GetTestCases)
 				testTasks.GET("/:id/scripts", middleware.RequirePermission("test:execute"), testTaskH.GetTestScripts)
+				testTasks.GET("/:id/self-test-report", middleware.RequirePermission("test:execute"), testTaskH.GetSelfTestReport)
 
 				// CLI交互
 				cliInteractionH.RegisterRoutes(testTasks)

@@ -50,20 +50,43 @@ func (r *AgentRepo) List(keyword string, status *int8, offset, limit int) ([]mod
 	}
 
 	var agents []model.Agent
-	if err := query.Offset(offset).Limit(limit).Order("id DESC").Find(&agents).Error; err != nil {
+	if err := query.Offset(offset).Limit(limit).Order("is_default DESC, id DESC").Find(&agents).Error; err != nil {
 		return nil, 0, err
 	}
 	return agents, total, nil
 }
 
-// GetFirstActive 获取第一个启用的Agent
-func (r *AgentRepo) GetFirstActive() (*model.Agent, error) {
+// GetDefaultActive 获取默认且启用的Agent
+func (r *AgentRepo) GetDefaultActive() (*model.Agent, error) {
 	var agent model.Agent
-	err := r.db.Preload("Skills").Where("status = 1").First(&agent).Error
+	err := r.db.Preload("Skills").Where("status = 1 AND is_default = 1").Order("id ASC").First(&agent).Error
 	if err != nil {
 		return nil, err
 	}
 	return &agent, nil
+}
+
+// GetFirstActive 获取第一个启用的Agent
+func (r *AgentRepo) GetFirstActive() (*model.Agent, error) {
+	var agent model.Agent
+	err := r.db.Preload("Skills").Where("status = 1").Order("id ASC").First(&agent).Error
+	if err != nil {
+		return nil, err
+	}
+	return &agent, nil
+}
+
+// SetDefault 将指定 Agent 设置为默认，并清除其他 Agent 的默认标记。
+func (r *AgentRepo) SetDefault(agentID uint64) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.Agent{}).Where("is_default = 1").Update("is_default", false).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.Agent{}).Where("id = ?", agentID).Update("is_default", true).Error; err != nil {
+			return err
+		}
+		return nil
+	})
 }
 
 // SetSkills 设置Agent的Skill绑定
