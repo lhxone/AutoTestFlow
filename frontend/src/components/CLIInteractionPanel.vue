@@ -43,75 +43,79 @@
 
       <a-divider style="margin: 12px 0" />
 
-      <div class="section-title">待处理交互</div>
-      <div v-if="interactions.length === 0" class="empty-state">
-        <a-empty description="暂无交互记录" />
-      </div>
-      <a-timeline v-else>
-        <a-timeline-item v-for="interaction in interactions" :key="interaction.id">
-          <div class="interaction-item">
-            <div class="interaction-header">
-              <a-tag :color="getInteractionTypeColor(interaction.interaction_type)">
-                {{ getInteractionTypeLabel(interaction.interaction_type) }}
-              </a-tag>
-              <a-tag :color="getStatusColor(interaction.status)">
-                {{ getStatusLabel(interaction.status) }}
-              </a-tag>
-              <span class="interaction-time">{{ formatTime(interaction.created_at) }}</span>
-            </div>
-
-            <div class="interaction-content">
-              <div class="ai-message">
-                {{ interaction.content }}
-              </div>
-
-              <div v-if="interaction.status === 'pending'" class="interaction-actions">
-                <a-input
-                  v-model="responses[interaction.id]"
-                  placeholder="请输入回复..."
-                  :disabled="loading"
-                  @pressEnter="handleReply(interaction.id)"
-                >
-                  <template #suffix>
-                    <a-button
-                      type="link"
-                      size="small"
-                      :loading="actionLoading[interaction.id]"
-                      @click="handleReply(interaction.id)"
-                    >
-                      回复
-                    </a-button>
-                  </template>
-                </a-input>
-
-                <a-space v-if="interaction.interaction_type === 'permission_request'" style="margin-top: 8px">
-                  <a-button
-                    type="primary"
-                    size="small"
-                    :loading="actionLoading[interaction.id]"
-                    @click="handleApprove(interaction.id)"
-                  >
-                    批准
-                  </a-button>
-                  <a-button
-                    danger
-                    size="small"
-                    :loading="actionLoading[interaction.id]"
-                    @click="handleReject(interaction.id)"
-                  >
-                    拒绝
-                  </a-button>
-                </a-space>
-              </div>
-
-              <div v-else-if="interaction.user_response" class="user-response">
-                <div class="response-label">您的回复:</div>
-                <div class="response-content">{{ interaction.user_response }}</div>
-              </div>
-            </div>
+      <div class="interaction-section">
+        <div class="section-title">待处理交互</div>
+        <div class="interaction-list">
+          <div v-if="interactions.length === 0" class="empty-state">
+            <a-empty description="暂无交互记录" />
           </div>
-        </a-timeline-item>
-      </a-timeline>
+          <a-timeline v-else>
+            <a-timeline-item v-for="interaction in interactions" :key="interaction.id">
+              <div class="interaction-item">
+                <div class="interaction-header">
+                  <a-tag :color="getInteractionTypeColor(interaction.interaction_type)">
+                    {{ getInteractionTypeLabel(interaction.interaction_type) }}
+                  </a-tag>
+                  <a-tag :color="getStatusColor(interaction.status)">
+                    {{ getStatusLabel(interaction.status) }}
+                  </a-tag>
+                  <span class="interaction-time">{{ formatTime(interaction.created_at) }}</span>
+                </div>
+
+                <div class="interaction-content">
+                  <div class="ai-message">
+                    {{ interaction.content }}
+                  </div>
+
+                  <div v-if="interaction.status === 'pending'" class="interaction-actions">
+                    <a-input
+                      v-model="responses[interaction.id]"
+                      placeholder="请输入回复..."
+                      :disabled="loading"
+                      @pressEnter="handleReply(interaction.id)"
+                    >
+                      <template #suffix>
+                        <a-button
+                          type="link"
+                          size="small"
+                          :loading="actionLoading[interaction.id]"
+                          @click="handleReply(interaction.id)"
+                        >
+                          回复
+                        </a-button>
+                      </template>
+                    </a-input>
+
+                    <a-space v-if="interaction.interaction_type === 'permission_request'" style="margin-top: 8px">
+                      <a-button
+                        type="primary"
+                        size="small"
+                        :loading="actionLoading[interaction.id]"
+                        @click="handleApprove(interaction.id)"
+                      >
+                        批准
+                      </a-button>
+                      <a-button
+                        danger
+                        size="small"
+                        :loading="actionLoading[interaction.id]"
+                        @click="handleReject(interaction.id)"
+                      >
+                        拒绝
+                      </a-button>
+                    </a-space>
+                  </div>
+
+                  <div v-else-if="interaction.user_response" class="user-response">
+                    <div class="response-label">您的回复:</div>
+                    <div class="response-content">{{ interaction.user_response }}</div>
+                  </div>
+                </div>
+              </div>
+            </a-timeline-item>
+          </a-timeline>
+        </div>
+      </div>
     </a-spin>
   </a-card>
 </template>
@@ -327,7 +331,10 @@ const chatMessages = computed<ChatMessage[]>(() => {
   const sourceEvents = (props.taskEvents && props.taskEvents.length > 0) ? props.taskEvents : taskLogs.value
   const rows: ChatMessage[] = []
   for (const event of sourceEvents) {
-    if (event.type !== 'log' || event.stage !== 'cli_output' || !event.message) {
+    if (event.type !== 'log' || !event.message) {
+      continue
+    }
+    if (event.stage !== 'cli_output' && event.stage !== 'cli_output_raw') {
       continue
     }
     const parsed = parseAgentEvent(event)
@@ -370,6 +377,119 @@ function parseAgentEvent(event: TestTaskEvent): ChatMessage[] {
     const detail = stringifyBrief(payload?.result)
     return [{ id: `${baseId}-result`, role: isError ? 'error' : 'system', text, detail, timestamp: ts }]
   }
+  if (type.includes('.')) {
+    return parseCodexEvent(payload, ts, baseId)
+  }
+  return []
+}
+
+function parseCodexEvent(payload: any, timestamp: string, baseId: string): ChatMessage[] {
+  const eventType = String(payload?.type || '')
+  if (!eventType.includes('.')) {
+    return []
+  }
+
+  if (eventType === 'thread.started') {
+    return [{ id: `${baseId}-codex-thread-started`, role: 'system', text: 'Codex 会话已启动', timestamp }]
+  }
+  if (eventType === 'thread.completed') {
+    return [{ id: `${baseId}-codex-thread-completed`, role: 'system', text: 'Codex 会话已完成', timestamp }]
+  }
+  if (eventType === 'turn.started' || eventType === 'turn.completed') {
+    return []
+  }
+
+  if (!eventType.startsWith('item.')) {
+    return []
+  }
+
+  const item = payload?.item || {}
+  const itemType = String(item?.type || '')
+  const eventState = eventType.slice('item.'.length)
+
+  if (itemType === 'reasoning') {
+    if (eventState !== 'completed') {
+      return []
+    }
+    const text = String(item?.text || '').trim()
+    if (!text) {
+      return []
+    }
+    const lines = text.split('\n').filter(Boolean)
+    return [{
+      id: `${baseId}-codex-reasoning`,
+      role: 'assistant',
+      text: lines[0].length > 180 ? `${lines[0].slice(0, 180)}...` : lines[0],
+      detail: text,
+      detailCollapsedDefault: true,
+      timestamp,
+    }]
+  }
+
+  if (itemType === 'todo_list') {
+    const todos = Array.isArray(item?.items) ? item.items : []
+    if (!todos.length) {
+      return []
+    }
+    const completed = todos.filter((t: any) => Boolean(t?.completed)).length
+    const summary = `任务进度 ${completed}/${todos.length}`
+    const detail = todos
+      .map((t: any) => `${t?.completed ? '[x]' : '[ ]'} ${String(t?.text || '').trim()}`)
+      .join('\n')
+    return [{
+      id: `${baseId}-codex-todo`,
+      role: 'system',
+      text: summary,
+      detail,
+      detailCollapsedDefault: true,
+      timestamp,
+    }]
+  }
+
+  if (itemType === 'command_execution') {
+    const command = String(item?.command || '').trim()
+    const output = String(item?.aggregated_output || '').trim()
+    const exitCode = typeof item?.exit_code === 'number' ? item.exit_code : null
+    const status = String(item?.status || '').trim()
+
+    // started 事件只显示命令摘要；completed 事件展示结果。
+    if (eventState === 'started') {
+      if (!command) {
+        return []
+      }
+      return [{
+        id: `${baseId}-codex-cmd-started`,
+        role: 'tool',
+        text: `执行命令: ${command.length > 140 ? `${command.slice(0, 140)}...` : command}`,
+        detailCollapsedDefault: true,
+        timestamp,
+      }]
+    }
+
+    if (eventState === 'completed') {
+      const ok = exitCode === 0
+      const text = ok
+        ? `命令执行成功${command ? `: ${command.length > 100 ? `${command.slice(0, 100)}...` : command}` : ''}`
+        : `命令执行失败${exitCode == null ? '' : ` (exit=${exitCode})`}`
+      return [{
+        id: `${baseId}-codex-cmd-completed`,
+        role: ok ? 'tool' : 'error',
+        text,
+        detail: stringifyBrief({ status, command, exit_code: exitCode, aggregated_output: output }),
+        detailCollapsedDefault: true,
+        timestamp,
+      }]
+    }
+  }
+
+  if (itemType === 'message') {
+    const text = String(item?.text || '').trim()
+    if (!text) {
+      return []
+    }
+    return [{ id: `${baseId}-codex-message`, role: 'assistant', text, timestamp }]
+  }
+
   return []
 }
 
@@ -542,7 +662,13 @@ defineExpose({
 }
 
 .chat-list {
-  max-height: 560px;
+  max-height: 680px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.interaction-list {
+  max-height: 180px;
   overflow-y: auto;
   padding-right: 4px;
 }

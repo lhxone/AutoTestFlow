@@ -605,7 +605,7 @@ async function openFrameworkReport(framework: 'playwright' | 'midscene') {
 
 .terminal {
   min-height: 320px;
-  max-height: 480px;
+  max-height: 320px;
   overflow-y: auto;
   background: #1e1e1e;
   border-radius: 6px;

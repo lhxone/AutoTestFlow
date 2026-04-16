@@ -3,6 +3,8 @@ package repository
 import (
 	"auto-test-flow/internal/config"
 	"auto-test-flow/internal/model"
+	"strings"
+	"time"
 
 	"go.uber.org/zap"
 	"gorm.io/driver/mysql"
@@ -15,13 +17,25 @@ var DB *gorm.DB
 
 // InitDB 初始化数据库连接
 func InitDB(cfg *config.DatabaseConfig, zapLogger *zap.Logger) error {
-	logLevel := logger.Info
+	logLevel := logger.Warn
 	if cfg.Host == "" {
 		logLevel = logger.Silent
 	}
+	if config.Global != nil {
+		if strings.EqualFold(config.Global.Log.Level, "debug") || strings.EqualFold(config.Global.Server.Mode, "debug") {
+			logLevel = logger.Info
+		}
+	}
+
+	gormLogger := logger.New(zap.NewStdLog(zapLogger), logger.Config{
+		SlowThreshold:             500 * time.Millisecond,
+		IgnoreRecordNotFoundError: true,
+		LogLevel:                  logLevel,
+		Colorful:                  false,
+	})
 
 	db, err := gorm.Open(mysql.Open(cfg.DSN()), &gorm.Config{
-		Logger: logger.Default.LogMode(logLevel),
+		Logger: gormLogger,
 	})
 	if err != nil {
 		return err

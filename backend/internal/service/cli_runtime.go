@@ -967,9 +967,7 @@ func (r *CLIRuntime) streamPipe(taskID uint64, streamName string, pipe io.ReadCl
 	defer wg.Done()
 	defer pipe.Close()
 
-	scanner := bufio.NewScanner(pipe)
-	buffer := make([]byte, 0, 64*1024)
-	scanner.Buffer(buffer, 1024*1024)
+	reader := bufio.NewReaderSize(pipe, 64*1024)
 
 	var rawLine string
 
@@ -990,63 +988,90 @@ func (r *CLIRuntime) streamPipe(taskID uint64, streamName string, pipe io.ReadCl
 		})
 	}
 
-	for scanner.Scan() {
-		rawLine = scanner.Text()
+	for {
+		lineChunk, err := reader.ReadString('\n')
+		rawLine = strings.TrimRight(lineChunk, "\r\n")
 		line := strings.TrimSpace(rawLine)
-		if line == "" {
-			continue
-		}
-		appendLine(rawLine)
-
-		// 尝试解析 claude --output-format stream-json 的 JSONL 输出
-		if display, eventType, ok := parseStreamJSONLine(line); ok {
-			if eventType == "ai_question" || eventType == "permission_request" {
-				flushTextBuf()
-				if display != "" {
-					r.publish(taskID, taskEventTypeLog, "cli_output", model.TaskStatusRunning, display, map[string]any{
-						"stream": streamName,
-					})
+		if line != "" {
+			// codex --json 会先输出这类前导提示，属于噪音，直接忽略。
+			if strings.EqualFold(line, "Reading prompt from stdin...") {
+				if errors.Is(err, io.EOF) {
+					break
 				}
-				r.handleInteractionEvent(taskID, rawLine, eventType, display)
 				continue
 			}
-			if eventType == "text_delta" {
-				textBuf.WriteString(display)
-				if strings.Contains(display, "\n") || textBuf.Len() >= 200 {
-					flushTextBuf()
-				}
-			} else {
-				flushTextBuf()
-				if display != "" {
-					r.publish(taskID, taskEventTypeLog, "cli_output", model.TaskStatusRunning, display, map[string]any{
+
+			appendLine(rawLine)
+
+			// 尝试解析 Claude/Codex 的 JSONL 输出
+			if display, eventType, ok := parseStreamJSONLine(line); ok {
+				if strings.HasPrefix(eventType, "codex_") {
+					r.publish(taskID, taskEventTypeLog, "cli_output_raw", model.TaskStatusRunning, line, map[string]any{
 						"stream": streamName,
 					})
 				}
+				if eventType == "ai_question" || eventType == "permission_request" {
+					flushTextBuf()
+					if display != "" {
+						r.publish(taskID, taskEventTypeLog, "cli_output", model.TaskStatusRunning, display, map[string]any{
+							"stream": streamName,
+						})
+					}
+					r.handleInteractionEvent(taskID, rawLine, eventType, display)
+					if errors.Is(err, io.EOF) {
+						break
+					}
+					continue
+				}
+				if eventType == "text_delta" {
+					textBuf.WriteString(display)
+					if strings.Contains(display, "\n") || textBuf.Len() >= 200 {
+						flushTextBuf()
+					}
+				} else {
+					flushTextBuf()
+					if display != "" {
+						r.publish(taskID, taskEventTypeLog, "cli_output", model.TaskStatusRunning, display, map[string]any{
+							"stream": streamName,
+						})
+					}
+				}
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				continue
 			}
-			continue
+
+			// 非 JSON 行（stderr 或普通文本），flush 后直接输出
+			flushTextBuf()
+			r.publish(taskID, taskEventTypeLog, "cli_output", model.TaskStatusRunning, line, map[string]any{
+				"stream": streamName,
+			})
 		}
 
-		// 非 JSON 行（stderr 或普通文本），flush 后直接输出
-		flushTextBuf()
-		r.publish(taskID, taskEventTypeLog, "cli_output", model.TaskStatusRunning, line, map[string]any{
-			"stream": streamName,
-		})
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			r.publish(taskID, taskEventTypeLog, "cli_output_error", model.TaskStatusRunning, fmt.Sprintf("%s stream read error: %v", streamName, err), map[string]any{
+				"stream": streamName,
+			})
+			break
+		}
 	}
 	flushTextBuf()
-
-	if err := scanner.Err(); err != nil {
-		r.publish(taskID, taskEventTypeLog, "cli_output_error", model.TaskStatusRunning, fmt.Sprintf("%s stream read error: %v", streamName, err), map[string]any{
-			"stream": streamName,
-		})
-	}
 }
 
-// parseStreamJSONLine 解析 claude stream-json 的单行输出。
+// parseStreamJSONLine 解析 Claude/Codex 的单行 JSON 输出。
 // 返回 (display, eventType, true)：display 为人类可读摘要，eventType 用于区分
 // "text_delta"（需要聚合）和其他事件（立即推送）。display 为空表示该行可静默跳过。
 func parseStreamJSONLine(line string) (string, string, bool) {
 	if len(line) == 0 || line[0] != '{' {
 		return "", "", false
+	}
+
+	if display, eventType, ok := parseCodexJSONLine(line); ok {
+		return display, eventType, true
 	}
 
 	var event struct {
@@ -1150,6 +1175,98 @@ func parseStreamJSONLine(line string) (string, string, bool) {
 		return fmt.Sprintf("[%s]", event.Type), event.Type, true
 	}
 	return "", "", false
+}
+
+func parseCodexJSONLine(line string) (string, string, bool) {
+	var envelope struct {
+		Type string          `json:"type"`
+		Item json.RawMessage `json:"item"`
+	}
+	if err := json.Unmarshal([]byte(line), &envelope); err != nil {
+		return "", "", false
+	}
+
+	if envelope.Type == "" || !strings.Contains(envelope.Type, ".") {
+		return "", "", false
+	}
+
+	if strings.HasPrefix(envelope.Type, "thread.") || strings.HasPrefix(envelope.Type, "turn.") {
+		switch envelope.Type {
+		case "thread.started":
+			return "🚀 Codex 会话已启动", "codex_thread", true
+		case "thread.completed":
+			return "✅ Codex 会话已完成", "codex_thread", true
+		default:
+			return "", "codex_lifecycle", true
+		}
+	}
+
+	if !strings.HasPrefix(envelope.Type, "item.") {
+		return "", "", false
+	}
+
+	var item struct {
+		Type             string `json:"type"`
+		Text             string `json:"text"`
+		Command          string `json:"command"`
+		Status           string `json:"status"`
+		ExitCode         *int   `json:"exit_code"`
+		AggregatedOutput string `json:"aggregated_output"`
+		Items            []struct {
+			Text      string `json:"text"`
+			Completed bool   `json:"completed"`
+		} `json:"items"`
+	}
+	if len(envelope.Item) > 0 {
+		if err := json.Unmarshal(envelope.Item, &item); err != nil {
+			return "", "codex_item", true
+		}
+	}
+
+	switch item.Type {
+	case "reasoning":
+		if strings.HasPrefix(envelope.Type, "item.completed") && strings.TrimSpace(item.Text) != "" {
+			return fmt.Sprintf("🧠 %s", truncateText(strings.Split(strings.TrimSpace(item.Text), "\n")[0], 160)), "codex_reasoning", true
+		}
+		return "", "codex_reasoning", true
+
+	case "todo_list":
+		if len(item.Items) == 0 {
+			return "", "codex_todo", true
+		}
+		completed := 0
+		for _, todo := range item.Items {
+			if todo.Completed {
+				completed++
+			}
+		}
+		return fmt.Sprintf("🗂️ 任务进度: %d/%d", completed, len(item.Items)), "codex_todo", true
+
+	case "command_execution":
+		if strings.HasPrefix(envelope.Type, "item.completed") {
+			if item.ExitCode != nil && *item.ExitCode != 0 {
+				msg := "❌ 命令执行失败"
+				if strings.TrimSpace(item.Command) != "" {
+					msg += ": " + truncateText(item.Command, 120)
+				}
+				if out := strings.TrimSpace(item.AggregatedOutput); out != "" {
+					msg += " | " + truncateText(out, 180)
+				}
+				return msg, "codex_command", true
+			}
+			return "", "codex_command", true
+		}
+		return "", "codex_command", true
+
+	case "message":
+		if strings.TrimSpace(item.Text) != "" {
+			return fmt.Sprintf("💬 %s", truncateText(strings.TrimSpace(item.Text), 300)), "codex_message", true
+		}
+		return "", "codex_message", true
+
+	default:
+		return "", "codex_item", true
+	}
 }
 
 func parseAssistantMessage(line string) (string, string, bool) {
