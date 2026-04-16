@@ -277,9 +277,11 @@ func parseAgentRuntimeSettings(agent *model.Agent) (*agentRuntimeSettings, error
 }
 
 func (r *CLIRuntime) prepareWorkspace(ctx context.Context, taskID uint64, task *model.TestTask, runtimeCfg CLIRuntimeConfig) (*CLIRuntimeWorkspace, error) {
-	rootDir := filepath.Join(runtimeCfg.WorkspaceRoot, fmt.Sprintf("project_%d", task.ProjectID), fmt.Sprintf("task_%d", task.ID))
+	projectDir := filepath.Join(runtimeCfg.WorkspaceRoot, fmt.Sprintf("project_%d", task.ProjectID))
+	rootDir := filepath.Join(projectDir, fmt.Sprintf("task_%d", task.ID))
 	repoDir := filepath.Join(rootDir, runtimeCfg.RepoDirName)
 	controlDir := filepath.Join(rootDir, runtimeCfg.ControlDirName)
+	branch := projectDefaultBranch(task.Project)
 	workspace := &CLIRuntimeWorkspace{
 		RootDir:    rootDir,
 		RepoDir:    repoDir,
@@ -293,14 +295,14 @@ func (r *CLIRuntime) prepareWorkspace(ctx context.Context, taskID uint64, task *
 	if err := os.MkdirAll(controlDir, 0o755); err != nil {
 		return nil, fmt.Errorf("创建 CLI 控制目录失败: %w", err)
 	}
-	if err := r.prepareRepository(ctx, taskID, task.Project, repoDir); err != nil {
+	if err := r.prepareRepository(ctx, taskID, task.Project, branch, projectDir, repoDir); err != nil {
 		return nil, err
 	}
 
 	return workspace, nil
 }
 
-func (r *CLIRuntime) prepareRepository(ctx context.Context, taskID uint64, project *model.Project, repoDir string) error {
+func (r *CLIRuntime) prepareRepository(ctx context.Context, taskID uint64, project *model.Project, branch, projectDir, repoDir string) error {
 	if project == nil {
 		return fmt.Errorf("项目不能为空")
 	}
@@ -322,25 +324,69 @@ func (r *CLIRuntime) prepareRepository(ctx context.Context, taskID uint64, proje
 		return nil
 	}
 
-	parentDir := filepath.Dir(repoDir)
+	sharedRepoDir := filepath.Join(projectDir, "_shared", "repo_"+sanitizePathComponent(branch))
+	if err := r.prepareSharedRepository(ctx, taskID, project, branch, sharedRepoDir); err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(repoDir), 0o755); err != nil {
+		return fmt.Errorf("创建任务工作区父目录失败: %w", err)
+	}
+
+	_ = r.runGitCommand(ctx, taskID, sharedRepoDir, "worktree", "prune")
+	ref := "origin/" + branch
+	r.publish(taskID, taskEventTypeLog, "git_worktree_add", model.TaskStatusRunning,
+		fmt.Sprintf("基于共享仓库创建任务工作树 (branch=%s)", branch), map[string]any{
+			"shared_repo": sharedRepoDir,
+			"worktree":    repoDir,
+			"ref":         ref,
+		})
+	if err := r.runGitCommand(ctx, taskID, sharedRepoDir, "worktree", "add", "--force", repoDir, ref); err != nil {
+		return fmt.Errorf("创建任务工作树失败 (branch=%s): %w", branch, err)
+	}
+
+	r.publish(taskID, taskEventTypeLog, "git_worktree_ready", model.TaskStatusRunning,
+		"任务工作树已就绪", map[string]any{
+			"shared_repo": sharedRepoDir,
+			"worktree":    repoDir,
+		})
+	return nil
+}
+
+func (r *CLIRuntime) prepareSharedRepository(ctx context.Context, taskID uint64, project *model.Project, branch, sharedRepoDir string) error {
+	if r.isValidRepo(sharedRepoDir) {
+		r.publish(taskID, taskEventTypeLog, "git_fetch", model.TaskStatusRunning,
+			fmt.Sprintf("复用共享仓库并更新分支 (branch=%s)", branch), map[string]any{
+				"shared_repo": sharedRepoDir,
+			})
+		if err := r.runGitCommand(ctx, taskID, sharedRepoDir, "fetch", "--depth", "1", "origin", branch); err != nil {
+			return fmt.Errorf("更新共享仓库失败 (branch=%s): %w", branch, err)
+		}
+		return nil
+	}
+
+	_ = os.RemoveAll(sharedRepoDir)
+	parentDir := filepath.Dir(sharedRepoDir)
 	if err := os.MkdirAll(parentDir, 0o755); err != nil {
-		return fmt.Errorf("创建仓库父目录失败: %w", err)
+		return fmt.Errorf("创建共享仓库父目录失败: %w", err)
 	}
 
 	repoURL := r.withGitCredentials(project.GitRepoURL)
-	branch := projectDefaultBranch(project)
+	r.publish(taskID, taskEventTypeLog, "git_clone_shared", model.TaskStatusRunning,
+		fmt.Sprintf("首次克隆共享仓库 (branch=%s)：%s", branch, project.GitRepoURL), map[string]any{
+			"shared_repo": sharedRepoDir,
+		})
 
-	r.publish(taskID, taskEventTypeLog, "git_clone", model.TaskStatusRunning,
-		fmt.Sprintf("开始克隆仓库 (branch=%s)：%s", branch, project.GitRepoURL), nil)
-
-	// 对大仓库使用 shallow clone 加速；-c core.longpaths=true 解决 Windows 长路径限制
-	if err := r.runGitCommand(ctx, taskID, parentDir, "clone", "-c", "core.longpaths=true", "--depth", "1", "--progress", "-b", branch, repoURL, repoDir); err != nil {
-		// clone 失败时清理残留目录，避免后续误判为"已就绪"
-		_ = os.RemoveAll(repoDir)
-		return fmt.Errorf("克隆项目测试仓库失败 (branch=%s): %w", branch, err)
+	if err := r.runGitCommand(ctx, taskID, parentDir,
+		"clone", "-c", "core.longpaths=true", "--depth", "1", "--single-branch", "-b", branch, repoURL, sharedRepoDir); err != nil {
+		_ = os.RemoveAll(sharedRepoDir)
+		return fmt.Errorf("克隆共享仓库失败 (branch=%s): %w", branch, err)
 	}
 
-	r.publish(taskID, taskEventTypeLog, "git_clone_done", model.TaskStatusRunning, "仓库克隆完成", nil)
+	r.publish(taskID, taskEventTypeLog, "git_clone_shared_done", model.TaskStatusRunning, "共享仓库克隆完成", map[string]any{
+		"shared_repo": sharedRepoDir,
+	})
+
 	return nil
 }
 
@@ -1124,6 +1170,15 @@ func projectDefaultBranch(project *model.Project) string {
 		return strings.TrimSpace(project.GitBranch)
 	}
 	return "main"
+}
+
+func sanitizePathComponent(value string) string {
+	replacer := strings.NewReplacer("/", "_", "\\", "_", ":", "_", "*", "_", "?", "_", "\"", "_", "<", "_", ">", "_", "|", "_")
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "default"
+	}
+	return replacer.Replace(trimmed)
 }
 
 func (r *CLIRuntime) runGitCommand(ctx context.Context, taskID uint64, dir string, args ...string) error {
