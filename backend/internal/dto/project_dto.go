@@ -11,6 +11,7 @@ type CreateProjectRequest struct {
 	ExtraFilesPath    string  `json:"extra_files_path"`
 	GitRepoURL        string  `json:"git_repo_url"`
 	GitBranch         string  `json:"git_branch"`
+	GitPullInterval   int     `json:"git_pull_interval"`
 	ZentaoProjectID   *int    `json:"zentao_project_id"`
 	ZentaoProjectName string  `json:"zentao_project_name"`
 	ZentaoBranch      string  `json:"zentao_branch"`
@@ -28,6 +29,7 @@ type UpdateProjectRequest struct {
 	ExtraFilesPath    string  `json:"extra_files_path"`
 	GitRepoURL        string  `json:"git_repo_url"`
 	GitBranch         string  `json:"git_branch"`
+	GitPullInterval   *int    `json:"git_pull_interval"`
 	ZentaoProjectID   *int    `json:"zentao_project_id"`
 	ZentaoProjectName string  `json:"zentao_project_name"`
 	ZentaoBranch      string  `json:"zentao_branch"`

@@ -30,6 +30,7 @@ func (TestTask) TableName() string { return "test_task" }
 const (
 	TaskStatusPending   = "pending"
 	TaskStatusRunning   = "running"
+	TaskStatusWarning   = "warning"
 	TaskStatusCompleted = "completed"
 	TaskStatusFailed    = "failed"
 	TaskStatusCancelled = "cancelled"

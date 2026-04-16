@@ -1,6 +1,10 @@
 package cron
 
 import (
+	"context"
+	"sync/atomic"
+	"time"
+
 	"auto-test-flow/internal/config"
 	"auto-test-flow/internal/model"
 	"auto-test-flow/internal/repository"
@@ -15,6 +19,8 @@ type Scheduler struct {
 	cron          *cron.Cron
 	logger        *zap.Logger
 	zentaoService *service.ZentaoService
+	gitPullService *service.GitPullService
+	gitPullRunning atomic.Bool
 }
 
 // NewScheduler 创建调度器
@@ -23,6 +29,7 @@ func NewScheduler(logger *zap.Logger) *Scheduler {
 		cron:          cron.New(cron.WithSeconds()),
 		logger:        logger,
 		zentaoService: service.NewZentaoService(logger),
+		gitPullService: service.NewGitPullService(logger),
 	}
 }
 
@@ -47,6 +54,25 @@ func (s *Scheduler) Start() {
 		s.logger.Error("注册禅道同步定时任务失败", zap.Error(err))
 	} else {
 		s.logger.Info("禅道同步定时任务已注册", zap.String("cron", cronExpr))
+	}
+
+	// 2. 项目共享仓库定时拉取（每分钟巡检一次，按项目配置频率触发）
+	_, err = s.cron.AddFunc("0 * * * * *", func() {
+		if !s.gitPullRunning.CompareAndSwap(false, true) {
+			s.logger.Warn("项目 Git 定时拉取仍在执行，跳过本轮")
+			return
+		}
+		defer s.gitPullRunning.Store(false)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+		defer cancel()
+		s.logger.Info("定时任务: 开始执行项目共享仓库拉取巡检")
+		s.gitPullService.SyncDueProjects(ctx)
+	})
+	if err != nil {
+		s.logger.Error("注册项目 Git 拉取定时任务失败", zap.Error(err))
+	} else {
+		s.logger.Info("项目 Git 拉取定时任务已注册", zap.String("cron", "0 * * * * *"))
 	}
 
 	// 自动触发生成已暂停，仅保留手动触发入口

@@ -142,15 +142,28 @@
         "action": "操作"
       },
       "action": {
+        "viewDetail": "查看详情",
         "generateTest": "生成测试",
         "viewTask": "查看运行"
+      },
+      "detailModal": {
+        "title": "问题单详情",
+        "openInZentao": "跳转到禅道",
+        "assignee": "负责人",
+        "reporter": "提出人",
+        "branch": "分支",
+        "updatedAt": "最近同步时间",
+        "description": "问题描述",
+        "noDescription": "暂无描述"
       },
       "messages": {
         "projectSetLoadFailed": "获取项目集失败",
         "branchLoadFailed": "获取项目分支失败",
         "selectProjectWarning": "请选择项目",
         "syncTriggered": "同步任务已触发，请稍后刷新查看结果",
-        "noTaskFound": "该问题单暂无生成任务"
+        "noTaskFound": "该问题单暂无生成任务",
+        "loadDetailFailed": "加载问题单详情失败",
+        "zentaoUrlUnavailable": "未配置禅道地址或无法生成跳转链接"
       },
       "status": {
         "active": "活跃",
@@ -196,6 +209,8 @@
         "testDocPath": "测试文档路径",
         "gitRepoUrl": "Git 仓库地址",
         "gitBranch": "Git 分支",
+        "gitPullInterval": "Git 拉取频率(分钟)",
+        "gitPullIntervalHint": "0 表示关闭定时拉取；最小建议 5 分钟，最大 1440 分钟。",
         "zentaoProject": "禅道项目集",
         "zentaoBranch": "禅道分支",
         "selectZentaoProject": "选择禅道项目集",

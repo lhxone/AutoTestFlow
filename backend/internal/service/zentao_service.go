@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -49,6 +50,27 @@ type issueSyncResult struct {
 	UpdatedCount int
 	DeletedCount int
 	Details      []model.IssueSyncLogDetail
+}
+
+type zentaoUserRef struct {
+	Account  string `json:"account"`
+	Realname string `json:"realname"`
+	Email    string `json:"email"`
+}
+
+type zentaoBug struct {
+	ID             int            `json:"id"`
+	Branch         int            `json:"branch"`
+	Title          string         `json:"title"`
+	Steps          string         `json:"steps"`
+	Type           string         `json:"type"`
+	Status         string         `json:"status"`
+	Severity       int            `json:"severity"`
+	Pri            int            `json:"pri"`
+	OpenedBy       *zentaoUserRef `json:"openedBy"`
+	AssignedTo     *zentaoUserRef `json:"assignedTo"`
+	ResolvedDate   *string        `json:"resolvedDate"`
+	LastEditedDate *string        `json:"lastEditedDate"`
 }
 
 // StartAsyncSync 异步触发同步，立即返回 syncLogID
@@ -169,7 +191,7 @@ func (s *ZentaoService) syncFromZentao(project *model.Project, fullSync bool, ba
 		if err != nil {
 			return issueSyncResult{}, fmt.Errorf("请求禅道API失败: %w", err)
 		}
-		return s.parseAndSyncBugs(body, project, product, branchFilterID, false)
+		return s.parseAndSyncBugs(body, project, product, branchFilterID, false, baseURL)
 	}
 
 	url := fmt.Sprintf("%s/api.php/v1/products/%d/bugs?limit=500", base, productID)
@@ -178,7 +200,7 @@ func (s *ZentaoService) syncFromZentao(project *model.Project, fullSync bool, ba
 		return issueSyncResult{}, fmt.Errorf("请求禅道API失败: %w", err)
 	}
 
-	return s.parseAndSyncBugs(body, project, product, branchFilterID, true)
+	return s.parseAndSyncBugs(body, project, product, branchFilterID, true, baseURL)
 }
 
 func (s *ZentaoService) getZentaoConnection() (string, string, error) {
@@ -303,28 +325,9 @@ func (s *ZentaoService) resolveBranchFilterID(project *model.Project, product *z
 }
 
 // parseAndSyncBugs 解析禅道 bug 列表并同步到数据库
-func (s *ZentaoService) parseAndSyncBugs(body []byte, project *model.Project, product *zentaoProductDetail, branchFilterID *int, fullSync bool) (issueSyncResult, error) {
+func (s *ZentaoService) parseAndSyncBugs(body []byte, project *model.Project, product *zentaoProductDetail, branchFilterID *int, fullSync bool, baseURL string) (issueSyncResult, error) {
 	var zentaoResp struct {
-		Bugs []struct {
-			ID       int    `json:"id"`
-			Branch   int    `json:"branch"`
-			Title    string `json:"title"`
-			Steps    string `json:"steps"`
-			Type     string `json:"type"`
-			Status   string `json:"status"`
-			Severity int    `json:"severity"`
-			Pri      int    `json:"pri"`
-			OpenedBy *struct {
-				Account  string `json:"account"`
-				Realname string `json:"realname"`
-			} `json:"openedBy"`
-			AssignedTo *struct {
-				Account  string `json:"account"`
-				Realname string `json:"realname"`
-			} `json:"assignedTo"`
-			ResolvedDate   *string `json:"resolvedDate"`
-			LastEditedDate *string `json:"lastEditedDate"`
-		} `json:"bugs"`
+		Bugs []zentaoBug `json:"bugs"`
 	}
 
 	if err := json.Unmarshal(body, &zentaoResp); err != nil {
@@ -332,26 +335,6 @@ func (s *ZentaoService) parseAndSyncBugs(body []byte, project *model.Project, pr
 	}
 
 	zentaoIDs := make([]int, 0, len(zentaoResp.Bugs))
-	filteredBugs := make([]struct {
-		ID       int    `json:"id"`
-		Branch   int    `json:"branch"`
-		Title    string `json:"title"`
-		Steps    string `json:"steps"`
-		Type     string `json:"type"`
-		Status   string `json:"status"`
-		Severity int    `json:"severity"`
-		Pri      int    `json:"pri"`
-		OpenedBy *struct {
-			Account  string `json:"account"`
-			Realname string `json:"realname"`
-		} `json:"openedBy"`
-		AssignedTo *struct {
-			Account  string `json:"account"`
-			Realname string `json:"realname"`
-		} `json:"assignedTo"`
-		ResolvedDate   *string `json:"resolvedDate"`
-		LastEditedDate *string `json:"lastEditedDate"`
-	}, 0, len(zentaoResp.Bugs))
 	incomingIssues := make([]model.Issue, 0, len(zentaoResp.Bugs))
 	now := time.Now()
 
@@ -359,33 +342,40 @@ func (s *ZentaoService) parseAndSyncBugs(body []byte, project *model.Project, pr
 		if branchFilterID != nil && bug.Branch != *branchFilterID {
 			continue
 		}
-		filteredBugs = append(filteredBugs, bug)
 		zentaoIDs = append(zentaoIDs, bug.ID)
 
 		reporter := ""
+		reporterEmail := ""
 		if bug.OpenedBy != nil {
-			reporter = firstNonEmpty(bug.OpenedBy.Account, bug.OpenedBy.Realname)
+			reporter = firstNonEmpty(bug.OpenedBy.Realname, bug.OpenedBy.Account)
+			reporterEmail = bug.OpenedBy.Email
 		}
 		assignee := ""
+		assigneeEmail := ""
 		if bug.AssignedTo != nil {
-			assignee = firstNonEmpty(bug.AssignedTo.Account, bug.AssignedTo.Realname)
+			assignee = firstNonEmpty(bug.AssignedTo.Realname, bug.AssignedTo.Account)
+			assigneeEmail = bug.AssignedTo.Email
 		}
 		issueBranch := strconv.Itoa(bug.Branch)
 		if product != nil && product.Type == "branch" && project.ZentaoBranch != "" {
 			issueBranch = project.ZentaoBranch
 		}
 
+		description := normalizeZentaoRichText(bug.Steps, baseURL)
+
 		issue := &model.Issue{
 			ZentaoID:     bug.ID,
 			ProjectID:    project.ID,
 			Title:        bug.Title,
-			Description:  bug.Steps,
+			Description:  description,
 			IssueType:    "bug",
 			ZentaoStatus: mapZentaoStatus(bug.Status),
 			Severity:     mapSeverity(bug.Severity),
 			Priority:     int8(bug.Pri),
 			Reporter:     reporter,
+			ReporterEmail: reporterEmail,
 			Assignee:     assignee,
+			AssigneeEmail: assigneeEmail,
 			Branch:       issueBranch,
 			SyncedAt:     &now,
 		}
@@ -511,7 +501,9 @@ func buildIssueFieldChanges(existing model.Issue, incoming model.Issue) []model.
 	appendIssueFieldChange(&changes, "severity", "严重程度", existing.Severity, incoming.Severity)
 	appendIssueFieldChange(&changes, "priority", "优先级", strconv.Itoa(int(existing.Priority)), strconv.Itoa(int(incoming.Priority)))
 	appendIssueFieldChange(&changes, "reporter", "提出人", existing.Reporter, incoming.Reporter)
+	appendIssueFieldChange(&changes, "reporter_email", "提出人邮箱", existing.ReporterEmail, incoming.ReporterEmail)
 	appendIssueFieldChange(&changes, "assignee", "负责人", existing.Assignee, incoming.Assignee)
+	appendIssueFieldChange(&changes, "assignee_email", "负责人邮箱", existing.AssigneeEmail, incoming.AssigneeEmail)
 	appendIssueFieldChange(&changes, "branch", "分支", existing.Branch, incoming.Branch)
 	appendIssueFieldChange(&changes, "resolved_at", "解决时间", formatIssueSyncTime(existing.ResolvedAt), formatIssueSyncTime(incoming.ResolvedAt))
 	return changes
@@ -696,4 +688,21 @@ func mapSeverity(level int) string {
 	default:
 		return "minor"
 	}
+}
+
+var zentaoRelativeLinkRegex = regexp.MustCompile(`(?i)(src|href)="(/[^"#?][^"]*)"`)
+
+func normalizeZentaoRichText(raw, baseURL string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+
+	base := strings.TrimRight(baseURL, "/")
+	if base == "" {
+		return raw
+	}
+
+	// 将禅道富文本中的相对链接转为绝对链接，避免前端详情页图片加载失败。
+	return zentaoRelativeLinkRegex.ReplaceAllString(trimmed, `$1="`+base+`$2"`)
 }

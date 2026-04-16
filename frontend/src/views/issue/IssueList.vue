@@ -52,6 +52,9 @@
           <a-tag :color="severityColor(record.severity)">{{ formatSeverity(record.severity) }}</a-tag>
         </template>
         <template v-if="column.key === 'action'">
+          <a-button type="link" size="small" @click="handleViewDetail(record)">
+            {{ $t('issue.list.action.viewDetail') }}
+          </a-button>
           <a-button type="link" size="small" @click="handleGenTest(record)"
                     :disabled="!canGenerateTest(record)">
             {{ $t('issue.list.action.generateTest') }}
@@ -114,6 +117,60 @@
       </a-form>
     </a-modal>
 
+    <!-- Issue detail dialog -->
+    <a-modal
+      v-model:open="detailModal"
+      :title="$t('issue.list.detailModal.title')"
+      :footer="null"
+      :width="920"
+      destroyOnClose
+    >
+      <a-spin :spinning="detailLoading">
+        <template v-if="detailIssue">
+          <div class="issue-detail-toolbar">
+            <a-button
+              type="primary"
+              ghost
+              @click="handleOpenZentao"
+              :disabled="!detailIssue.zentao_url"
+            >
+              {{ $t('issue.list.detailModal.openInZentao') }}
+            </a-button>
+          </div>
+          <a-descriptions :column="2" bordered size="small" style="margin-bottom: 16px">
+            <a-descriptions-item :label="$t('issue.list.columns.id')">{{ detailIssue.zentao_id }}</a-descriptions-item>
+            <a-descriptions-item :label="$t('issue.list.columns.title')">{{ detailIssue.title }}</a-descriptions-item>
+            <a-descriptions-item :label="$t('issue.list.columns.zentaoStatus')">
+              <a-tag>{{ formatZentaoStatus(detailIssue.zentao_status) }}</a-tag>
+            </a-descriptions-item>
+            <a-descriptions-item :label="$t('issue.list.columns.testStatus')">
+              <a-tag :color="testStatusMap[detailIssue.test_status]?.color || 'default'">
+                {{ testStatusMap[detailIssue.test_status]?.label || detailIssue.test_status }}
+              </a-tag>
+            </a-descriptions-item>
+            <a-descriptions-item :label="$t('issue.list.detailModal.assignee')">
+              <div>{{ detailIssue.assignee || '-' }}</div>
+              <div class="issue-detail-email">{{ detailIssue.assignee_email || '-' }}</div>
+            </a-descriptions-item>
+            <a-descriptions-item :label="$t('issue.list.detailModal.reporter')">
+              <div>{{ detailIssue.reporter || '-' }}</div>
+              <div class="issue-detail-email">{{ detailIssue.reporter_email || '-' }}</div>
+            </a-descriptions-item>
+            <a-descriptions-item :label="$t('issue.list.detailModal.branch')">{{ detailIssue.branch || '-' }}</a-descriptions-item>
+            <a-descriptions-item :label="$t('issue.list.detailModal.updatedAt')">{{ detailIssue.synced_at || '-' }}</a-descriptions-item>
+          </a-descriptions>
+
+          <div class="issue-detail-section-title">{{ $t('issue.list.detailModal.description') }}</div>
+          <div
+            v-if="detailIssue.description"
+            class="issue-detail-content"
+            v-html="detailIssue.description"
+          />
+          <a-empty v-else :description="$t('issue.list.detailModal.noDescription')" />
+        </template>
+      </a-spin>
+    </a-modal>
+
   </div>
 </template>
 
@@ -121,7 +178,7 @@
 import { computed, ref, reactive, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { useRouter } from 'vue-router'
-import { getIssueList, syncIssues } from '@/api/issue'
+import { getIssueById, getIssueList, syncIssues } from '@/api/issue'
 import { getProjectList } from '@/api/project'
 import { createTestTask, getTestTaskList } from '@/api/testTask'
 import { getAgentList } from '@/api/agent'
@@ -158,6 +215,10 @@ const agentListLoading = ref(false)
 const issueTaskCache = reactive<Record<number, number>>({})
 const viewingTaskLoading = ref<number | null>(null)
 
+const detailModal = ref(false)
+const detailLoading = ref(false)
+const detailIssue = ref<Issue | null>(null)
+
 const columns = computed(() => [
   { title: t('issue.list.columns.id'), dataIndex: 'zentao_id', key: 'zentao_id', width: 70 },
   { title: t('issue.list.columns.title'), dataIndex: 'title', key: 'title', ellipsis: true },
@@ -167,7 +228,7 @@ const columns = computed(() => [
   { title: t('issue.list.columns.testStatus'), key: 'test_status', width: 110 },
   { title: t('issue.list.columns.assignee'), dataIndex: 'assignee', key: 'assignee', width: 80 },
   { title: t('issue.list.columns.reporter'), dataIndex: 'reporter', key: 'reporter', width: 80 },
-  { title: t('issue.list.columns.action'), key: 'action', width: 160, fixed: 'right' as const },
+  { title: t('issue.list.columns.action'), key: 'action', width: 220, fixed: 'right' as const },
 ])
 
 onMounted(() => {
@@ -338,6 +399,30 @@ async function handleViewTask(record: Issue) {
   }
 }
 
+async function handleViewDetail(record: Issue) {
+  detailModal.value = true
+  detailLoading.value = true
+  detailIssue.value = null
+  try {
+    const res = await getIssueById(record.id)
+    detailIssue.value = res.data.data || null
+  } catch (error) {
+    message.error(t('issue.list.messages.loadDetailFailed'))
+    detailModal.value = false
+  } finally {
+    detailLoading.value = false
+  }
+}
+
+function handleOpenZentao() {
+  const url = detailIssue.value?.zentao_url
+  if (!url) {
+    message.warning(t('issue.list.messages.zentaoUrlUnavailable'))
+    return
+  }
+  window.open(url, '_blank', 'noopener,noreferrer')
+}
+
 function severityColor(s: string) {
   const map: Record<string, string> = { critical: 'red', major: 'orange', normal: 'blue', minor: 'default' }
   return map[s] || 'default'
@@ -392,5 +477,42 @@ function canGenerateTest(issue: Issue) {
 .gen-test-issue-info__title {
   font-size: 14px;
   color: #333;
+}
+
+.issue-detail-section-title {
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.issue-detail-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
+.issue-detail-email {
+  color: #8c8c8c;
+  font-size: 12px;
+}
+
+.issue-detail-content {
+  max-height: 460px;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.issue-detail-content :deep(img) {
+  max-width: 100%;
+  height: auto;
+}
+
+.issue-detail-content :deep(pre),
+.issue-detail-content :deep(code) {
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 </style>

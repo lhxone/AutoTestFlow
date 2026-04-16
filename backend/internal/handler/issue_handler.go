@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"fmt"
 	"strconv"
+	"strings"
 
 	"auto-test-flow/internal/dto"
 	"auto-test-flow/internal/middleware"
@@ -17,12 +19,14 @@ import (
 type IssueHandler struct {
 	zentaoService *service.ZentaoService
 	issueRepo     *repository.IssueRepo
+	settingRepo   *repository.SettingRepo
 }
 
 func NewIssueHandler(logger *zap.Logger) *IssueHandler {
 	return &IssueHandler{
 		zentaoService: service.NewZentaoService(logger),
 		issueRepo:     repository.NewIssueRepo(),
+		settingRepo:   repository.NewSettingRepo(),
 	}
 }
 
@@ -73,7 +77,29 @@ func (h *IssueHandler) GetByID(c *gin.Context) {
 		return
 	}
 
-	pkg.OK(c, issue)
+	resp := struct {
+		model.Issue
+		ZentaoURL string `json:"zentao_url"`
+	}{
+		Issue:     *issue,
+		ZentaoURL: h.buildZentaoIssueURL(issue.ZentaoID),
+	}
+
+	pkg.OK(c, resp)
+}
+
+func (h *IssueHandler) buildZentaoIssueURL(zentaoID int) string {
+	if zentaoID <= 0 {
+		return ""
+	}
+
+	baseURL := strings.TrimSpace(h.settingRepo.GetValue("zentao", "base_url"))
+	if baseURL == "" {
+		return ""
+	}
+
+	base := strings.TrimRight(baseURL, "/")
+	return fmt.Sprintf("%s/bug-view-%d.html", base, zentaoID)
 }
 
 // Sync 手动触发同步（异步）

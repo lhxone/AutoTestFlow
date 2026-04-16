@@ -142,15 +142,28 @@
         "action": "Action"
       },
       "action": {
+        "viewDetail": "View Detail",
         "generateTest": "Generate Test",
         "viewTask": "View Run"
+      },
+      "detailModal": {
+        "title": "Issue Detail",
+        "openInZentao": "Open in Zentao",
+        "assignee": "Assignee",
+        "reporter": "Reporter",
+        "branch": "Branch",
+        "updatedAt": "Last Synced At",
+        "description": "Issue Description",
+        "noDescription": "No description"
       },
       "messages": {
         "projectSetLoadFailed": "Failed to load project sets",
         "branchLoadFailed": "Failed to load project branches",
         "selectProjectWarning": "Please select a project",
         "syncTriggered": "Sync task triggered. Please refresh to see results.",
-        "noTaskFound": "No generation task found for this issue"
+        "noTaskFound": "No generation task found for this issue",
+        "loadDetailFailed": "Failed to load issue detail",
+        "zentaoUrlUnavailable": "Zentao URL is unavailable"
       },
       "status": {
         "active": "Active",
@@ -196,6 +209,8 @@
         "testDocPath": "Test Doc Path",
         "gitRepoUrl": "Git Repository URL",
         "gitBranch": "Git Branch",
+        "gitPullInterval": "Git Pull Interval (minutes)",
+        "gitPullIntervalHint": "0 disables scheduled pulls. Recommended minimum is 5 minutes, maximum is 1440 minutes.",
         "zentaoProject": "Zentao Project",
         "zentaoBranch": "Zentao Branch",
         "selectZentaoProject": "Select a Zentao project",

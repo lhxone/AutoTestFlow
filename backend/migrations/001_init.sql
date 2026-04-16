@@ -99,6 +99,8 @@ CREATE TABLE `project` (
     `extra_files_path`     VARCHAR(512)    NOT NULL DEFAULT '' COMMENT '其他文件路径(JSON数组)',
     `git_repo_url`         VARCHAR(512)    NOT NULL DEFAULT '' COMMENT '测试Git仓库地址',
     `git_branch`           VARCHAR(128)    NOT NULL DEFAULT 'main' COMMENT '测试Git主分支',
+    `git_pull_interval`    INT             NOT NULL DEFAULT 0 COMMENT 'Git 定时拉取频率(分钟)，0=关闭',
+    `git_last_pull_at`     DATETIME        NULL COMMENT 'Git 最近一次拉取时间',
     `zentao_project_id`    INT             NULL COMMENT '禅道项目集ID',
     `zentao_project_name`  VARCHAR(128)    NOT NULL DEFAULT '' COMMENT '禅道项目集名称',
     `zentao_branch`        VARCHAR(128)    NOT NULL DEFAULT '' COMMENT '禅道分支',

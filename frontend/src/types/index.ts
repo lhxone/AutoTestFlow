@@ -112,6 +112,8 @@ export interface Project {
   extra_files_path: string
   git_repo_url: string
   git_branch: string
+  git_pull_interval: number
+  git_last_pull_at: string | null
   zentao_project_id: number | null
   zentao_project_name: string
   zentao_branch: string
@@ -173,6 +175,7 @@ export interface Issue {
   resolved_at: string | null
   synced_at: string | null
   created_at: string
+  zentao_url?: string
 }
 
 // ====== Agent ======

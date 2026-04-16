@@ -31,6 +31,7 @@ func (s *ProjectService) Create(req *dto.CreateProjectRequest) (*model.Project, 
 		ExtraFilesPath:    req.ExtraFilesPath,
 		GitRepoURL:        req.GitRepoURL,
 		GitBranch:         req.GitBranch,
+		GitPullInterval:   req.GitPullInterval,
 		ZentaoProjectID:   req.ZentaoProjectID,
 		ZentaoProjectName: req.ZentaoProjectName,
 		ZentaoBranch:      req.ZentaoBranch,
@@ -83,6 +84,9 @@ func (s *ProjectService) Update(id uint64, req *dto.UpdateProjectRequest) (*mode
 	}
 	if req.GitBranch != "" {
 		p.GitBranch = req.GitBranch
+	}
+	if req.GitPullInterval != nil {
+		p.GitPullInterval = *req.GitPullInterval
 	}
 	if req.ZentaoProjectID != nil {
 		p.ZentaoProjectID = req.ZentaoProjectID

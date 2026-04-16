@@ -1,5 +1,7 @@
 package model
 
+import "time"
+
 // Project 项目
 type Project struct {
 	BaseModel
@@ -12,6 +14,8 @@ type Project struct {
 	ExtraFilesPath    string `gorm:"size:512;default:''" json:"extra_files_path"`
 	GitRepoURL        string `gorm:"size:512;default:''" json:"git_repo_url"`
 	GitBranch         string `gorm:"size:128;default:'main'" json:"git_branch"`
+	GitPullInterval   int    `gorm:"not null;default:0" json:"git_pull_interval"`
+	GitLastPullAt     *time.Time `json:"git_last_pull_at"`
 	ZentaoProjectID   *int   `gorm:"index" json:"zentao_project_id"`
 	ZentaoProjectName string `gorm:"size:128;default:''" json:"zentao_project_name"`
 	ZentaoBranch      string `gorm:"size:128;default:''" json:"zentao_branch"`

@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -56,13 +57,14 @@ type CLIRuntimeConfig struct {
 }
 
 type CLIRuntimeWorkspace struct {
-	RootDir    string `json:"root_dir"`
-	RepoDir    string `json:"repo_dir"`
-	ControlDir string `json:"control_dir"`
-	InputFile  string `json:"input_file"`
-	PromptFile string `json:"prompt_file"`
-	ResultFile string `json:"result_file"`
-	LogFile    string `json:"log_file"`
+	RootDir           string `json:"root_dir"`
+	RepoDir           string `json:"repo_dir"`
+	ControlDir        string `json:"control_dir"`
+	InputFile         string `json:"input_file"`
+	PromptFile        string `json:"prompt_file"`
+	ResultFile        string `json:"result_file"`
+	LogFile           string `json:"log_file"`
+	SharedNodeModules string `json:"shared_node_modules,omitempty"`
 }
 
 type agentRuntimeSettings struct {
@@ -282,20 +284,33 @@ func (r *CLIRuntime) prepareWorkspace(ctx context.Context, taskID uint64, task *
 	repoDir := filepath.Join(rootDir, runtimeCfg.RepoDirName)
 	controlDir := filepath.Join(rootDir, runtimeCfg.ControlDirName)
 	branch := projectDefaultBranch(task.Project)
+	sharedRepoDir := filepath.Join(projectDir, "_shared", "repo_"+sanitizePathComponent(branch))
+
+	// 创建共享node_modules目录
+	sharedNodeModulesDir := filepath.Join(projectDir, "_shared", "node_modules")
+
 	workspace := &CLIRuntimeWorkspace{
-		RootDir:    rootDir,
-		RepoDir:    repoDir,
-		ControlDir: controlDir,
-		InputFile:  filepath.Join(controlDir, runtimeCfg.InputFileName),
-		PromptFile: filepath.Join(controlDir, runtimeCfg.PromptFileName),
-		ResultFile: filepath.Join(controlDir, runtimeCfg.ResultFileName),
-		LogFile:    filepath.Join(controlDir, runtimeCfg.LogFileName),
+		RootDir:           rootDir,
+		RepoDir:           repoDir,
+		ControlDir:        controlDir,
+		InputFile:         filepath.Join(controlDir, runtimeCfg.InputFileName),
+		PromptFile:        filepath.Join(controlDir, runtimeCfg.PromptFileName),
+		ResultFile:        filepath.Join(controlDir, runtimeCfg.ResultFileName),
+		LogFile:           filepath.Join(controlDir, runtimeCfg.LogFileName),
+		SharedNodeModules: sharedNodeModulesDir,
 	}
 
 	if err := os.MkdirAll(controlDir, 0o755); err != nil {
 		return nil, fmt.Errorf("创建 CLI 控制目录失败: %w", err)
 	}
+
+	// 准备仓库（git worktree机制）
 	if err := r.prepareRepository(ctx, taskID, task.Project, branch, projectDir, repoDir); err != nil {
+		return nil, err
+	}
+
+	// 准备node_modules（共享缓存机制）
+	if err := r.prepareNodeModules(ctx, taskID, task, repoDir, sharedNodeModulesDir, sharedRepoDir); err != nil {
 		return nil, err
 	}
 
@@ -351,6 +366,296 @@ func (r *CLIRuntime) prepareRepository(ctx context.Context, taskID uint64, proje
 			"worktree":    repoDir,
 		})
 	return nil
+}
+
+func (r *CLIRuntime) prepareNodeModules(ctx context.Context, taskID uint64, task *model.TestTask, repoDir, sharedNodeModulesDir, sharedRepoDir string) error {
+	packageDirs, err := r.findPackageDirs(repoDir)
+	if err != nil {
+		r.publish(taskID, taskEventTypeLog, "node_modules_skip", model.TaskStatusRunning,
+			"未找到package.json，跳过node_modules处理", nil)
+		return nil
+	}
+
+	r.publish(taskID, taskEventTypeLog, "node_modules_scan_start", model.TaskStatusRunning,
+		"开始扫描仓库内可复用的node_modules", map[string]any{
+			"package_dir_count": len(packageDirs),
+			"repo_dir":          repoDir,
+		})
+
+	for _, nodeModulesBaseDir := range packageDirs {
+		packageJsonPath := filepath.Join(nodeModulesBaseDir, "package.json")
+		nodeModulesDir := filepath.Join(nodeModulesBaseDir, "node_modules")
+		if r.isValidNodeModules(nodeModulesDir) {
+			r.publish(taskID, taskEventTypeLog, "node_modules_existing", model.TaskStatusRunning,
+				"检测到已存在node_modules，直接复用", map[string]any{
+					"node_modules": nodeModulesDir,
+					"package_json": packageJsonPath,
+				})
+			return nil
+		}
+
+		if relPath, relErr := filepath.Rel(repoDir, nodeModulesBaseDir); relErr == nil {
+			if !filepath.IsAbs(relPath) && relPath != ".." && !strings.HasPrefix(relPath, ".."+string(os.PathSeparator)) {
+				sharedRepoBaseDir := filepath.Join(sharedRepoDir, relPath)
+				sharedRepoNodeModulesPath := filepath.Join(sharedRepoBaseDir, "node_modules")
+				if r.isValidNodeModules(sharedRepoNodeModulesPath) {
+					r.publish(taskID, taskEventTypeLog, "node_modules_reuse_shared_repo", model.TaskStatusRunning,
+						"复用共享仓库中的node_modules", map[string]any{
+							"shared_repo_node_modules": sharedRepoNodeModulesPath,
+							"target_node_modules":      nodeModulesDir,
+							"package_json":             packageJsonPath,
+						})
+					if err := r.copyNodeModules(sharedRepoNodeModulesPath, nodeModulesDir); err != nil {
+						return fmt.Errorf("复制共享仓库node_modules失败: %w", err)
+					}
+					return nil
+				}
+			}
+		}
+
+		// 检查共享node_modules是否存在
+		sharedNodeModulesPath := filepath.Join(sharedNodeModulesDir, filepath.Base(nodeModulesBaseDir))
+		if r.isValidNodeModules(sharedNodeModulesPath) {
+			r.publish(taskID, taskEventTypeLog, "node_modules_reuse", model.TaskStatusRunning,
+				"复用共享node_modules", map[string]any{
+					"shared_node_modules": sharedNodeModulesPath,
+					"target_node_modules": nodeModulesDir,
+					"package_json":        packageJsonPath,
+				})
+			// 复制共享node_modules到当前工作区
+			if err := r.copyNodeModules(sharedNodeModulesPath, nodeModulesDir); err != nil {
+				return fmt.Errorf("复制共享node_modules失败: %w", err)
+			}
+			return nil
+		}
+	}
+
+	r.publish(taskID, taskEventTypeLog, "node_modules_skip_no_existing", model.TaskStatusRunning,
+		"未发现已存在node_modules，已按配置跳过自动安装", map[string]any{
+			"package_dir_count": len(packageDirs),
+			"package_dirs":      packageDirs,
+			"shared_repo":       sharedRepoDir,
+			"shared_cache_dir":  sharedNodeModulesDir,
+		})
+
+	return nil
+}
+
+func (r *CLIRuntime) findPackageDirs(repoDir string) ([]string, error) {
+	const maxWalkDepth = 10
+	packageDirs := make([]string, 0, 4)
+	seen := make(map[string]struct{})
+
+	walkErr := filepath.WalkDir(repoDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+
+		relPath, relErr := filepath.Rel(repoDir, path)
+		if relErr != nil {
+			return nil
+		}
+
+		if d.IsDir() {
+			name := d.Name()
+			if name == "node_modules" || name == ".git" || name == ".idea" || name == ".vscode" {
+				return filepath.SkipDir
+			}
+			if relPath != "." {
+				depth := strings.Count(relPath, string(os.PathSeparator)) + 1
+				if depth > maxWalkDepth {
+					return filepath.SkipDir
+				}
+			}
+			return nil
+		}
+
+		if d.Name() == "package.json" {
+			dir := filepath.Dir(path)
+			if _, ok := seen[dir]; !ok {
+				seen[dir] = struct{}{}
+				packageDirs = append(packageDirs, dir)
+			}
+		}
+
+		return nil
+	})
+
+	if walkErr != nil {
+		return nil, fmt.Errorf("查找package.json失败: %w", walkErr)
+	}
+	if len(packageDirs) == 0 {
+		return nil, fmt.Errorf("未找到package.json")
+	}
+
+	return packageDirs, nil
+}
+
+func (r *CLIRuntime) findPackageJson(repoDir string) (string, string, error) {
+	// 从仓库根目录开始查找package.json
+	currentDir := repoDir
+	maxDepth := 10 // 防止无限递归
+
+	for i := 0; i < maxDepth; i++ {
+		packageJsonPath := filepath.Join(currentDir, "package.json")
+		if _, err := os.Stat(packageJsonPath); err == nil {
+			return packageJsonPath, currentDir, nil
+		}
+
+		// 如果已经到达根目录，停止查找
+		if currentDir == filepath.Dir(currentDir) {
+			break
+		}
+
+		// 向上移动到父目录
+		currentDir = filepath.Dir(currentDir)
+	}
+
+	// 仓库内递归查找 package.json，支持深层目录（例如 docs/test/mobileapp/UAT Test/A7）。
+	// 为了避免扫描过慢，跳过依赖目录和隐藏构建目录，并限制最大深度。
+	const maxWalkDepth = 8
+	var firstMatch string
+
+	walkErr := filepath.WalkDir(repoDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+
+		relPath, relErr := filepath.Rel(repoDir, path)
+		if relErr != nil {
+			return nil
+		}
+
+		if d.IsDir() {
+			name := d.Name()
+			if name == "node_modules" || name == ".git" || name == ".idea" || name == ".vscode" {
+				return filepath.SkipDir
+			}
+			if relPath != "." {
+				depth := strings.Count(relPath, string(os.PathSeparator)) + 1
+				if depth > maxWalkDepth {
+					return filepath.SkipDir
+				}
+			}
+			return nil
+		}
+
+		if d.Name() == "package.json" {
+			firstMatch = path
+			return io.EOF // 提前结束遍历
+		}
+
+		return nil
+	})
+
+	if walkErr != nil && !errors.Is(walkErr, io.EOF) {
+		return "", "", fmt.Errorf("递归查找package.json失败: %w", walkErr)
+	}
+
+	if firstMatch != "" {
+		return firstMatch, filepath.Dir(firstMatch), nil
+	}
+
+	return "", "", fmt.Errorf("未找到package.json")
+}
+
+func (r *CLIRuntime) isValidNodeModules(dir string) bool {
+	// node_modules 目录必须存在且为目录
+	info, err := os.Stat(dir)
+	if err != nil || !info.IsDir() {
+		return false
+	}
+
+	// 常见锁文件位于 package 根目录而非 node_modules 目录。
+	packageRoot := filepath.Dir(dir)
+	lockFiles := []string{"package-lock.json", "yarn.lock", "pnpm-lock.yaml"}
+	for _, name := range lockFiles {
+		if _, err := os.Stat(filepath.Join(packageRoot, name)); err == nil {
+			return true
+		}
+	}
+
+	// 无锁文件时，存在已安装包目录也视为有效。
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if strings.HasPrefix(name, ".") {
+			continue
+		}
+		// 作用域目录（如 @types）本身不算具体包，继续向下看。
+		if strings.HasPrefix(name, "@") {
+			scopedEntries, scopedErr := os.ReadDir(filepath.Join(dir, name))
+			if scopedErr != nil {
+				continue
+			}
+			for _, scoped := range scopedEntries {
+				if scoped.IsDir() {
+					return true
+				}
+			}
+			continue
+		}
+		return true
+	}
+
+	return false
+}
+
+func (r *CLIRuntime) copyNodeModules(src, dst string) error {
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return fmt.Errorf("源node_modules不存在: %w", err)
+	}
+	if !srcInfo.IsDir() {
+		return fmt.Errorf("源node_modules不是目录: %s", src)
+	}
+
+	if err := os.RemoveAll(dst); err != nil {
+		return fmt.Errorf("清理目标node_modules失败: %w", err)
+	}
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		return fmt.Errorf("创建目标node_modules目录失败: %w", err)
+	}
+
+	if runtime.GOOS == "windows" {
+		cmd := exec.Command("robocopy", src, dst, "/E", "/NFL", "/NDL", "/NJH", "/NJS", "/NC", "/NS", "/NP")
+		err := cmd.Run()
+		if err == nil {
+			return nil
+		}
+
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			// robocopy 返回码约定：0-7 都表示成功或有差异复制完成，>=8 才是失败
+			if code := exitErr.ExitCode(); code >= 0 && code < 8 {
+				return nil
+			}
+			return fmt.Errorf("robocopy 复制node_modules失败, exit_code=%d", exitErr.ExitCode())
+		}
+		return fmt.Errorf("执行robocopy失败: %w", err)
+	}
+
+	cmd := exec.Command("cp", "-a", filepath.Join(src, "."), dst)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("执行cp复制node_modules失败: %w", err)
+	}
+	return nil
+}
+
+func (r *CLIRuntime) saveToSharedNodeModules(src, dst string) error {
+	// 确保目标目录存在
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return fmt.Errorf("创建共享node_modules目录失败: %w", err)
+	}
+
+	// 复制node_modules到共享目录
+	return r.copyNodeModules(src, dst)
 }
 
 func (r *CLIRuntime) prepareSharedRepository(ctx context.Context, taskID uint64, project *model.Project, branch, sharedRepoDir string) error {
@@ -487,6 +792,8 @@ func (r *CLIRuntime) buildPrompt(workspace *CLIRuntimeWorkspace, task *model.Tes
 - 当前仓库根目录：%s
 - 你可以在仓库内探索现有测试框架、共享工具、fixture 和文档目录。
 - 如已配置 MCP，请使用本地 CLI 的 MCP 能力完成探索，不要假设项目结构。
+- 依赖处理优先复用仓库内已有 node_modules；不要默认执行安装。
+- 若确实需要安装依赖，只能使用 pnpm（pnpm install / pnpm add），禁止 npm install。
 - 必须把实际的测试脚本和测试文档写入仓库目录。
 - 生成的测试脚本必须包含至少一个可执行断言（例如 expect/assert/should 等）。
 - 最终必须把结构化结果写入 JSON 文件：%s
