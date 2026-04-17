@@ -50,3 +50,11 @@ export function getMCPServerList() {
 export function createMCPServer(data: any) {
   return request.post('/mcp-servers', data)
 }
+
+export function updateMCPServer(id: number, data: any) {
+  return request.put(`/mcp-servers/${id}`, data)
+}
+
+export function deleteMCPServer(id: number) {
+  return request.delete(`/mcp-servers/${id}`)
+}

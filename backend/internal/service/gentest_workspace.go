@@ -1,0 +1,632 @@
+package service
+
+import (
+	"bufio"
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"sync"
+	"time"
+
+	"auto-test-flow/internal/config"
+	"auto-test-flow/internal/model"
+	"auto-test-flow/internal/repository"
+
+	"go.uber.org/zap"
+)
+
+type GenTestWorkspaceConfig struct {
+	WorkspaceRoot     string
+	RepoDirName       string
+	ControlDirName    string
+	InputFileName     string
+	PromptFileName    string
+	ResultFileName    string
+	LogFileName       string
+	PreserveWorkspace bool
+}
+
+type GenTestWorkspaceService struct {
+	logger      *zap.Logger
+	settingRepo *repository.SettingRepo
+	eventHub    *TaskEventHub
+}
+
+func NewGenTestWorkspaceService(logger *zap.Logger) *GenTestWorkspaceService {
+	return &GenTestWorkspaceService{
+		logger:      logger,
+		settingRepo: repository.NewSettingRepo(),
+		eventHub:    DefaultTaskEventHub,
+	}
+}
+
+func ResolveGenTestWorkspaceConfig(agent *model.Agent) (GenTestWorkspaceConfig, error) {
+	raw := LoadCLIRuntimeConfig()
+	cfg := GenTestWorkspaceConfig{
+		WorkspaceRoot:     strings.TrimSpace(raw.WorkspaceRoot),
+		RepoDirName:       strings.TrimSpace(raw.RepoDirName),
+		ControlDirName:    strings.TrimSpace(raw.ControlDirName),
+		InputFileName:     strings.TrimSpace(raw.InputFileName),
+		PromptFileName:    strings.TrimSpace(raw.PromptFileName),
+		ResultFileName:    strings.TrimSpace(raw.ResultFileName),
+		LogFileName:       strings.TrimSpace(raw.LogFileName),
+		PreserveWorkspace: raw.PreserveWorkspace,
+	}
+
+	override, err := parseAgentRuntimeSettings(agent)
+	if err != nil {
+		return GenTestWorkspaceConfig{}, err
+	}
+	if override != nil && override.CLIRuntime != nil {
+		cli := override.CLIRuntime
+		if value := strings.TrimSpace(cli.WorkspaceRoot); value != "" {
+			cfg.WorkspaceRoot = value
+		}
+		if value := strings.TrimSpace(cli.RepoDirName); value != "" {
+			cfg.RepoDirName = value
+		}
+		if value := strings.TrimSpace(cli.ControlDirName); value != "" {
+			cfg.ControlDirName = value
+		}
+		if value := strings.TrimSpace(cli.InputFileName); value != "" {
+			cfg.InputFileName = value
+		}
+		if value := strings.TrimSpace(cli.PromptFileName); value != "" {
+			cfg.PromptFileName = value
+		}
+		if value := strings.TrimSpace(cli.ResultFileName); value != "" {
+			cfg.ResultFileName = value
+		}
+		if value := strings.TrimSpace(cli.LogFileName); value != "" {
+			cfg.LogFileName = value
+		}
+		if cli.PreserveWorkspace != nil {
+			cfg.PreserveWorkspace = *cli.PreserveWorkspace
+		}
+	}
+
+	if cfg.WorkspaceRoot == "" {
+		cfg.WorkspaceRoot = filepath.Join(config.Global.Git.WorkDir, "cli-runtime")
+	}
+	if cfg.RepoDirName == "" {
+		cfg.RepoDirName = defaultCLIRepoDirName
+	}
+	if cfg.ControlDirName == "" {
+		cfg.ControlDirName = defaultCLIControlDirName
+	}
+	if cfg.InputFileName == "" {
+		cfg.InputFileName = defaultCLIInputFileName
+	}
+	if cfg.PromptFileName == "" {
+		cfg.PromptFileName = defaultCLIPromptFileName
+	}
+	if cfg.ResultFileName == "" {
+		cfg.ResultFileName = defaultCLIResultFileName
+	}
+	if cfg.LogFileName == "" {
+		cfg.LogFileName = defaultCLILogFileName
+	}
+	return cfg, nil
+}
+
+func (s *GenTestWorkspaceService) Prepare(
+	ctx context.Context,
+	taskID uint64,
+	task *model.TestTask,
+	cfg GenTestWorkspaceConfig,
+) (*CLIRuntimeWorkspace, error) {
+	projectDir := filepath.Join(cfg.WorkspaceRoot, fmt.Sprintf("project_%d", task.ProjectID))
+	rootDir := filepath.Join(projectDir, fmt.Sprintf("task_%d", task.ID))
+	repoDir := filepath.Join(rootDir, cfg.RepoDirName)
+	controlDir := filepath.Join(rootDir, cfg.ControlDirName)
+	branch := projectDefaultBranch(task.Project)
+	sharedRepoDir := filepath.Join(projectDir, "_shared", "repo_"+sanitizePathComponent(branch))
+	sharedNodeModulesDir := filepath.Join(projectDir, "_shared", "node_modules")
+
+	workspace := &CLIRuntimeWorkspace{
+		RootDir:           rootDir,
+		RepoDir:           repoDir,
+		ControlDir:        controlDir,
+		InputFile:         filepath.Join(controlDir, cfg.InputFileName),
+		PromptFile:        filepath.Join(controlDir, cfg.PromptFileName),
+		ResultFile:        filepath.Join(controlDir, cfg.ResultFileName),
+		LogFile:           filepath.Join(controlDir, cfg.LogFileName),
+		SharedNodeModules: sharedNodeModulesDir,
+	}
+
+	if err := os.MkdirAll(controlDir, 0o755); err != nil {
+		return nil, fmt.Errorf("创建运行时控制目录失败: %w", err)
+	}
+	if err := s.prepareRepository(ctx, taskID, task.Project, branch, projectDir, repoDir); err != nil {
+		return nil, err
+	}
+	if err := s.prepareNodeModules(ctx, taskID, repoDir, sharedNodeModulesDir, sharedRepoDir); err != nil {
+		return nil, err
+	}
+	return workspace, nil
+}
+
+func (s *GenTestWorkspaceService) prepareRepository(ctx context.Context, taskID uint64, project *model.Project, branch, projectDir, repoDir string) error {
+	if project == nil {
+		return fmt.Errorf("项目不能为空")
+	}
+	if s.isValidRepo(repoDir) {
+		s.publish(taskID, taskEventTypeLog, "git_skip", model.TaskStatusRunning, "仓库目录已存在且有效，跳过 clone", nil)
+		return nil
+	}
+	_ = os.RemoveAll(repoDir)
+
+	if project.GitRepoURL == "" {
+		if err := os.MkdirAll(repoDir, 0o755); err != nil {
+			return fmt.Errorf("创建本地仓库目录失败: %w", err)
+		}
+		s.publish(taskID, taskEventTypeLog, "git_init", model.TaskStatusRunning, "项目未配置 Git 仓库地址，使用 git init 创建空仓库", nil)
+		_ = s.runGitCommand(ctx, 0, filepath.Dir(repoDir), "init", "--initial-branch", projectDefaultBranch(project), repoDir)
+		return nil
+	}
+
+	sharedRepoDir := filepath.Join(projectDir, "_shared", "repo_"+sanitizePathComponent(branch))
+	if err := s.prepareSharedRepository(ctx, taskID, project, branch, sharedRepoDir); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(repoDir), 0o755); err != nil {
+		return fmt.Errorf("创建任务工作区父目录失败: %w", err)
+	}
+
+	_ = s.runGitCommand(ctx, taskID, sharedRepoDir, "worktree", "prune")
+	ref := "origin/" + branch
+	s.publish(taskID, taskEventTypeLog, "git_worktree_add", model.TaskStatusRunning,
+		fmt.Sprintf("基于共享仓库创建任务工作树 (branch=%s)", branch), map[string]any{
+			"shared_repo": sharedRepoDir,
+			"worktree":    repoDir,
+			"ref":         ref,
+		})
+	if err := s.runGitCommand(ctx, taskID, sharedRepoDir, "worktree", "add", "--force", repoDir, ref); err != nil {
+		return fmt.Errorf("创建任务工作树失败 (branch=%s): %w", branch, err)
+	}
+	s.publish(taskID, taskEventTypeLog, "git_worktree_ready", model.TaskStatusRunning, "任务工作树已就绪", map[string]any{
+		"shared_repo": sharedRepoDir,
+		"worktree":    repoDir,
+	})
+	return nil
+}
+
+func (s *GenTestWorkspaceService) prepareNodeModules(ctx context.Context, taskID uint64, repoDir, sharedNodeModulesDir, sharedRepoDir string) error {
+	packageDirs, err := s.findPackageDirs(repoDir)
+	if err != nil {
+		s.publish(taskID, taskEventTypeLog, "node_modules_skip", model.TaskStatusRunning, "未找到package.json，跳过node_modules处理", nil)
+		return nil
+	}
+
+	s.publish(taskID, taskEventTypeLog, "node_modules_scan_start", model.TaskStatusRunning, "开始扫描仓库内可复用的node_modules", map[string]any{
+		"package_dir_count": len(packageDirs),
+		"repo_dir":          repoDir,
+	})
+
+	for _, nodeModulesBaseDir := range packageDirs {
+		packageJSONPath := filepath.Join(nodeModulesBaseDir, "package.json")
+		nodeModulesDir := filepath.Join(nodeModulesBaseDir, "node_modules")
+		if s.isValidNodeModules(nodeModulesDir) {
+			s.publish(taskID, taskEventTypeLog, "node_modules_existing", model.TaskStatusRunning, "检测到已存在node_modules，直接复用", map[string]any{
+				"node_modules": nodeModulesDir,
+				"package_json": packageJSONPath,
+			})
+			return nil
+		}
+
+		if relPath, relErr := filepath.Rel(repoDir, nodeModulesBaseDir); relErr == nil {
+			if !filepath.IsAbs(relPath) && relPath != ".." && !strings.HasPrefix(relPath, ".."+string(os.PathSeparator)) {
+				sharedRepoBaseDir := filepath.Join(sharedRepoDir, relPath)
+				sharedRepoNodeModulesPath := filepath.Join(sharedRepoBaseDir, "node_modules")
+				if s.isValidNodeModules(sharedRepoNodeModulesPath) {
+					s.publish(taskID, taskEventTypeLog, "node_modules_reuse_shared_repo", model.TaskStatusRunning, "复用共享仓库中的node_modules", map[string]any{
+						"shared_repo_node_modules": sharedRepoNodeModulesPath,
+						"target_node_modules":      nodeModulesDir,
+						"package_json":             packageJSONPath,
+					})
+					if err := s.copyNodeModules(sharedRepoNodeModulesPath, nodeModulesDir); err != nil {
+						return fmt.Errorf("复制共享仓库node_modules失败: %w", err)
+					}
+					return nil
+				}
+			}
+		}
+
+		sharedNodeModulesPath := filepath.Join(sharedNodeModulesDir, filepath.Base(nodeModulesBaseDir))
+		if s.isValidNodeModules(sharedNodeModulesPath) {
+			s.publish(taskID, taskEventTypeLog, "node_modules_reuse", model.TaskStatusRunning, "复用共享node_modules", map[string]any{
+				"shared_node_modules": sharedNodeModulesPath,
+				"target_node_modules": nodeModulesDir,
+				"package_json":        packageJSONPath,
+			})
+			if err := s.copyNodeModules(sharedNodeModulesPath, nodeModulesDir); err != nil {
+				return fmt.Errorf("复制共享node_modules失败: %w", err)
+			}
+			return nil
+		}
+	}
+
+	s.publish(taskID, taskEventTypeLog, "node_modules_skip_no_existing", model.TaskStatusRunning, "未发现已存在node_modules，已按配置跳过自动安装", map[string]any{
+		"package_dir_count": len(packageDirs),
+		"package_dirs":      packageDirs,
+		"shared_repo":       sharedRepoDir,
+		"shared_cache_dir":  sharedNodeModulesDir,
+	})
+	return nil
+}
+
+func (s *GenTestWorkspaceService) findPackageDirs(repoDir string) ([]string, error) {
+	const maxWalkDepth = 10
+	packageDirs := make([]string, 0, 4)
+	seen := make(map[string]struct{})
+
+	walkErr := filepath.WalkDir(repoDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		relPath, relErr := filepath.Rel(repoDir, path)
+		if relErr != nil {
+			return nil
+		}
+		if d.IsDir() {
+			name := d.Name()
+			if name == "node_modules" || name == ".git" || name == ".idea" || name == ".vscode" {
+				return filepath.SkipDir
+			}
+			if relPath != "." {
+				depth := strings.Count(relPath, string(os.PathSeparator)) + 1
+				if depth > maxWalkDepth {
+					return filepath.SkipDir
+				}
+			}
+			return nil
+		}
+		if d.Name() == "package.json" {
+			dir := filepath.Dir(path)
+			if _, ok := seen[dir]; !ok {
+				seen[dir] = struct{}{}
+				packageDirs = append(packageDirs, dir)
+			}
+		}
+		return nil
+	})
+	if walkErr != nil {
+		return nil, fmt.Errorf("查找package.json失败: %w", walkErr)
+	}
+	if len(packageDirs) == 0 {
+		return nil, fmt.Errorf("未找到package.json")
+	}
+	return packageDirs, nil
+}
+
+func (s *GenTestWorkspaceService) isValidNodeModules(dir string) bool {
+	info, err := os.Stat(dir)
+	if err != nil || !info.IsDir() {
+		return false
+	}
+
+	packageRoot := filepath.Dir(dir)
+	lockFiles := []string{"package-lock.json", "yarn.lock", "pnpm-lock.yaml"}
+	for _, name := range lockFiles {
+		if _, err := os.Stat(filepath.Join(packageRoot, name)); err == nil {
+			return true
+		}
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if strings.HasPrefix(name, ".") {
+			continue
+		}
+		if strings.HasPrefix(name, "@") {
+			scopedEntries, scopedErr := os.ReadDir(filepath.Join(dir, name))
+			if scopedErr != nil {
+				continue
+			}
+			for _, scoped := range scopedEntries {
+				if scoped.IsDir() {
+					return true
+				}
+			}
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func (s *GenTestWorkspaceService) copyNodeModules(src, dst string) error {
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return fmt.Errorf("源node_modules不存在: %w", err)
+	}
+	if !srcInfo.IsDir() {
+		return fmt.Errorf("源node_modules不是目录: %s", src)
+	}
+
+	if err := os.RemoveAll(dst); err != nil {
+		return fmt.Errorf("清理目标node_modules失败: %w", err)
+	}
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		return fmt.Errorf("创建目标node_modules目录失败: %w", err)
+	}
+
+	if runtime.GOOS == "windows" {
+		cmd := exec.Command("robocopy", src, dst, "/E", "/NFL", "/NDL", "/NJH", "/NJS", "/NC", "/NS", "/NP")
+		err := cmd.Run()
+		if err == nil {
+			return nil
+		}
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			if code := exitErr.ExitCode(); code >= 0 && code < 8 {
+				return nil
+			}
+			return fmt.Errorf("robocopy 复制node_modules失败, exit_code=%d", exitErr.ExitCode())
+		}
+		return fmt.Errorf("执行robocopy失败: %w", err)
+	}
+
+	cmd := exec.Command("cp", "-a", filepath.Join(src, "."), dst)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("执行cp复制node_modules失败: %w", err)
+	}
+	return nil
+}
+
+func (s *GenTestWorkspaceService) prepareSharedRepository(ctx context.Context, taskID uint64, project *model.Project, branch, sharedRepoDir string) error {
+	if s.isValidRepo(sharedRepoDir) {
+		s.publish(taskID, taskEventTypeLog, "git_fetch", model.TaskStatusRunning, fmt.Sprintf("复用共享仓库并更新分支 (branch=%s)", branch), map[string]any{
+			"shared_repo": sharedRepoDir,
+		})
+		if err := s.runGitCommand(ctx, taskID, sharedRepoDir, "fetch", "--depth", "1", "origin", branch); err != nil {
+			return fmt.Errorf("更新共享仓库失败 (branch=%s): %w", branch, err)
+		}
+		return nil
+	}
+
+	_ = os.RemoveAll(sharedRepoDir)
+	parentDir := filepath.Dir(sharedRepoDir)
+	if err := os.MkdirAll(parentDir, 0o755); err != nil {
+		return fmt.Errorf("创建共享仓库父目录失败: %w", err)
+	}
+
+	repoURL := s.withGitCredentials(project.GitRepoURL)
+	s.publish(taskID, taskEventTypeLog, "git_clone_shared", model.TaskStatusRunning, fmt.Sprintf("首次克隆共享仓库 (branch=%s)：%s", branch, project.GitRepoURL), map[string]any{
+		"shared_repo": sharedRepoDir,
+	})
+	if err := s.runGitCommand(ctx, taskID, parentDir, "clone", "-c", "core.longpaths=true", "--depth", "1", "--single-branch", "-b", branch, repoURL, sharedRepoDir); err != nil {
+		_ = os.RemoveAll(sharedRepoDir)
+		return fmt.Errorf("克隆共享仓库失败 (branch=%s): %w", branch, err)
+	}
+	s.publish(taskID, taskEventTypeLog, "git_clone_shared_done", model.TaskStatusRunning, "共享仓库克隆完成", map[string]any{
+		"shared_repo": sharedRepoDir,
+	})
+	return nil
+}
+
+func (s *GenTestWorkspaceService) isValidRepo(repoDir string) bool {
+	gitDir := filepath.Join(repoDir, ".git")
+	info, err := os.Stat(gitDir)
+	if err != nil || !info.IsDir() {
+		return false
+	}
+
+	headData, err := os.ReadFile(filepath.Join(gitDir, "HEAD"))
+	if err != nil {
+		return false
+	}
+	head := strings.TrimSpace(string(headData))
+	if strings.HasPrefix(head, "ref: ") {
+		refPath := filepath.Join(gitDir, strings.TrimPrefix(head, "ref: "))
+		if _, err := os.Stat(refPath); err != nil {
+			packedRefs := filepath.Join(gitDir, "packed-refs")
+			if _, err := os.Stat(packedRefs); err != nil {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func (s *GenTestWorkspaceService) withGitCredentials(repoURL string) string {
+	if s.settingRepo == nil {
+		return repoURL
+	}
+	token := strings.TrimSpace(s.settingRepo.GetValue("gitlab", "access_token"))
+	baseURL := strings.TrimSpace(s.settingRepo.GetValue("gitlab", "base_url"))
+	if token == "" || baseURL == "" {
+		return repoURL
+	}
+
+	baseParsed, err := parseGitURL(baseURL)
+	if err != nil {
+		return repoURL
+	}
+	repoParsed, err := parseGitURL(repoURL)
+	if err != nil || !strings.EqualFold(baseParsed.Host, repoParsed.Host) {
+		return repoURL
+	}
+	repoParsed.User = modelGitUserPassword(token)
+	return repoParsed.String()
+}
+
+func (s *GenTestWorkspaceService) runGitCommand(ctx context.Context, taskID uint64, dir string, args ...string) error {
+	timeout := 2 * time.Minute
+	if len(args) > 0 && args[0] == "clone" {
+		timeout = 10 * time.Minute
+	}
+	callCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(callCtx, "git", args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GCM_INTERACTIVE=Never", "GIT_ASKPASS=")
+
+	if taskID == 0 || s.eventHub == nil {
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("git %s 失败: %w, output=%s", strings.Join(args, " "), err, strings.TrimSpace(string(output)))
+		}
+		return nil
+	}
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("获取 git stdout 失败: %w", err)
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("获取 git stderr 失败: %w", err)
+	}
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("启动 git %s 失败: %w", args[0], err)
+	}
+
+	var (
+		wg       sync.WaitGroup
+		outputMu sync.Mutex
+		combined strings.Builder
+	)
+	collectAndPublish := func(streamName string, pipe io.ReadCloser) {
+		defer wg.Done()
+		defer pipe.Close()
+		scanner := bufio.NewScanner(pipe)
+		scanner.Buffer(make([]byte, 0, 64*1024), 256*1024)
+		scanner.Split(scanCROrLF)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" {
+				continue
+			}
+			outputMu.Lock()
+			combined.WriteString(line)
+			combined.WriteByte('\n')
+			outputMu.Unlock()
+			s.publish(taskID, taskEventTypeLog, "git_output", model.TaskStatusRunning, line, map[string]any{
+				"stream": streamName,
+			})
+		}
+	}
+
+	wg.Add(2)
+	go collectAndPublish("stdout", stdout)
+	go collectAndPublish("stderr", stderr)
+
+	waitErr := cmd.Wait()
+	wg.Wait()
+	if waitErr != nil {
+		outputMu.Lock()
+		out := combined.String()
+		outputMu.Unlock()
+		return fmt.Errorf("git %s 失败: %w, output=%s", strings.Join(args, " "), waitErr, strings.TrimSpace(out))
+	}
+	return nil
+}
+
+func (s *GenTestWorkspaceService) SyncArtifacts(repoDir string, task *model.TestTask, input *GenTestInput, output *GenTestOutput) error {
+	if output == nil {
+		return fmt.Errorf("运行时输出为空")
+	}
+
+	scriptPath := strings.TrimSpace(output.TestScript.FilePath)
+	if scriptPath == "" && strings.TrimSpace(output.TestScript.FileContent) != "" {
+		scriptPath = fmt.Sprintf("tests/issue-%d.spec.ts", task.IssueID)
+	}
+	if scriptPath != "" {
+		scriptPath = normalizeRepoRelativePath(scriptPath)
+		output.TestScript.FilePath = scriptPath
+		if strings.TrimSpace(output.TestScript.Language) == "" {
+			output.TestScript.Language = normalizeScriptLanguage(output.TestScript.Language, scriptPath)
+		}
+		if strings.TrimSpace(output.TestScript.FileContent) == "" {
+			content, err := readRepoFile(repoDir, scriptPath)
+			if err != nil {
+				var notFound *artifactFileNotFoundError
+				if errors.As(err, &notFound) {
+					s.logger.Warn("测试脚本文件不存在，跳过读取", zap.String("path", notFound.Path), zap.String("relative_path", notFound.RelativePath))
+				} else {
+					return err
+				}
+			} else {
+				output.TestScript.FileContent = content
+			}
+		} else if err := writeRepoFile(repoDir, scriptPath, output.TestScript.FileContent); err != nil {
+			return err
+		}
+	}
+
+	docPath := strings.TrimSpace(output.TestDoc.FilePath)
+	if docPath == "" && strings.TrimSpace(output.TestDoc.Content) != "" {
+		docPath = buildDefaultDocPath(task)
+	}
+	if docPath != "" {
+		docPath = normalizeRepoRelativePath(docPath)
+		output.TestDoc.FilePath = docPath
+		if strings.TrimSpace(output.TestDoc.Content) == "" {
+			content, err := readRepoFile(repoDir, docPath)
+			if err != nil {
+				var notFound *artifactFileNotFoundError
+				if errors.As(err, &notFound) {
+					s.logger.Warn("测试文档文件不存在，跳过读取", zap.String("path", notFound.Path), zap.String("relative_path", notFound.RelativePath))
+				} else {
+					return err
+				}
+			} else {
+				output.TestDoc.Content = content
+			}
+		} else if err := writeRepoFile(repoDir, docPath, output.TestDoc.Content); err != nil {
+			return err
+		}
+		if strings.TrimSpace(output.TestDoc.Title) == "" {
+			output.TestDoc.Title = fmt.Sprintf("测试文档 - %s", input.IssueTitle)
+		}
+	}
+
+	return nil
+}
+
+func (s *GenTestWorkspaceService) WriteControlFiles(workspace *CLIRuntimeWorkspace, input *GenTestInput, prompt string, agent *model.Agent) error {
+	if err := writeJSONFile(workspace.InputFile, input); err != nil {
+		return fmt.Errorf("写入运行时输入文件失败: %w", err)
+	}
+	if err := os.WriteFile(workspace.PromptFile, []byte(prompt), 0o644); err != nil {
+		return fmt.Errorf("写入运行时 Prompt 文件失败: %w", err)
+	}
+	if agent != nil {
+		mcpPath := filepath.Join(workspace.ControlDir, "mcp_servers.json")
+		if err := writeJSONFile(mcpPath, agent.MCPServers); err != nil {
+			return fmt.Errorf("写入 MCP 配置文件失败: %w", err)
+		}
+	}
+	return nil
+}
+
+func (s *GenTestWorkspaceService) WriteResultFile(workspace *CLIRuntimeWorkspace, output *GenTestOutput) error {
+	return writeJSONFile(workspace.ResultFile, output)
+}
+
+func (s *GenTestWorkspaceService) publish(taskID uint64, eventType, stage, status, message string, data map[string]any) {
+	if s.eventHub != nil {
+		s.eventHub.Publish(taskID, TaskEvent{
+			Type:      eventType,
+			Stage:     stage,
+			Status:    status,
+			Message:   message,
+			Data:      data,
+			Timestamp: time.Now(),
+		})
+	}
+}

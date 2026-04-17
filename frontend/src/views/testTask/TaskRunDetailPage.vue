@@ -47,7 +47,7 @@
         </div>
       </a-card>
 
-      <CLIInteractionPanel :taskId="taskId" :taskEvents="taskEvents" />
+      <EinoWorkflowPanel :taskId="taskId" :taskEvents="taskEvents" :taskInfo="taskInfo" />
 
       <template v-if="resultsVisible">
         <a-divider style="margin: 16px 0 8px" />
@@ -220,7 +220,7 @@ import {
 } from '@/api/testTask'
 import type { SelfTestFrameworkReport, SelfTestReport, TestCaseVO, TestScriptVO, TestTask, TestTaskEvent } from '@/types'
 import { translateSelfTestResult, translateTaskStatus, translateTestCaseCategory } from '@/types'
-import CLIInteractionPanel from '@/components/CLIInteractionPanel.vue'
+import EinoWorkflowPanel from '@/components/EinoWorkflowPanel.vue'
 import { useUserStore } from '@/stores/user'
 
 interface LogLine {

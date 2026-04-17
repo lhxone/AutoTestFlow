@@ -67,6 +67,11 @@ type CLIRuntimeWorkspace struct {
 	SharedNodeModules string `json:"shared_node_modules,omitempty"`
 }
 
+type CLIPromptContext struct {
+	MCPCapabilitySummary string   `json:"mcp_capability_summary,omitempty"`
+	ChromeMCPServers     []string `json:"chrome_mcp_servers,omitempty"`
+}
+
 type agentRuntimeSettings struct {
 	RuntimeType string                 `json:"runtime_type"`
 	CLIRuntime  *agentCLIRuntimeConfig `json:"cli_runtime,omitempty"`
@@ -96,7 +101,14 @@ func NewCLIRuntime(logger *zap.Logger) *CLIRuntime {
 	}
 }
 
-func (r *CLIRuntime) Generate(ctx context.Context, task *model.TestTask, input *GenTestInput, workflow *model.Skill, agent *model.Agent) (*GenTestOutput, error) {
+func (r *CLIRuntime) Generate(
+	ctx context.Context,
+	task *model.TestTask,
+	input *GenTestInput,
+	workflow *model.Skill,
+	agent *model.Agent,
+	promptCtx *CLIPromptContext,
+) (*GenTestOutput, error) {
 	if task == nil {
 		return nil, fmt.Errorf("测试任务不能为空")
 	}
@@ -120,7 +132,7 @@ func (r *CLIRuntime) Generate(ctx context.Context, task *model.TestTask, input *
 			"repo_dir":      workspace.RepoDir,
 		})
 
-	if err := r.writeControlFiles(workspace, task, input, workflow, agent); err != nil {
+	if err := r.writeControlFiles(workspace, task, input, workflow, agent, promptCtx); err != nil {
 		return nil, err
 	}
 	r.publish(task.ID, taskEventTypeStage, "control_files_written", model.TaskStatusRunning,
@@ -756,11 +768,18 @@ func modelGitUserPassword(token string) *url.Userinfo {
 	return url.UserPassword("oauth2", token)
 }
 
-func (r *CLIRuntime) writeControlFiles(workspace *CLIRuntimeWorkspace, task *model.TestTask, input *GenTestInput, workflow *model.Skill, agent *model.Agent) error {
+func (r *CLIRuntime) writeControlFiles(
+	workspace *CLIRuntimeWorkspace,
+	task *model.TestTask,
+	input *GenTestInput,
+	workflow *model.Skill,
+	agent *model.Agent,
+	promptCtx *CLIPromptContext,
+) error {
 	if err := writeJSONFile(workspace.InputFile, input); err != nil {
 		return fmt.Errorf("写入 CLI 输入文件失败: %w", err)
 	}
-	prompt := r.buildPrompt(workspace, task, input, workflow, agent)
+	prompt := r.buildPrompt(workspace, task, input, workflow, agent, promptCtx)
 	if err := os.WriteFile(workspace.PromptFile, []byte(prompt), 0o644); err != nil {
 		return fmt.Errorf("写入 CLI Prompt 文件失败: %w", err)
 	}
@@ -773,7 +792,14 @@ func (r *CLIRuntime) writeControlFiles(workspace *CLIRuntimeWorkspace, task *mod
 	return nil
 }
 
-func (r *CLIRuntime) buildPrompt(workspace *CLIRuntimeWorkspace, task *model.TestTask, input *GenTestInput, workflow *model.Skill, agent *model.Agent) string {
+func (r *CLIRuntime) buildPrompt(
+	workspace *CLIRuntimeWorkspace,
+	task *model.TestTask,
+	input *GenTestInput,
+	workflow *model.Skill,
+	agent *model.Agent,
+	promptCtx *CLIPromptContext,
+) string {
 	workflowPrompt := ""
 	if workflow != nil && strings.TrimSpace(workflow.PromptTemplate) != "" {
 		workflowPrompt = "\n## Workflow Prompt Template\n" + strings.TrimSpace(workflow.PromptTemplate) + "\n"
@@ -781,6 +807,20 @@ func (r *CLIRuntime) buildPrompt(workspace *CLIRuntimeWorkspace, task *model.Tes
 	agentNote := ""
 	if agent != nil {
 		agentNote = fmt.Sprintf("\n## Agent\n- name: %s\n- description: %s\n", agent.Name, strings.TrimSpace(agent.Description))
+	}
+	mcpNote := "\n## MCP 预检\n- 当前未发现可用的 MCP 能力摘要，若 CLI 内部已注入 MCP，可自行探测后使用。\n"
+	if promptCtx != nil {
+		parts := make([]string, 0, 4)
+		if len(promptCtx.ChromeMCPServers) > 0 {
+			parts = append(parts, fmt.Sprintf("- 已接入 Chrome MCP Server: %s", strings.Join(promptCtx.ChromeMCPServers, ", ")))
+		}
+		if summary := strings.TrimSpace(promptCtx.MCPCapabilitySummary); summary != "" {
+			parts = append(parts, "- MCP 能力摘要:")
+			parts = append(parts, summary)
+		}
+		if len(parts) > 0 {
+			mcpNote = "\n## MCP 预检\n" + strings.Join(parts, "\n") + "\n"
+		}
 	}
 	return fmt.Sprintf(`# AutoTestFlow CLI Runtime
 
@@ -796,6 +836,9 @@ func (r *CLIRuntime) buildPrompt(workspace *CLIRuntimeWorkspace, task *model.Tes
 - 若确实需要安装依赖，只能使用 pnpm（pnpm install / pnpm add），禁止 npm install。
 - 必须把实际的测试脚本和测试文档写入仓库目录。
 - 生成的测试脚本必须包含至少一个可执行断言（例如 expect/assert/should 等）。
+- 必须严格遵循 gen-test 技能流程推进：先探索项目中的测试脚本/测试文档/共享工具/测试数据，再生成测试文档与脚本，随后执行自测、定位失败、修复并重试。
+- 自测循环最多 10 次；每次循环都要总结失败原因、修复动作和下一次验证点。
+- 如果当前 Agent 可用 Chrome MCP，优先在涉及页面探索、自定义组件定位、DOM 结构确认时使用 Chrome MCP，而不是凭空假设选择器。
 - 最终必须把结构化结果写入 JSON 文件：%s
 
 ## 结果 JSON 格式
@@ -853,7 +896,7 @@ func (r *CLIRuntime) buildPrompt(workspace *CLIRuntimeWorkspace, task *model.Tes
 - issue_id: %d
 - project: %s
 - issue_title: %s
-%s%s`,
+%s%s%s`,
 		workspace.InputFile,
 		workspace.RepoDir,
 		workspace.ResultFile,
@@ -862,6 +905,7 @@ func (r *CLIRuntime) buildPrompt(workspace *CLIRuntimeWorkspace, task *model.Tes
 		task.Project.Name,
 		input.IssueTitle,
 		workflowPrompt,
+		mcpNote,
 		agentNote,
 	)
 }

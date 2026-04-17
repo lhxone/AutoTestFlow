@@ -96,9 +96,7 @@ func (h *AgentHandler) CreateAgent(c *gin.Context) {
 	// 绑定Workflows
 	_ = h.agentRepo.SetSkills(agent.ID, req.WorkflowIDs)
 	// 绑定MCP Servers
-	if len(req.MCPServerIDs) > 0 {
-		_ = h.agentRepo.SetMCPServers(agent.ID, req.MCPServerIDs)
-	}
+	_ = h.agentRepo.SetMCPServers(agent.ID, req.MCPServerIDs)
 
 	agent, _ = h.agentRepo.GetByID(agent.ID)
 	pkg.OK(c, agent)
@@ -187,9 +185,11 @@ func (h *AgentHandler) UpdateAgent(c *gin.Context) {
 		}
 	}
 
-	_ = h.agentRepo.SetSkills(id, req.WorkflowIDs)
-	if len(req.MCPServerIDs) > 0 {
-		_ = h.agentRepo.SetMCPServers(id, req.MCPServerIDs)
+	if req.WorkflowIDs != nil {
+		_ = h.agentRepo.SetSkills(id, *req.WorkflowIDs)
+	}
+	if req.MCPServerIDs != nil {
+		_ = h.agentRepo.SetMCPServers(id, *req.MCPServerIDs)
 	}
 
 	agent, _ = h.agentRepo.GetByID(id)
@@ -385,4 +385,75 @@ func (h *AgentHandler) CreateMCPServer(c *gin.Context) {
 	}
 
 	pkg.OK(c, server)
+}
+
+// UpdateMCPServer 更新 MCP Server
+// PUT /api/mcp-servers/:id
+func (h *AgentHandler) UpdateMCPServer(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		pkg.Fail(c, pkg.CodeParamError, "无效的ID")
+		return
+	}
+
+	server, err := h.mcpServerRepo.GetByID(id)
+	if err != nil {
+		pkg.Fail(c, pkg.CodeNotFound, "MCP Server不存在")
+		return
+	}
+
+	var req dto.UpdateMCPServerRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.CodeParamError, "参数错误: "+err.Error())
+		return
+	}
+
+	if req.Name != "" {
+		server.Name = req.Name
+	}
+	if req.Description != "" {
+		server.Description = req.Description
+	}
+	if req.ServerType != "" {
+		server.ServerType = req.ServerType
+	}
+	if req.Command != "" {
+		server.Command = req.Command
+	}
+	if req.Args != nil {
+		server.Args = model.JSON(*req.Args)
+	}
+	if req.URL != "" {
+		server.URL = req.URL
+	}
+	if req.EnvVars != nil {
+		server.EnvVars = model.JSON(*req.EnvVars)
+	}
+	if req.Status != nil {
+		server.Status = *req.Status
+	}
+
+	if err := h.mcpServerRepo.Update(server); err != nil {
+		pkg.Fail(c, pkg.CodeInternalError, err.Error())
+		return
+	}
+
+	pkg.OK(c, server)
+}
+
+// DeleteMCPServer 删除 MCP Server
+// DELETE /api/mcp-servers/:id
+func (h *AgentHandler) DeleteMCPServer(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		pkg.Fail(c, pkg.CodeParamError, "无效的ID")
+		return
+	}
+
+	if err := h.mcpServerRepo.Delete(id); err != nil {
+		pkg.Fail(c, pkg.CodeInternalError, err.Error())
+		return
+	}
+
+	pkg.OK(c, nil)
 }

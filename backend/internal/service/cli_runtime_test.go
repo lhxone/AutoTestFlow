@@ -127,7 +127,7 @@ func TestCLIRuntimeGenerate_WritesAndReadsArtifacts(t *testing.T) {
 		ExtraFilesPath: "fixtures",
 	}
 
-	output, err := runtime.Generate(context.Background(), task, input, nil, nil)
+	output, err := runtime.Generate(context.Background(), task, input, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("Generate error: %v", err)
 	}
@@ -149,6 +149,36 @@ func TestCLIRuntimeGenerate_WritesAndReadsArtifacts(t *testing.T) {
 	docPath := filepath.Join(output.Workspace.RepoDir, filepath.FromSlash(output.TestDoc.FilePath))
 	if _, err := os.Stat(docPath); err != nil {
 		t.Fatalf("expected doc file in repo: %v", err)
+	}
+}
+
+func TestCLIRuntimeBuildPrompt_IncludesGenTestFlowAndChromeMCP(t *testing.T) {
+	runtime := NewCLIRuntime(zap.NewNop())
+	workspace := &CLIRuntimeWorkspace{
+		RepoDir:    `D:\repo`,
+		InputFile:  `D:\repo\.autotestflow\input.json`,
+		ResultFile: `D:\repo\.autotestflow\result.json`,
+	}
+	task := &model.TestTask{
+		ID:      1,
+		IssueID: 1001,
+		Project: &model.Project{Name: "Demo"},
+	}
+	input := &GenTestInput{IssueTitle: "登录异常"}
+
+	prompt := runtime.buildPrompt(workspace, task, input, nil, &model.Agent{Name: "codex"}, &CLIPromptContext{
+		MCPCapabilitySummary: "MCP Server chrome 可用工具: navigate, click",
+		ChromeMCPServers:     []string{"chrome-devtools"},
+	})
+
+	if !strings.Contains(prompt, "必须严格遵循 gen-test 技能流程推进") {
+		t.Fatalf("expected gen-test workflow instruction in prompt")
+	}
+	if !strings.Contains(prompt, "Chrome MCP") {
+		t.Fatalf("expected chrome mcp note in prompt")
+	}
+	if !strings.Contains(prompt, "MCP Server chrome 可用工具") {
+		t.Fatalf("expected capability summary in prompt")
 	}
 }
 

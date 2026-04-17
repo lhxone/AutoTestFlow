@@ -50,7 +50,7 @@
         </template>
       </div>
 
-      <CLIInteractionPanel v-if="taskId" :taskId="taskId" :taskEvents="taskEvents" ref="interactionPanelRef" />
+      <EinoWorkflowPanel v-if="taskId" :taskId="taskId" :taskEvents="taskEvents" :taskInfo="taskInfo" ref="interactionPanelRef" />
 
       <template v-if="resultsVisible">
         <a-divider style="margin: 16px 0 8px" />
@@ -122,7 +122,7 @@ import {
 } from '@/api/testTask'
 import type { TestTask, TestCaseVO, TestTaskEvent, TestScriptVO } from '@/types'
 import { translateTaskStatus, translateTestCaseCategory, translateSelfTestResult } from '@/types'
-import CLIInteractionPanel from '@/components/CLIInteractionPanel.vue'
+import EinoWorkflowPanel from '@/components/EinoWorkflowPanel.vue'
 import { useUserStore } from '@/stores/user'
 
 interface LogLine {
@@ -193,7 +193,7 @@ const STAGE_ORDER = ['workspace_prepared', 'cli_started', 'artifacts_synced', 'r
 
 const logs = ref<LogLine[]>([])
 const terminalRef = ref<HTMLDivElement | null>(null)
-const interactionPanelRef = ref<InstanceType<typeof CLIInteractionPanel> | null>(null)
+const interactionPanelRef = ref<InstanceType<typeof EinoWorkflowPanel> | null>(null)
 const reachedStage = ref<string>('')
 const connStatus = ref<'idle' | 'connecting' | 'connected' | 'closed' | 'error'>('idle')
 const taskInfo = ref<TestTask | null>(null)

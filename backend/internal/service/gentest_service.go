@@ -20,9 +20,10 @@ type GenTestService struct {
 	agentRepo    *repository.AgentRepo
 	skillRepo    *repository.SkillRepo
 	reviewRepo   *repository.ReviewRepo
-	cliRuntime   *CLIRuntime
+	einoRuntime  *EinoGenTestRuntime
 	eventHub     *TaskEventHub
 	logger       *zap.Logger
+	workflow     *genTestWorkflowEngine
 }
 
 func NewGenTestService(logger *zap.Logger) *GenTestService {
@@ -33,9 +34,10 @@ func NewGenTestService(logger *zap.Logger) *GenTestService {
 		agentRepo:    repository.NewAgentRepo(),
 		skillRepo:    repository.NewSkillRepo(),
 		reviewRepo:   repository.NewReviewRepo(),
-		cliRuntime:   NewCLIRuntime(logger),
+		einoRuntime:  NewEinoGenTestRuntime(logger),
 		eventHub:     DefaultTaskEventHub,
 		logger:       logger,
+		workflow:     newGenTestWorkflowEngine(),
 	}
 }
 
@@ -67,7 +69,16 @@ type GenTestOutput struct {
 	TestDoc    GenTestDoc           `json:"test_doc"`
 	SelfTest   *SelfTestReport      `json:"self_test,omitempty"`
 	Workspace  *CLIRuntimeWorkspace `json:"workspace,omitempty"`
+	Workflow   *GenTestWorkflowMeta `json:"workflow,omitempty"`
 	Summary    string               `json:"summary"`
+}
+
+type GenTestWorkflowMeta struct {
+	Engine               string   `json:"engine"`
+	Name                 string   `json:"name"`
+	ChromeMCPEnabled     bool     `json:"chrome_mcp_enabled"`
+	ChromeMCPServers     []string `json:"chrome_mcp_servers,omitempty"`
+	MCPCapabilitySummary string   `json:"mcp_capability_summary,omitempty"`
 }
 
 type GenTestCase struct {
@@ -119,20 +130,7 @@ func (s *GenTestService) Execute(issueID uint64, agentID *uint64, createdBy *uin
 
 		if err := s.RunTask(ctx, taskID); err != nil {
 			s.logger.Error("异步执行gen-test任务失败", zap.Uint64("task_id", taskID), zap.Error(err))
-			// RunTask 内部的 runGenerateTask 已处理错误状态更新，
-			// 但如果在 runGenerateTask 之前就失败了（如加载 workflow/agent 失败），需要兜底
 			s.markTaskFailedIfStillRunning(taskID, err)
-			return
-		}
-
-		report, reportErr := s.SelfTestTask(ctx, taskID)
-		if reportErr != nil {
-			s.logger.Error("异步自测失败", zap.Uint64("task_id", taskID), zap.Error(reportErr))
-			s.markTaskFailedIfStillRunning(taskID, reportErr)
-			return
-		}
-		if finalizeErr := s.FinalizeTask(taskID, report); finalizeErr != nil {
-			s.logger.Error("异步任务收尾失败", zap.Uint64("task_id", taskID), zap.Error(finalizeErr))
 		}
 	}(task.ID)
 
@@ -147,13 +145,7 @@ func (s *GenTestService) ExecuteSync(ctx context.Context, issueID uint64, agentI
 	}
 
 	if err := s.RunTask(ctx, task.ID); err != nil {
-		return nil, err
-	}
-	report, err := s.SelfTestTask(ctx, task.ID)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.FinalizeTask(task.ID, report); err != nil {
+		s.markTaskFailedIfStillRunning(task.ID, err)
 		return nil, err
 	}
 
@@ -204,7 +196,7 @@ func (s *GenTestService) CreatePendingTask(issueID uint64, agentID *uint64, crea
 	s.publishTaskEvent(task.ID, TaskEvent{
 		Type:    taskEventTypeStatus,
 		Status:  model.TaskStatusRunning,
-		Message: "测试任务已创建，等待 CLI Runtime 执行",
+		Message: "测试任务已创建，等待 Eino Runtime 执行",
 		Data: map[string]any{
 			"issue_id":      task.IssueID,
 			"project_id":    task.ProjectID,
@@ -217,33 +209,18 @@ func (s *GenTestService) CreatePendingTask(issueID uint64, agentID *uint64, crea
 
 // RunTask 运行已创建的测试任务，适用于 Temporal activity 或后台重试
 func (s *GenTestService) RunTask(ctx context.Context, taskID uint64) error {
-	task, err := s.testTaskRepo.GetByID(taskID)
-	if err != nil {
-		return fmt.Errorf("测试任务不存在: %w", err)
-	}
-
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
-	}
-
-	input, err := s.loadInputForTask(task)
+	runner, err := s.workflow.get(s)
 	if err != nil {
 		return err
 	}
 
-	workflow, err := s.loadWorkflow(task.SkillName)
+	_, err = runner.Invoke(ctx, taskID)
 	if err != nil {
+		s.markTaskFailedIfStillRunning(taskID, err)
 		return err
 	}
 
-	agent, err := s.resolveAgentForTask(task)
-	if err != nil {
-		return err
-	}
-
-	return s.runGenerateTask(ctx, task, input, workflow, agent)
+	return nil
 }
 
 func (s *GenTestService) loadInputForTask(task *model.TestTask) (*GenTestInput, error) {
@@ -270,120 +247,33 @@ func (s *GenTestService) loadInputForTask(task *model.TestTask) (*GenTestInput, 
 	return input, nil
 }
 
-// runGenerateTask 调用AI生成测试内容
-func (s *GenTestService) runGenerateTask(ctx context.Context, task *model.TestTask, input *GenTestInput, workflow *model.Skill, agent *model.Agent) error {
+// runGenerateTask 调用 Eino Runtime 生成并持久化测试内容。
+func (s *GenTestService) runGenerateTask(
+	ctx context.Context,
+	task *model.TestTask,
+	input *GenTestInput,
+	workflow *model.Skill,
+	agent *model.Agent,
+	promptCtx *CLIPromptContext,
+) error {
 	s.publishTaskEvent(task.ID, TaskEvent{
 		Type:    taskEventTypeStage,
 		Stage:   "runtime_start",
 		Status:  model.TaskStatusRunning,
-		Message: "开始执行 CLI Runtime",
+		Message: "开始执行 Eino Runtime",
 	})
-	output, err := s.cliRuntime.Generate(ctx, task, input, workflow, agent)
+	output, err := s.einoRuntime.Generate(ctx, task, input, workflow, agent, promptCtx)
 	if err != nil {
-		s.logger.Error("CLI Runtime 生成失败", zap.Uint64("task_id", task.ID), zap.Error(err))
-		now := time.Now()
-		task.Status = model.TaskStatusFailed
-		task.ErrorMessage = err.Error()
-		task.CompletedAt = &now
-		_ = s.testTaskRepo.Update(task)
-		_ = s.issueRepo.ForceUpdateTestStatus(task.IssueID, model.TestStatusError)
-		s.publishTaskEvent(task.ID, TaskEvent{
-			Type:    taskEventTypeError,
-			Stage:   "runtime_failed",
-			Status:  model.TaskStatusFailed,
-			Message: err.Error(),
-		})
 		return err
 	}
 
 	normalizeGeneratedTestCases(output)
-
-	// 保存生成输出
-	outputJSON, _ := json.Marshal(output)
-	now := time.Now()
-	task.AIOutput = model.JSON(outputJSON)
-	task.Status = model.TaskStatusCompleted
-	task.CompletedAt = &now
-	_ = s.testTaskRepo.Update(task)
-	s.publishTaskEvent(task.ID, TaskEvent{
-		Type:    taskEventTypeStatus,
-		Stage:   "runtime_completed",
-		Status:  model.TaskStatusCompleted,
-		Message: "CLI Runtime 已完成测试资产生成",
-	})
-
-	// 保存测试用例
-	for _, tc := range output.TestCases {
-		testCase := &model.TestCase{
-			TaskID:         task.ID,
-			IssueID:        task.IssueID,
-			ProjectID:      task.ProjectID,
-			Title:          tc.Title,
-			Category:       tc.Category,
-			Precondition:   tc.Precondition,
-			Steps:          tc.Steps,
-			Expected:       tc.Expected,
-			SelfTestResult: tc.SelfTestResult,
-			Priority:       int8(tc.Priority),
-			Source:         "ai",
-		}
-		_ = s.testTaskRepo.CreateTestCase(testCase)
-
-		// 创建版本记录
-		_ = s.testTaskRepo.CreateTestCaseVersion(&model.TestCaseVersion{
-			TestCaseID:   testCase.ID,
-			Version:      1,
-			Title:        testCase.Title,
-			Precondition: testCase.Precondition,
-			Steps:        testCase.Steps,
-			Expected:     testCase.Expected,
-			Source:       "ai",
-			ChangeNote:   "AI初始生成",
-		})
+	output.Workflow = buildWorkflowMeta(promptCtx)
+	if err := s.persistGeneratedArtifacts(task, output); err != nil {
+		return err
 	}
 
-	// 保存测试脚本
-	if output.TestScript.FileContent != "" {
-		script := &model.TestScript{
-			TaskID:      task.ID,
-			IssueID:     task.IssueID,
-			ProjectID:   task.ProjectID,
-			FilePath:    output.TestScript.FilePath,
-			FileContent: output.TestScript.FileContent,
-			Language:    output.TestScript.Language,
-			Source:      "ai",
-		}
-		_ = s.testTaskRepo.CreateTestScript(script)
-
-		_ = s.testTaskRepo.CreateTestScriptVersion(&model.TestScriptVersion{
-			TestScriptID: script.ID,
-			Version:      1,
-			FileContent:  script.FileContent,
-			Source:       "ai",
-			ChangeNote:   "AI初始生成",
-		})
-	}
-
-	// 保存测试文档
-	if output.TestDoc.Content != "" {
-		docPath := strings.TrimSpace(output.TestDoc.FilePath)
-		if docPath == "" {
-			docPath = buildDefaultDocPath(task)
-		}
-		doc := &model.TestDocument{
-			TaskID:    task.ID,
-			IssueID:   task.IssueID,
-			ProjectID: task.ProjectID,
-			Title:     output.TestDoc.Title,
-			FilePath:  docPath,
-			Content:   output.TestDoc.Content,
-			DocType:   "test_case_doc",
-			Source:    "ai",
-		}
-		_ = s.testTaskRepo.CreateTestDocument(doc)
-	}
-
-	s.logger.Info("CLI Runtime 生成测试完成，等待自测收尾",
+	s.logger.Info("Eino Runtime 生成测试完成，等待自测收尾",
 		zap.Uint64("task_id", task.ID),
 		zap.String("workflow_name", task.SkillName))
 
@@ -543,6 +433,10 @@ func (s *GenTestService) FinalizeTask(taskID uint64, report *SelfTestReport) err
 		return fmt.Errorf("测试任务不存在: %w", err)
 	}
 
+	if err := s.updateTaskSelfTestReport(task, report); err != nil {
+		return err
+	}
+
 	if report != nil && !report.Passed {
 		now := time.Now()
 		task.Status = model.TaskStatusFailed
@@ -557,6 +451,14 @@ func (s *GenTestService) FinalizeTask(taskID uint64, report *SelfTestReport) err
 			Message: report.Summary,
 		})
 		return nil
+	}
+
+	now := time.Now()
+	task.Status = model.TaskStatusCompleted
+	task.CompletedAt = &now
+	task.ErrorMessage = ""
+	if err := s.testTaskRepo.Update(task); err != nil {
+		return err
 	}
 
 	_ = s.issueRepo.ForceUpdateTestStatus(task.IssueID, model.TestStatusReviewPending)
@@ -785,9 +687,141 @@ func (s *GenTestService) markTaskFailedIfStillRunning(taskID uint64, reason erro
 	})
 }
 
+func (s *GenTestService) persistGeneratedArtifacts(task *model.TestTask, output *GenTestOutput) error {
+	if err := s.testTaskRepo.DeleteArtifactsByTaskID(task.ID); err != nil {
+		return err
+	}
+
+	outputJSON, _ := json.Marshal(output)
+	task.AIOutput = model.JSON(outputJSON)
+	task.ErrorMessage = ""
+	if err := s.testTaskRepo.Update(task); err != nil {
+		return err
+	}
+
+	s.publishTaskEvent(task.ID, TaskEvent{
+		Type:    taskEventTypeStatus,
+		Stage:   "runtime_completed",
+		Status:  model.TaskStatusRunning,
+		Message: "Eino Runtime 已完成测试资产生成",
+	})
+
+	for _, tc := range output.TestCases {
+		testCase := &model.TestCase{
+			TaskID:         task.ID,
+			IssueID:        task.IssueID,
+			ProjectID:      task.ProjectID,
+			Title:          tc.Title,
+			Category:       tc.Category,
+			Precondition:   tc.Precondition,
+			Steps:          tc.Steps,
+			Expected:       tc.Expected,
+			SelfTestResult: tc.SelfTestResult,
+			Priority:       int8(tc.Priority),
+			Source:         "ai",
+		}
+		if err := s.testTaskRepo.CreateTestCase(testCase); err != nil {
+			return err
+		}
+		if err := s.testTaskRepo.CreateTestCaseVersion(&model.TestCaseVersion{
+			TestCaseID:   testCase.ID,
+			Version:      1,
+			Title:        testCase.Title,
+			Precondition: testCase.Precondition,
+			Steps:        testCase.Steps,
+			Expected:     testCase.Expected,
+			Source:       "ai",
+			ChangeNote:   "AI初始生成",
+		}); err != nil {
+			return err
+		}
+	}
+
+	if output.TestScript.FileContent != "" {
+		script := &model.TestScript{
+			TaskID:      task.ID,
+			IssueID:     task.IssueID,
+			ProjectID:   task.ProjectID,
+			FilePath:    output.TestScript.FilePath,
+			FileContent: output.TestScript.FileContent,
+			Language:    output.TestScript.Language,
+			Source:      "ai",
+		}
+		if err := s.testTaskRepo.CreateTestScript(script); err != nil {
+			return err
+		}
+		if err := s.testTaskRepo.CreateTestScriptVersion(&model.TestScriptVersion{
+			TestScriptID: script.ID,
+			Version:      1,
+			FileContent:  script.FileContent,
+			Source:       "ai",
+			ChangeNote:   "AI初始生成",
+		}); err != nil {
+			return err
+		}
+	}
+
+	if output.TestDoc.Content != "" {
+		docPath := strings.TrimSpace(output.TestDoc.FilePath)
+		if docPath == "" {
+			docPath = buildDefaultDocPath(task)
+		}
+		doc := &model.TestDocument{
+			TaskID:    task.ID,
+			IssueID:   task.IssueID,
+			ProjectID: task.ProjectID,
+			Title:     output.TestDoc.Title,
+			FilePath:  docPath,
+			Content:   output.TestDoc.Content,
+			DocType:   "test_case_doc",
+			Source:    "ai",
+		}
+		if err := s.testTaskRepo.CreateTestDocument(doc); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *GenTestService) updateTaskSelfTestReport(task *model.TestTask, report *SelfTestReport) error {
+	if task == nil || report == nil {
+		return nil
+	}
+
+	var output GenTestOutput
+	if len(task.AIOutput) > 0 {
+		_ = json.Unmarshal(task.AIOutput, &output)
+	}
+	output.SelfTest = cloneSelfTestReport(report)
+
+	outputJSON, err := json.Marshal(output)
+	if err != nil {
+		return err
+	}
+	task.AIOutput = model.JSON(outputJSON)
+	return s.testTaskRepo.Update(task)
+}
+
 func (s *GenTestService) publishTaskEvent(taskID uint64, event TaskEvent) {
 	if s.eventHub == nil {
 		return
 	}
 	s.eventHub.Publish(taskID, event)
+}
+
+func buildWorkflowMeta(promptCtx *CLIPromptContext) *GenTestWorkflowMeta {
+	meta := &GenTestWorkflowMeta{
+		Engine: "eino",
+		Name:   "gen-test-eino-workflow",
+	}
+	if promptCtx == nil {
+		return meta
+	}
+	if len(promptCtx.ChromeMCPServers) > 0 {
+		meta.ChromeMCPEnabled = true
+		meta.ChromeMCPServers = append([]string(nil), promptCtx.ChromeMCPServers...)
+	}
+	meta.MCPCapabilitySummary = strings.TrimSpace(promptCtx.MCPCapabilitySummary)
+	return meta
 }

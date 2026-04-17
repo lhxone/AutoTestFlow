@@ -157,7 +157,7 @@ func (s *AgentService) testClaude(baseURL, apiKey string, req *dto.TestAgentConn
 	}
 
 	body, _ := json.Marshal(requestBody)
-	httpReq, err := http.NewRequest("POST", baseURL+"/v1/messages", bytes.NewReader(body))
+	httpReq, err := http.NewRequest("POST", resolveAnthropicMessagesEndpoint(baseURL), bytes.NewReader(body))
 	if err != nil {
 		return "", fmt.Errorf("构建 Anthropic 请求失败: %w", err)
 	}
@@ -196,10 +196,7 @@ func (s *AgentService) testOpenAICompatible(baseURL, apiKey string, req *dto.Tes
 		maxTokens = 32
 	}
 
-	endpoint := baseURL
-	if !strings.HasSuffix(strings.ToLower(endpoint), "/chat/completions") {
-		endpoint += "/chat/completions"
-	}
+	endpoint := resolveOpenAICompatibleEndpoint(baseURL)
 
 	requestBody := map[string]any{
 		"model":       req.ModelName,

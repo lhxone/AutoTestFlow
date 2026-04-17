@@ -140,16 +140,6 @@ func (h *TestTaskHandler) GenerateTest(c *gin.Context) {
 
 		if err := h.genTestService.RunTask(ctx, id); err != nil {
 			h.logger.Error("重新生成测试失败", zap.Uint64("task_id", id), zap.Error(err))
-			return
-		}
-
-		report, reportErr := h.genTestService.SelfTestTask(ctx, id)
-		if reportErr != nil {
-			h.logger.Error("重新生成自测失败", zap.Uint64("task_id", id), zap.Error(reportErr))
-			return
-		}
-		if finalizeErr := h.genTestService.FinalizeTask(id, report); finalizeErr != nil {
-			h.logger.Error("重新生成收尾失败", zap.Uint64("task_id", id), zap.Error(finalizeErr))
 		}
 	}()
 

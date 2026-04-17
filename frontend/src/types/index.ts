@@ -217,8 +217,12 @@ export interface MCPServer {
   description: string
   server_type: string
   command: string
+  args?: any
   url: string
+  env_vars?: any
   status: number
+  created_at?: string
+  updated_at?: string
 }
 
 // ====== Review ======

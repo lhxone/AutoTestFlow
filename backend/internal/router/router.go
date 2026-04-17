@@ -125,6 +125,8 @@ func Setup(logger *zap.Logger) *gin.Engine {
 			{
 				mcpServers.GET("", middleware.RequirePermission("agent:list"), agentH.ListMCPServers)
 				mcpServers.POST("", middleware.RequirePermission("agent:manage"), agentH.CreateMCPServer)
+				mcpServers.PUT("/:id", middleware.RequirePermission("agent:manage"), agentH.UpdateMCPServer)
+				mcpServers.DELETE("/:id", middleware.RequirePermission("agent:manage"), agentH.DeleteMCPServer)
 			}
 
 			// Review审核

@@ -124,6 +124,22 @@
             allow-clear
           />
         </a-form-item>
+        <a-form-item label="MCP Servers">
+          <a-space style="width: 100%">
+            <a-select
+              v-model:value="form.mcp_server_ids"
+              mode="multiple"
+              :options="mcpServerOptions"
+              :loading="loadingMCPServers"
+              placeholder="选择要绑定给 Agent 的 MCP Server"
+              option-filter-prop="label"
+              show-search
+              allow-clear
+              style="min-width: 420px"
+            />
+            <a-button @click="openMCPModal">管理 MCP Server</a-button>
+          </a-space>
+        </a-form-item>
 
         <!-- CLI Runtime Configuration -->
         <a-divider orientation="left">{{ t('agent.list.section.cliRuntime') }}</a-divider>
@@ -179,14 +195,89 @@
         <a-button type="primary" :loading="submitting" @click="handleSubmit">{{ t('common.save') }}</a-button>
       </template>
     </a-modal>
+
+    <a-modal v-model:open="showMCPModal" title="MCP Server 管理" width="920px" :footer="null" destroy-on-close>
+      <a-row :gutter="16">
+        <a-col :span="14">
+          <a-table :dataSource="mcpServerList" :loading="loadingMCPServers" rowKey="id" size="small" :pagination="false" :scroll="{ y: 360 }">
+            <a-table-column title="名称" dataIndex="name" key="name" />
+            <a-table-column title="类型" dataIndex="server_type" key="server_type" width="120" />
+            <a-table-column title="状态" key="status" width="90">
+              <template #default="{ record }">
+                <a-tag :color="record.status === 1 ? 'green' : 'red'">{{ record.status === 1 ? '启用' : '禁用' }}</a-tag>
+              </template>
+            </a-table-column>
+            <a-table-column title="操作" key="action" width="130">
+              <template #default="{ record }">
+                <a-space size="small">
+                  <a-button type="link" size="small" @click="editMCPServer(record)">编辑</a-button>
+                  <a-popconfirm title="确认删除该 MCP Server?" @confirm="removeMCPServer(record.id)">
+                    <a-button type="link" size="small" danger>删除</a-button>
+                  </a-popconfirm>
+                </a-space>
+              </template>
+            </a-table-column>
+          </a-table>
+        </a-col>
+        <a-col :span="10">
+          <a-form layout="vertical">
+            <a-form-item label="名称" required>
+              <a-input v-model:value="mcpForm.name" placeholder="例如: chrome-devtools-mcp" />
+            </a-form-item>
+            <a-form-item label="描述">
+              <a-input v-model:value="mcpForm.description" />
+            </a-form-item>
+            <a-form-item label="类型" required>
+              <a-select v-model:value="mcpForm.server_type">
+                <a-select-option value="stdio">stdio</a-select-option>
+                <a-select-option value="sse">sse</a-select-option>
+                <a-select-option value="streamable_http">streamable_http</a-select-option>
+              </a-select>
+            </a-form-item>
+            <a-form-item label="Command (stdio 用)">
+              <a-input v-model:value="mcpForm.command" placeholder="npx" />
+            </a-form-item>
+            <a-form-item label="Args JSON">
+              <a-textarea v-model:value="mcpForm.args_json" :rows="2" placeholder='["-y", "@modelcontextprotocol/server-filesystem", "."]' />
+            </a-form-item>
+            <a-form-item label="URL (sse/http 用)">
+              <a-input v-model:value="mcpForm.url" placeholder="http://localhost:9222/mcp" />
+            </a-form-item>
+            <a-form-item label="Env JSON">
+              <a-textarea v-model:value="mcpForm.env_vars_json" :rows="2" placeholder='{"HTTP_PROXY":"http://127.0.0.1:7890"}' />
+            </a-form-item>
+            <a-form-item label="状态">
+              <a-switch v-model:checked="mcpForm.enabled" />
+            </a-form-item>
+            <a-space>
+              <a-button @click="resetMCPForm">重置</a-button>
+              <a-button type="primary" :loading="savingMCPServer" @click="saveMCPServer">
+                {{ mcpForm.id ? '更新' : '创建' }}
+              </a-button>
+            </a-space>
+          </a-form>
+        </a-col>
+      </a-row>
+    </a-modal>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, reactive, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
-import { getAgentList, createAgent, updateAgent, deleteAgent, testAgentConnection, getWorkflowList } from '@/api/agent'
-import type { Agent, Workflow } from '@/types'
+import {
+  getAgentList,
+  createAgent,
+  updateAgent,
+  deleteAgent,
+  testAgentConnection,
+  getWorkflowList,
+  getMCPServerList,
+  createMCPServer,
+  updateMCPServer,
+  deleteMCPServer,
+} from '@/api/agent'
+import type { Agent, MCPServer, Workflow } from '@/types'
 import { useI18n } from 'vue-i18n'
 
 type ProviderKey = 'claude' | 'openai' | 'zhipu' | 'custom'
@@ -233,19 +324,25 @@ const MODEL_PRESETS: Record<Exclude<ProviderKey, 'custom'>, ProviderPreset> = {
 const { t } = useI18n()
 const list = ref<Agent[]>([])
 const workflowOptions = ref<{ label: string; value: number }[]>([])
+const mcpServerOptions = ref<{ label: string; value: number }[]>([])
+const mcpServerList = ref<MCPServer[]>([])
 const loading = ref(false)
 const loadingWorkflows = ref(false)
+const loadingMCPServers = ref(false)
 const showModal = ref(false)
+const showMCPModal = ref(false)
 const submitting = ref(false)
 const testingConnection = ref(false)
+const savingMCPServer = ref(false)
 const editing = ref<Agent | null>(null)
+const editingMCPServer = ref<MCPServer | null>(null)
 const testResult = ref<{ success: boolean; message: string; provider?: string; model?: string; base_url?: string; latency_ms?: number; sample_output?: string } | null>(null)
 const query = reactive({ keyword: '' })
 const pagination = reactive({ current: 1, pageSize: 20, total: 0 })
 
 const form = reactive({
   name: '', description: '', model_provider: 'claude' as ProviderKey, model_name: '',
-  api_key_ref: '', base_url: '', max_tokens: 4096, temperature: 0.3, workflow_ids: [] as number[], is_default: false,
+  api_key_ref: '', base_url: '', max_tokens: 4096, temperature: 0.3, workflow_ids: [] as number[], mcp_server_ids: [] as number[], is_default: false,
 })
 
 const cliForm = reactive({
@@ -255,6 +352,18 @@ const cliForm = reactive({
   workspace_root: '',
   preserve_workspace: true,
   env_json: '',
+})
+
+const mcpForm = reactive({
+  id: 0,
+  name: '',
+  description: '',
+  server_type: 'stdio',
+  command: '',
+  args_json: '',
+  url: '',
+  env_vars_json: '',
+  enabled: true,
 })
 
 const providerOptions = computed(() => [
@@ -302,7 +411,7 @@ const columns = computed(() => [
 ])
 
 onMounted(async () => {
-  await Promise.all([fetchData(), fetchWorkflows()])
+  await Promise.all([fetchData(), fetchWorkflows(), fetchMCPServers()])
 })
 
 async function fetchData() {
@@ -328,6 +437,21 @@ async function fetchWorkflows() {
     }))
   } finally {
     loadingWorkflows.value = false
+  }
+}
+
+async function fetchMCPServers() {
+  loadingMCPServers.value = true
+  try {
+    const res = await getMCPServerList()
+    const servers = (res.data.data || []) as MCPServer[]
+    mcpServerList.value = servers
+    mcpServerOptions.value = servers.map((server) => ({
+      label: `${server.name} (${server.server_type})`,
+      value: Number(server.id),
+    }))
+  } finally {
+    loadingMCPServers.value = false
   }
 }
 
@@ -367,6 +491,7 @@ function resetForm() {
     max_tokens: 4096,
     temperature: 0.3,
     workflow_ids: [],
+    mcp_server_ids: [],
     is_default: false,
   })
   resetCliForm()
@@ -461,6 +586,7 @@ function handleEdit(record: Agent) {
     api_key_ref: record.api_key_ref, base_url: record.base_url,
     max_tokens: record.max_tokens, temperature: record.temperature,
     workflow_ids: (record.workflows || []).map((workflow) => Number(workflow.id)),
+    mcp_server_ids: (record.mcp_servers || []).map((server) => Number(server.id)),
     is_default: !!record.is_default,
   })
   loadCliFormFromConfigJSON(record.config_json)
@@ -480,6 +606,7 @@ function buildSubmitPayload() {
     temperature: form.temperature,
     is_default: form.is_default,
     workflow_ids: form.workflow_ids,
+    mcp_server_ids: form.mcp_server_ids,
   }
   const configJSON = buildConfigJSON()
   if (configJSON) {
@@ -547,6 +674,95 @@ async function handleSubmit() {
     }
   } finally {
     submitting.value = false
+  }
+}
+
+function openMCPModal() {
+  showMCPModal.value = true
+  resetMCPForm()
+  fetchMCPServers()
+}
+
+function resetMCPForm() {
+  editingMCPServer.value = null
+  Object.assign(mcpForm, {
+    id: 0,
+    name: '',
+    description: '',
+    server_type: 'stdio',
+    command: '',
+    args_json: '',
+    url: '',
+    env_vars_json: '',
+    enabled: true,
+  })
+}
+
+function editMCPServer(server: MCPServer) {
+  editingMCPServer.value = server
+  Object.assign(mcpForm, {
+    id: server.id,
+    name: server.name || '',
+    description: server.description || '',
+    server_type: server.server_type || 'stdio',
+    command: server.command || '',
+    args_json: server.args ? JSON.stringify(server.args) : '',
+    url: server.url || '',
+    env_vars_json: server.env_vars ? JSON.stringify(server.env_vars) : '',
+    enabled: server.status !== 0,
+  })
+}
+
+async function saveMCPServer() {
+  if (!mcpForm.name.trim()) {
+    message.warning('请填写 MCP Server 名称')
+    return
+  }
+  savingMCPServer.value = true
+  try {
+    const payload: any = {
+      name: mcpForm.name.trim(),
+      description: mcpForm.description.trim(),
+      server_type: mcpForm.server_type,
+      command: mcpForm.command.trim(),
+      url: mcpForm.url.trim(),
+      status: mcpForm.enabled ? 1 : 0,
+    }
+    if (mcpForm.args_json.trim()) {
+      payload.args = JSON.parse(mcpForm.args_json.trim())
+    }
+    if (mcpForm.env_vars_json.trim()) {
+      payload.env_vars = JSON.parse(mcpForm.env_vars_json.trim())
+    }
+
+    if (mcpForm.id > 0) {
+      await updateMCPServer(mcpForm.id, payload)
+      message.success('MCP Server 已更新')
+    } else {
+      await createMCPServer(payload)
+      message.success('MCP Server 已创建')
+    }
+
+    await fetchMCPServers()
+    resetMCPForm()
+  } catch (e: any) {
+    message.error(e?.response?.data?.message || e?.message || '保存 MCP Server 失败')
+  } finally {
+    savingMCPServer.value = false
+  }
+}
+
+async function removeMCPServer(id: number) {
+  try {
+    await deleteMCPServer(id)
+    message.success('MCP Server 已删除')
+    await fetchMCPServers()
+    form.mcp_server_ids = form.mcp_server_ids.filter((item) => item !== id)
+    if (mcpForm.id === id) {
+      resetMCPForm()
+    }
+  } catch (e: any) {
+    message.error(e?.response?.data?.message || e?.message || '删除 MCP Server 失败')
   }
 }
 

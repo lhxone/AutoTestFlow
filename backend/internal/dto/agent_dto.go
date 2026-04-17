@@ -31,8 +31,8 @@ type UpdateAgentRequest struct {
 	Temperature   *float64        `json:"temperature"`
 	Status        *int8           `json:"status"`
 	ConfigJSON    json.RawMessage `json:"config_json"`
-	WorkflowIDs   []uint64        `json:"workflow_ids"`
-	MCPServerIDs  []uint64        `json:"mcp_server_ids"`
+	WorkflowIDs   *[]uint64       `json:"workflow_ids"`
+	MCPServerIDs  *[]uint64       `json:"mcp_server_ids"`
 }
 
 // AgentListQuery Agent列表查询
@@ -95,4 +95,16 @@ type CreateMCPServerRequest struct {
 	Args        json.RawMessage `json:"args"`
 	URL         string          `json:"url"`
 	EnvVars     json.RawMessage `json:"env_vars"`
+}
+
+// UpdateMCPServerRequest 更新 MCP Server 请求
+type UpdateMCPServerRequest struct {
+	Name        string           `json:"name" binding:"omitempty,max=64"`
+	Description string           `json:"description"`
+	ServerType  string           `json:"server_type" binding:"omitempty,oneof=stdio sse streamable_http"`
+	Command     string           `json:"command"`
+	Args        *json.RawMessage `json:"args"`
+	URL         string           `json:"url"`
+	EnvVars     *json.RawMessage `json:"env_vars"`
+	Status      *int8            `json:"status"`
 }

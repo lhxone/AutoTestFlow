@@ -31,6 +31,42 @@ func (r *TestTaskRepo) Update(task *model.TestTask) error {
 	return r.db.Save(task).Error
 }
 
+func (r *TestTaskRepo) DeleteArtifactsByTaskID(taskID uint64) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var caseIDs []uint64
+		if err := tx.Model(&model.TestCase{}).Where("task_id = ?", taskID).Pluck("id", &caseIDs).Error; err != nil {
+			return err
+		}
+		if len(caseIDs) > 0 {
+			if err := tx.Where("test_case_id IN ?", caseIDs).Delete(&model.TestCaseVersion{}).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Where("task_id = ?", taskID).Delete(&model.TestCase{}).Error; err != nil {
+			return err
+		}
+
+		var scriptIDs []uint64
+		if err := tx.Model(&model.TestScript{}).Where("task_id = ?", taskID).Pluck("id", &scriptIDs).Error; err != nil {
+			return err
+		}
+		if len(scriptIDs) > 0 {
+			if err := tx.Where("test_script_id IN ?", scriptIDs).Delete(&model.TestScriptVersion{}).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Where("task_id = ?", taskID).Delete(&model.TestScript{}).Error; err != nil {
+			return err
+		}
+
+		if err := tx.Where("task_id = ?", taskID).Delete(&model.TestDocument{}).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
 func (r *TestTaskRepo) List(projectID, issueID uint64, keyword, status string, offset, limit int) ([]model.TestTask, int64, error) {
 	query := r.db.Model(&model.TestTask{}).
 		Preload("Issue").

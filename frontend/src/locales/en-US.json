@@ -648,6 +648,7 @@
       }
     },
     "category": {
+      "bug_validation": "Bug Validation",
       "main_flow": "Main Flow",
       "exception": "Exception Flow",
       "boundary": "Boundary Condition",
@@ -816,6 +817,107 @@
     "scriptPreview": "Script Content",
     "scriptName": "Script Name",
     "scriptLang": "Language",
+    "workflow": {
+      "title": "Eino Workflow",
+      "pendingInteractions": "Pending interactions: {count}",
+      "defaultSummary": "Nodes are derived from the task event stream. Select a node to inspect detailed output.",
+      "notEnabled": "Not enabled",
+      "events": "events",
+      "nodeOutput": "Node Output",
+      "rawEvents": "Raw Events",
+      "interactions": "Pending Interactions",
+      "noNodeOutput": "No detailed output for this node yet",
+      "noEvents": "No raw events for this node yet",
+      "noInteractions": "No interaction records",
+      "overview": "Overview",
+      "engine": "Engine",
+      "currentNode": "Current node",
+      "taskStatus": "Task status",
+      "retryCount": "Retry count",
+      "chromeMcp": "Chrome MCP",
+      "legend": "Node status",
+      "toolCall": "Tool call",
+      "systemEvent": "System event",
+      "runtimeFailed": "Runtime failed",
+      "runtimeCompleted": "Runtime completed",
+      "noMessage": "No message",
+      "loadInteractionsFailed": "Failed to load interactions",
+      "replyPlaceholder": "Enter a reply...",
+      "replyAction": "Reply",
+      "approve": "Approve",
+      "reject": "Reject",
+      "replyLabel": "Your reply",
+      "replyEmpty": "Please enter a reply",
+      "replySuccess": "Reply sent",
+      "replyFailed": "Failed to reply",
+      "approveSuccess": "Approved",
+      "approveFailed": "Approval failed",
+      "rejectSuccess": "Rejected",
+      "rejectFailed": "Failed to reject",
+      "userRejected": "Rejected by user",
+      "status": {
+        "wait": "Waiting",
+        "running": "Running",
+        "completed": "Completed",
+        "failed": "Failed"
+      },
+      "roles": {
+        "assistant": "Agent output",
+        "tool": "Tool call",
+        "toolResult": "Tool result",
+        "system": "System",
+        "error": "Error"
+      },
+      "interactionTypes": {
+        "aiQuestion": "AI Question",
+        "permissionRequest": "Permission Request"
+      },
+      "interactionStatus": {
+        "pending": "Pending",
+        "approved": "Approved",
+        "rejected": "Rejected",
+        "answered": "Answered"
+      },
+      "nodes": {
+        "prepareContext": "prepare_context",
+        "mcpPreflight": "mcp_preflight",
+        "generateAssets": "generate_assets",
+        "selfTest": "self_test",
+        "finalizeTask": "finalize_task"
+      },
+      "nodeHints": {
+        "prepareContext": "Load task, inputs, workflow and runtime config",
+        "mcpPreflight": "Probe MCP servers and Chrome capabilities",
+        "generateAssets": "Run Eino runtime and generate artifacts",
+        "selfTest": "Validate generated cases, scripts and docs",
+        "finalizeTask": "Persist final status and hand off to Review"
+      },
+      "nodeDescriptions": {
+        "prepareContext": "Maps to the prepare_context node in gentest_workflow.go. It loads task, issue, workflow, agent, and runtime settings, then switches the task into running state.",
+        "mcpPreflight": "Maps to the mcp_preflight node. It inspects MCP servers bound to the agent, detects Chrome MCP availability, and injects the capability summary into later runtime context.",
+        "generateAssets": "Maps to the generate_assets node. The Eino runtime explores the repository, executes tools, writes test documents/scripts, and produces the result file in this stage.",
+        "selfTest": "Maps to the self_test node. It performs structural validation on generated cases, scripts, documents, and recorded self-test output.",
+        "finalizeTask": "Maps to the finalize_task node. It updates the final task status, moves successful tasks to Review, or records failure details when self-test does not pass."
+      },
+      "eventTitles": {
+        "contextLoaded": "Context loaded",
+        "mcpPreflight": "MCP preflight",
+        "runtimeStart": "Runtime starting",
+        "workspacePrepared": "Workspace prepared",
+        "controlFilesWritten": "Control files written",
+        "runtimeStarted": "Runtime started",
+        "agentOutput": "Agent output",
+        "agentTrace": "Agent trace",
+        "artifactsSynced": "Artifacts synced",
+        "resultLoaded": "Result file generated",
+        "selfTestStarted": "Self-test started",
+        "selfTestCompleted": "Self-test completed",
+        "selfTestFailed": "Self-test failed",
+        "reviewPending": "Review pending",
+        "workflowCompleted": "Workflow completed",
+        "runtimeFailed": "Runtime failed"
+      }
+    },
     "stages": {
       "workspace": "Workspace Ready",
       "cliStarted": "AGENT Started",
