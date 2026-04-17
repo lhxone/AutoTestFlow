@@ -1,91 +1,146 @@
-# ============================================================
-# AutoTestFlow CI/CD 配置
-# 用于测试仓库的每日自动化测试执行
-# ============================================================
-
 stages:
   - test
-  - report
+  - build
+  - deploy
 
 variables:
-  PYTHON_VERSION: "3.11"
-  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  GO_VERSION: "1.25.0"
+  NODE_VERSION: "20"
+  DOCKER_VERSION: "27.4.1"
+  DOCKER_TLS_CERTDIR: "/certs"
+  DOCKER_BUILDKIT: "1"
+  GOPROXY: "https://goproxy.cn,direct"
+  GOSUMDB: "sum.golang.google.cn"
+  NPM_CONFIG_REGISTRY: "https://registry.npmmirror.com"
+  ALPINE_MIRROR: "https://mirrors.aliyun.com"
+  DEPLOY_HOST: "192.168.53.106"
+  DEPLOY_PORT: "22"
+  DEPLOY_USER: "root"
+  DEPLOY_BASE_DIR: "/data/AutoTestFlow"
 
 cache:
   paths:
-    - .cache/pip
-    - venv/
+    - frontend/node_modules/
+    - backend/.cache/go-build/
+    - backend/pkg/mod/
 
-# ====== 每日定时测试 ======
-daily-test:
+backend-test:
   stage: test
-  image: python:${PYTHON_VERSION}
+  image: golang:${GO_VERSION}
   rules:
-    # 每日定时触发(需在 GitLab CI/CD > Schedules 中配置)
-    - if: $CI_PIPELINE_SOURCE == "schedule"
-    # 手动触发
-    - if: $CI_PIPELINE_SOURCE == "web"
-    # autotest 分支推送触发
-    - if: $CI_COMMIT_BRANCH =~ /^autotest\//
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH'
+  variables:
+    GOCACHE: "$CI_PROJECT_DIR/backend/.cache/go-build"
+    GOMODCACHE: "$CI_PROJECT_DIR/backend/pkg/mod"
   before_script:
-    - python -m venv venv
-    - source venv/bin/activate
-    - pip install pytest pytest-html pytest-json-report requests
-    - pip install -r requirements.txt 2>/dev/null || true
+    - go env -w GOPROXY="$GOPROXY"
+    - go env -w GOSUMDB="$GOSUMDB"
   script:
-    - echo "开始执行自动化测试..."
-    - >
-      pytest tests/
-      --tb=short
-      --json-report --json-report-file=report.json
-      --html=report.html --self-contained-html
-      -v
-      || true
-    - echo "测试执行完成"
-  after_script:
-    # 回调通知 AutoTestFlow 平台测试结果
-    - |
-      if [ -f report.json ]; then
-        curl -s -X POST "${ATF_CALLBACK_URL}/api/ci/callback" \
-          -H "Content-Type: application/json" \
-          -H "Authorization: Bearer ${ATF_CI_TOKEN}" \
-          -d @report.json || true
-      fi
-  artifacts:
-    when: always
-    paths:
-      - report.html
-      - report.json
-    reports:
-      junit: report.xml
-    expire_in: 30 days
+    - cd backend
+    - go test ./...
 
-# ====== 生成测试报告 ======
-generate-report:
-  stage: report
-  image: python:${PYTHON_VERSION}
-  needs: ["daily-test"]
+frontend-check:
+  stage: test
+  image: node:${NODE_VERSION}
   rules:
-    - if: $CI_PIPELINE_SOURCE == "schedule"
-    - if: $CI_PIPELINE_SOURCE == "web"
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH'
+  before_script:
+    - npm config set registry "$NPM_CONFIG_REGISTRY"
   script:
-    - echo "测试报告已生成，见 artifacts"
+    - cd frontend
+    - npm ci
+    - npm run build
+
+build-backend-image:
+  stage: build
+  image: docker:${DOCKER_VERSION}-cli
+  services:
+    - name: docker:${DOCKER_VERSION}-dind
+  needs:
+    - backend-test
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH'
+  before_script:
+    - sed -i "s|https\?://dl-cdn.alpinelinux.org/alpine|${ALPINE_MIRROR}/alpine|g" /etc/apk/repositories
+    - docker info
+  script:
+    - docker build --pull -t auto-test-flow/backend:${CI_COMMIT_SHORT_SHA} backend
+
+build-frontend-image:
+  stage: build
+  image: docker:${DOCKER_VERSION}-cli
+  services:
+    - name: docker:${DOCKER_VERSION}-dind
+  needs:
+    - frontend-check
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH'
+  before_script:
+    - sed -i "s|https\?://dl-cdn.alpinelinux.org/alpine|${ALPINE_MIRROR}/alpine|g" /etc/apk/repositories
+    - docker info
+  script:
+    - docker build --pull -t auto-test-flow/frontend:${CI_COMMIT_SHORT_SHA} frontend
+
+deploy-production:
+  stage: deploy
+  image: alpine:3.20
+  needs:
+    - build-backend-image
+    - build-frontend-image
+  environment:
+    name: production
+    url: http://192.168.53.106
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+  before_script:
+    - sed -i "s|https\?://dl-cdn.alpinelinux.org/alpine|${ALPINE_MIRROR}/alpine|g" /etc/apk/repositories
+    - apk update
+    - apk add --no-cache openssh-client rsync sshpass
+    - test -n "$DEPLOY_PASSWORD"
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
     - |
-      if [ -f report.json ]; then
-        python -c "
-      import json
-      with open('report.json') as f:
-          data = json.load(f)
-      summary = data.get('summary', {})
-      total = summary.get('total', 0)
-      passed = summary.get('passed', 0)
-      failed = summary.get('failed', 0)
-      print(f'总用例: {total}, 通过: {passed}, 失败: {failed}')
-      if total > 0:
-          print(f'通过率: {passed/total*100:.1f}%')
-      "
+      if [ -n "$DEPLOY_SSH_KNOWN_HOSTS" ]; then
+        printf '%s\n' "$DEPLOY_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+      else
+        ssh-keyscan -p "$DEPLOY_PORT" "$DEPLOY_HOST" > ~/.ssh/known_hosts
       fi
-  artifacts:
-    paths:
-      - report.html
-    expire_in: 30 days
+    - chmod 600 ~/.ssh/known_hosts
+  script:
+    - export APP_DIR="${DEPLOY_BASE_DIR}/app"
+    - export MYSQL_PASSWORD_VALUE="${MYSQL_ROOT_PASSWORD:-root}"
+    - export MYSQL_DATABASE_VALUE="${MYSQL_DATABASE:-auto_test_flow}"
+    - export FRONTEND_PORT_VALUE="${FRONTEND_PORT:-80}"
+    - export BACKEND_PORT_VALUE="${BACKEND_PORT:-8080}"
+    - export MYSQL_PORT_VALUE="${MYSQL_PORT:-3306}"
+    - export JWT_SECRET_VALUE="${ATF_JWT_SECRET:-change-me-jwt-secret-in-production}"
+    - mkdir -p .deploy
+    - |
+      cat > .deploy/.env.deploy <<EOF
+      MYSQL_ROOT_PASSWORD=${MYSQL_PASSWORD_VALUE}
+      MYSQL_DATABASE=${MYSQL_DATABASE_VALUE}
+      FRONTEND_PORT=${FRONTEND_PORT_VALUE}
+      BACKEND_PORT=${BACKEND_PORT_VALUE}
+      MYSQL_PORT=${MYSQL_PORT_VALUE}
+      ATF_MYSQL_DATA_DIR=${DEPLOY_BASE_DIR}/mysql
+      ATF_GIT_WORK_DIR=${DEPLOY_BASE_DIR}/workspace/repos
+      ATF_CLI_WORKSPACE_DIR=${DEPLOY_BASE_DIR}/workspace/cli-runtime
+      ATF_LOG_DIR=${DEPLOY_BASE_DIR}/logs
+      ATF_JWT_SECRET=${JWT_SECRET_VALUE}
+      ATF_ZENTAO_BASE_URL=${ATF_ZENTAO_BASE_URL}
+      ATF_ZENTAO_API_TOKEN=${ATF_ZENTAO_API_TOKEN}
+      ATF_MAIL_HOST=${ATF_MAIL_HOST:-smtp.example.com}
+      ATF_MAIL_PORT=${ATF_MAIL_PORT:-465}
+      ATF_MAIL_USERNAME=${ATF_MAIL_USERNAME}
+      ATF_MAIL_PASSWORD=${ATF_MAIL_PASSWORD}
+      ATF_MAIL_FROM=${ATF_MAIL_FROM:-autotest@example.com}
+      EOF
+    - export SSHPASS="$DEPLOY_PASSWORD"
+    - sshpass -e ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$APP_DIR' '${DEPLOY_BASE_DIR}/mysql' '${DEPLOY_BASE_DIR}/workspace/repos' '${DEPLOY_BASE_DIR}/workspace/cli-runtime' '${DEPLOY_BASE_DIR}/logs'"
+    - sshpass -e rsync -az --delete --exclude '.git/' --exclude '.deploy/' --exclude 'frontend/node_modules/' --exclude 'backend/bin/' --exclude 'logs/' ./ "$DEPLOY_USER@$DEPLOY_HOST:$APP_DIR/"
+    - sshpass -e rsync -az .deploy/.env.deploy "$DEPLOY_USER@$DEPLOY_HOST:$APP_DIR/.env.deploy"
+    - sshpass -e ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "cd '$APP_DIR' && docker compose --env-file .env.deploy -f docker-compose.prod.yml up -d --build --remove-orphans"

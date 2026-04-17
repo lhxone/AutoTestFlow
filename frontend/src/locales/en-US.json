@@ -419,10 +419,10 @@
       },
       "section": {
         "aiModel": "AI Model Configuration",
-        "cliRuntime": "CLI Runtime Configuration"
+        "cliRuntime": "Runtime Workspace Configuration"
       },
       "cliRuntime": {
-        "hint": "Configure the CLI command and parameters for this Agent. Leave empty to use global defaults.",
+        "hint": "Only the Agent-level workspace override still used by the Eino runtime is kept here. Leave it empty to use the global workspace settings.",
         "command": "CLI Command",
         "commandPlaceholder": "e.g. codex or claude",
         "timeout": "Timeout",
@@ -430,8 +430,8 @@
         "argsJsonPlaceholder": "JSON array, supports template variables",
         "envJson": "Environment Variables (JSON Object)",
         "envJsonPlaceholder": "JSON object",
-        "workspaceRoot": "Workspace Root",
-        "workspaceRootPlaceholder": "/tmp/auto-test-flow/repos",
+        "workspaceRoot": "Workspace Root Override",
+        "workspaceRootPlaceholder": "/tmp/auto-test-flow/cli-runtime",
         "preserveWorkspace": "Preserve Workspace"
       }
     }
@@ -881,6 +881,7 @@
       "nodes": {
         "prepareContext": "prepare_context",
         "mcpPreflight": "mcp_preflight",
+        "prepareWorkspace": "prepare_workspace",
         "generateAssets": "generate_assets",
         "selfTest": "self_test",
         "finalizeTask": "finalize_task"
@@ -888,6 +889,7 @@
       "nodeHints": {
         "prepareContext": "Load task, inputs, workflow and runtime config",
         "mcpPreflight": "Probe MCP servers and Chrome capabilities",
+        "prepareWorkspace": "Prepare workspace and write control files",
         "generateAssets": "Run Eino runtime and generate artifacts",
         "selfTest": "Validate generated cases, scripts and docs",
         "finalizeTask": "Persist final status and hand off to Review"
@@ -895,6 +897,7 @@
       "nodeDescriptions": {
         "prepareContext": "Maps to the prepare_context node in gentest_workflow.go. It loads task, issue, workflow, agent, and runtime settings, then switches the task into running state.",
         "mcpPreflight": "Maps to the mcp_preflight node. It inspects MCP servers bound to the agent, detects Chrome MCP availability, and injects the capability summary into later runtime context.",
+        "prepareWorkspace": "Maps to the workspace preparation stage. It creates the working directory, syncs repository context, and writes control files before the Eino runtime starts generating artifacts.",
         "generateAssets": "Maps to the generate_assets node. The Eino runtime explores the repository, executes tools, writes test documents/scripts, and produces the result file in this stage.",
         "selfTest": "Maps to the self_test node. It performs structural validation on generated cases, scripts, documents, and recorded self-test output.",
         "finalizeTask": "Maps to the finalize_task node. It updates the final task status, moves successful tasks to Review, or records failure details when self-test does not pass."

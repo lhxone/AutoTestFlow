@@ -1,3 +1,5 @@
+name: auto-test-flow
+
 services:
   mysql:
     image: mysql:8.0
@@ -10,7 +12,7 @@ services:
     ports:
       - "${MYSQL_PORT:-3306}:3306"
     volumes:
-      - mysql_data:/var/lib/mysql
+      - ${ATF_MYSQL_DATA_DIR:-/data/AutoTestFlow/mysql}:/var/lib/mysql
       - ./backend/migrations:/docker-entrypoint-initdb.d:ro
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     healthcheck:
@@ -28,10 +30,25 @@ services:
     container_name: atf-backend
     environment:
       TZ: Asia/Shanghai
+      ATF_DATABASE_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      ATF_DATABASE_DBNAME: ${MYSQL_DATABASE:-auto_test_flow}
+      ATF_GIT_WORK_DIR: ${ATF_GIT_WORK_DIR:-/data/AutoTestFlow/workspace/repos}
+      ATF_CLI_RUNTIME_WORKSPACE_ROOT: ${ATF_CLI_WORKSPACE_DIR:-/data/AutoTestFlow/workspace/cli-runtime}
+      ATF_JWT_SECRET: ${ATF_JWT_SECRET:-change-me-jwt-secret-in-production}
+      ATF_ZENTAO_BASE_URL: ${ATF_ZENTAO_BASE_URL:-}
+      ATF_ZENTAO_API_TOKEN: ${ATF_ZENTAO_API_TOKEN:-}
+      ATF_MAIL_HOST: ${ATF_MAIL_HOST:-smtp.example.com}
+      ATF_MAIL_PORT: ${ATF_MAIL_PORT:-465}
+      ATF_MAIL_USERNAME: ${ATF_MAIL_USERNAME:-}
+      ATF_MAIL_PASSWORD: ${ATF_MAIL_PASSWORD:-}
+      ATF_MAIL_FROM: ${ATF_MAIL_FROM:-autotest@example.com}
     ports:
       - "${BACKEND_PORT:-8080}:8080"
     volumes:
       - ./backend/configs/config.docker.yaml:/app/configs/config.yaml:ro
+      - ${ATF_GIT_WORK_DIR:-/data/AutoTestFlow/workspace/repos}:${ATF_GIT_WORK_DIR:-/data/AutoTestFlow/workspace/repos}
+      - ${ATF_CLI_WORKSPACE_DIR:-/data/AutoTestFlow/workspace/cli-runtime}:${ATF_CLI_WORKSPACE_DIR:-/data/AutoTestFlow/workspace/cli-runtime}
+      - ${ATF_LOG_DIR:-/data/AutoTestFlow/logs}:${ATF_LOG_DIR:-/data/AutoTestFlow/logs}
     depends_on:
       mysql:
         condition: service_healthy
@@ -54,6 +71,3 @@ services:
       backend:
         condition: service_healthy
     restart: unless-stopped
-
-volumes:
-  mysql_data:

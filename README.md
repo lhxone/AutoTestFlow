@@ -113,6 +113,10 @@ $env:MYSQL_DATABASE='auto_test_flow'
 $env:FRONTEND_PORT='80'
 $env:BACKEND_PORT='8080'
 $env:MYSQL_PORT='3306'
+$env:ATF_MYSQL_DATA_DIR='/data/AutoTestFlow/mysql'
+$env:ATF_GIT_WORK_DIR='/data/AutoTestFlow/workspace/repos'
+$env:ATF_CLI_WORKSPACE_DIR='/data/AutoTestFlow/workspace/cli-runtime'
+$env:ATF_LOG_DIR='/data/AutoTestFlow/logs'
 ```
 
 #### 3) 构建并启动
@@ -120,6 +124,14 @@ $env:MYSQL_PORT='3306'
 ```powershell
 docker compose -f docker-compose.prod.yml up -d --build
 ```
+
+默认持久化目录布局：
+
+- `/data/AutoTestFlow/app`：部署到服务器上的项目工作区
+- `/data/AutoTestFlow/mysql`：MySQL 数据目录
+- `/data/AutoTestFlow/workspace/repos`：Git 工作目录
+- `/data/AutoTestFlow/workspace/cli-runtime`：CLI / Eino 运行时工作区
+- `/data/AutoTestFlow/logs`：后端日志目录
 
 #### 4) 查看状态与日志
 
@@ -152,6 +164,35 @@ docker compose -f docker-compose.prod.yml down -v
 1. **MySQL**：安装 MySQL 8.0，执行 `backend/migrations/` 下所有 SQL 文件
 2. **后端**：编译 `go build -o server cmd/server/main.go`，配置 `config.yaml`，用 systemd 托管
 3. **前端**：`npm run build`，将 `dist/` 部署到 Nginx，配置反向代理
+
+### GitLab CI/CD 自动部署
+
+仓库根目录 `.gitlab-ci.yml` 已调整为 `test -> build -> deploy` 三阶段：
+
+- `backend-test`：执行 `go test ./...`
+- `frontend-check`：执行 `npm ci && npm run build`
+- `build-backend-image` / `build-frontend-image`：验证前后端 Docker 镜像可构建
+- `deploy-production`：通过 SSH 把仓库同步到 `root@192.168.53.106:/data/AutoTestFlow/app`，随后在远端执行 `docker compose up -d --build`
+
+需要在 GitLab CI/CD Variables 中至少配置以下变量：
+
+- `DEPLOY_PASSWORD`：用于登录 `root@192.168.53.106` 的 SSH 密码
+- `MYSQL_ROOT_PASSWORD`：生产环境 MySQL root 密码
+
+建议同时配置以下变量：
+
+- `ATF_JWT_SECRET`
+- `ATF_ZENTAO_BASE_URL`
+- `ATF_ZENTAO_API_TOKEN`
+- `ATF_MAIL_HOST`
+- `ATF_MAIL_PORT`
+- `ATF_MAIL_USERNAME`
+- `ATF_MAIL_PASSWORD`
+- `ATF_MAIL_FROM`
+
+如果你想固定服务器指纹而不是在流水线里动态扫描，可额外配置：
+
+- `DEPLOY_SSH_KNOWN_HOSTS`
 
 ### 部署后配置
 

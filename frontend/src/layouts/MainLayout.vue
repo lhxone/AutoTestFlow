@@ -27,7 +27,7 @@
         </a-menu-item>
         <a-sub-menu key="system" v-if="showSystemMenu">
           <template #title>
-            <SettingOutlined /><span>{{ t('layout.menu.settings') }}</span>
+            <span class="menu-group-title"><SettingOutlined /><span>{{ t('layout.menu.settings') }}</span></span>
           </template>
           <a-menu-item key="/users" v-if="hasPermission('user:list')">
             <span>{{ t('layout.menu.users') }}</span>
@@ -69,7 +69,7 @@
 
       <a-layout-content class="content-shell">
         <div class="content">
-          <router-view />
+          <router-view :key="route.fullPath" />
         </div>
       </a-layout-content>
     </a-layout>
@@ -169,6 +169,17 @@ function handleLogout() {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+}
+.sider-menu :deep(.ant-menu-submenu.ant-menu-submenu-inline > .ant-menu-submenu-title) {
+  padding-left: 24px !important;
+}
+.sider-menu :deep(.ant-menu-sub .ant-menu-item) {
+  padding-left: 48px !important;
+}
+.menu-group-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 .app-main {
   min-width: 0;

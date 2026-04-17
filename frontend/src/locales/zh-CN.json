@@ -419,10 +419,10 @@
       },
       "section": {
         "aiModel": "AI 模型配置",
-        "cliRuntime": "CLI Runtime 配置"
+        "cliRuntime": "运行时工作区配置"
       },
       "cliRuntime": {
-        "hint": "配置此 Agent 使用的 CLI 命令和参数，留空则使用全局默认配置",
+        "hint": "仅保留当前 Eino 运行时仍会读取的 Agent 级工作区覆盖项；留空则使用全局默认工作区配置。",
         "command": "CLI 命令",
         "commandPlaceholder": "如 codex 或 claude",
         "timeout": "超时时间",
@@ -430,8 +430,8 @@
         "argsJsonPlaceholder": "JSON 数组，支持模板变量",
         "envJson": "环境变量 (JSON 对象)",
         "envJsonPlaceholder": "JSON 对象",
-        "workspaceRoot": "工作区根目录",
-        "workspaceRootPlaceholder": "/tmp/auto-test-flow/repos",
+        "workspaceRoot": "工作区根目录覆盖",
+        "workspaceRootPlaceholder": "/tmp/auto-test-flow/cli-runtime",
         "preserveWorkspace": "保留工作区"
       }
     }
@@ -881,6 +881,7 @@
       "nodes": {
         "prepareContext": "prepare_context",
         "mcpPreflight": "mcp_preflight",
+        "prepareWorkspace": "prepare_workspace",
         "generateAssets": "generate_assets",
         "selfTest": "self_test",
         "finalizeTask": "finalize_task"
@@ -888,6 +889,7 @@
       "nodeHints": {
         "prepareContext": "加载任务、输入上下文和运行配置",
         "mcpPreflight": "探测 MCP Server 与 Chrome 能力",
+        "prepareWorkspace": "准备工作目录并写入控制文件",
         "generateAssets": "执行 Eino runtime 生成测试资产",
         "selfTest": "校验用例、脚本和文档完整性",
         "finalizeTask": "更新任务状态并推进 Review"
@@ -895,6 +897,7 @@
       "nodeDescriptions": {
         "prepareContext": "对应 gentest_workflow.go 中的 prepare_context 节点，负责读取任务、问题单、工作流、Agent 与运行时配置，并把任务状态切为 running。",
         "mcpPreflight": "对应 mcp_preflight 节点，负责识别 Agent 绑定的 MCP Server，探测是否有 Chrome MCP，并把能力摘要注入到后续运行上下文。",
+        "prepareWorkspace": "对应工作区准备阶段，负责创建运行工作目录、同步仓库上下文并写入控制文件，为后续 Eino runtime 执行提供稳定输入。",
         "generateAssets": "对应 generate_assets 节点，Eino runtime 会在这里完成仓库探索、Prompt 执行、工具调用、测试文档/脚本写入和结果文件生成。",
         "selfTest": "对应 self_test 节点，基于真实生成结果执行结构检查，验证测试用例、脚本、文档和自测结论是否完整。",
         "finalizeTask": "对应 finalize_task 节点，按自测结果更新任务最终状态，成功时进入 Review，失败时写入失败原因并结束流程。"

@@ -61,46 +61,59 @@
 
             <a-tabs size="small">
               <a-tab-pane key="output" :tab="t('taskRun.workflow.nodeOutput')">
-                <div v-if="selectedNode.outputEntries.length" class="workflow-output-list">
-                  <div
-                    v-for="entry in selectedNode.outputEntries"
-                    :key="entry.id"
-                    class="workflow-output"
-                    :class="`workflow-output--${entry.role}`"
-                  >
-                    <div class="workflow-output__header">
-                      <a-space :size="8" wrap>
-                        <a-tag size="small" :color="entryRoleColor(entry.role)">
-                          {{ entry.title }}
-                        </a-tag>
-                        <span class="workflow-output__time">{{ formatTime(entry.timestamp) }}</span>
-                      </a-space>
-                    </div>
-                    <div class="workflow-output__text">{{ entry.text }}</div>
-                    <pre v-if="entry.detail" class="workflow-output__detail">{{ entry.detail }}</pre>
+                <div v-if="selectedNodeOutputGroups.length" class="workflow-output-scroll">
+                  <div class="workflow-output-list">
+                    <section
+                      v-for="group in selectedNodeOutputGroups"
+                      :key="group.id"
+                      class="workflow-output-group"
+                    >
+                      <div v-if="group.title" class="workflow-output-group__header">
+                        <a-space :size="8" wrap>
+                          <a-tag color="purple">{{ group.title }}</a-tag>
+                          <span v-if="group.timestamp" class="workflow-output__time">{{ formatTime(group.timestamp) }}</span>
+                        </a-space>
+                      </div>
+                      <div
+                        v-for="entry in group.entries"
+                        :key="entry.id"
+                        class="workflow-output"
+                        :class="`workflow-output--${entry.role}`"
+                      >
+                        <details v-if="isCollapsibleOutput(entry)" class="workflow-output__collapse">
+                          <summary class="workflow-output__summary">
+                            <div class="workflow-output__header">
+                              <a-space :size="8" wrap>
+                                <a-tag size="small" :color="entryRoleColor(entry.role)">
+                                  {{ entry.title }}
+                                </a-tag>
+                                <span class="workflow-output__time">{{ formatTime(entry.timestamp) }}</span>
+                              </a-space>
+                            </div>
+                            <div class="workflow-output__preview">{{ outputPreview(entry) }}</div>
+                          </summary>
+                          <div class="workflow-output__body">
+                            <div class="workflow-output__text">{{ entry.text }}</div>
+                            <pre v-if="entry.detail" class="workflow-output__detail">{{ entry.detail }}</pre>
+                          </div>
+                        </details>
+                        <template v-else>
+                          <div class="workflow-output__header">
+                            <a-space :size="8" wrap>
+                              <a-tag size="small" :color="entryRoleColor(entry.role)">
+                                {{ entry.title }}
+                              </a-tag>
+                              <span class="workflow-output__time">{{ formatTime(entry.timestamp) }}</span>
+                            </a-space>
+                          </div>
+                          <div class="workflow-output__text">{{ entry.text }}</div>
+                          <pre v-if="entry.detail" class="workflow-output__detail">{{ entry.detail }}</pre>
+                        </template>
+                      </div>
+                    </section>
                   </div>
                 </div>
                 <a-empty v-else :description="t('taskRun.workflow.noNodeOutput')" />
-              </a-tab-pane>
-
-              <a-tab-pane key="events" :tab="t('taskRun.workflow.rawEvents')">
-                <a-timeline v-if="selectedNode.events.length">
-                  <a-timeline-item
-                    v-for="event in selectedNode.events"
-                    :key="`${event.id}-${event.timestamp}-${event.stage}`"
-                    :color="eventTimelineColor(event)"
-                  >
-                    <div class="workflow-event">
-                      <div class="workflow-event__head">
-                        <span class="workflow-event__stage">{{ eventTitle(event) }}</span>
-                        <span class="workflow-event__time">{{ formatTime(event.timestamp) }}</span>
-                      </div>
-                      <div v-if="event.message" class="workflow-event__message">{{ event.message }}</div>
-                      <pre v-if="hasEventData(event)" class="workflow-event__data">{{ formatJSON(event.data) }}</pre>
-                    </div>
-                  </a-timeline-item>
-                </a-timeline>
-                <a-empty v-else :description="t('taskRun.workflow.noEvents')" />
               </a-tab-pane>
 
               <a-tab-pane key="interactions" :tab="t('taskRun.workflow.interactions')">
@@ -225,7 +238,7 @@ import {
 } from '@/api/testTask'
 import type { TestTask, TestTaskEvent } from '@/types'
 
-type WorkflowNodeKey = 'prepare_context' | 'mcp_preflight' | 'generate_assets' | 'self_test' | 'finalize_task'
+type WorkflowNodeKey = 'prepare_context' | 'mcp_preflight' | 'prepare_workspace' | 'generate_assets' | 'self_test' | 'finalize_task'
 type WorkflowNodeStatus = 'wait' | 'running' | 'completed' | 'failed'
 type OutputRole = 'assistant' | 'tool' | 'system' | 'event' | 'error'
 
@@ -243,6 +256,13 @@ interface OutputEntry {
   text: string
   detail?: string
   timestamp: string
+}
+
+interface OutputGroup {
+  id: string
+  title?: string
+  timestamp?: string
+  entries: OutputEntry[]
 }
 
 interface WorkflowNodeViewModel extends WorkflowNodeDefinition {
@@ -268,6 +288,12 @@ const NODE_DEFINITIONS: WorkflowNodeDefinition[] = [
     descriptionKey: 'taskRun.workflow.nodeDescriptions.mcpPreflight',
   },
   {
+    key: 'prepare_workspace',
+    labelKey: 'taskRun.workflow.nodes.prepareWorkspace',
+    shortDescriptionKey: 'taskRun.workflow.nodeHints.prepareWorkspace',
+    descriptionKey: 'taskRun.workflow.nodeDescriptions.prepareWorkspace',
+  },
+  {
     key: 'generate_assets',
     labelKey: 'taskRun.workflow.nodes.generateAssets',
     shortDescriptionKey: 'taskRun.workflow.nodeHints.generateAssets',
@@ -290,8 +316,6 @@ const NODE_DEFINITIONS: WorkflowNodeDefinition[] = [
 const GENERATE_ASSET_STAGES = new Set([
   'generate_assets',
   'runtime_start',
-  'workspace_prepared',
-  'control_files_written',
   'mcp_runtime',
   'runtime_started',
   'cli_output',
@@ -300,6 +324,18 @@ const GENERATE_ASSET_STAGES = new Set([
   'result_loaded',
   'runtime_completed',
   'runtime_failed',
+])
+
+const WORKSPACE_PREPARE_STAGES = new Set([
+  'workspace_prepared',
+  'control_files_written',
+  'git_skip',
+  'git_init',
+  'git_worktree_add',
+  'git_fetch',
+  'git_pull',
+  'npm_install',
+  'npm_install_skip',
 ])
 
 const legendStatuses: WorkflowNodeStatus[] = ['wait', 'running', 'completed', 'failed']
@@ -360,18 +396,25 @@ const chromeMCPText = computed(() => {
   return t('taskRun.workflow.notEnabled')
 })
 
-const workflowNodes = computed<WorkflowNodeViewModel[]>(() => NODE_DEFINITIONS.map((definition) => {
-  const events = sourceEvents.value.filter((event) => belongsToNode(event, definition.key))
-  return {
-    ...definition,
-    label: t(definition.labelKey),
-    shortDescription: t(definition.shortDescriptionKey),
-    description: t(definition.descriptionKey),
-    status: resolveNodeStatus(definition.key, events, props.taskInfo?.status || ''),
-    events,
-    outputEntries: buildOutputEntries(events),
-  }
-}))
+const workflowNodes = computed<WorkflowNodeViewModel[]>(() => {
+  const resolvedStatuses = new Map<WorkflowNodeKey, WorkflowNodeStatus>()
+
+  return NODE_DEFINITIONS.map((definition) => {
+    const events = sourceEvents.value.filter((event) => belongsToNode(event, definition.key))
+    const status = resolveNodeStatus(definition.key, events, props.taskInfo?.status || '', resolvedStatuses)
+    resolvedStatuses.set(definition.key, status)
+
+    return {
+      ...definition,
+      label: t(definition.labelKey),
+      shortDescription: t(definition.shortDescriptionKey),
+      description: t(definition.descriptionKey),
+      status,
+      events,
+      outputEntries: buildOutputEntries(events),
+    }
+  })
+})
 
 const completedNodeCount = computed(() => workflowNodes.value.filter((node) => node.status === 'completed').length)
 
@@ -386,6 +429,11 @@ const preferredNodeKey = computed<WorkflowNodeKey>(() => {
 })
 
 const selectedNode = computed(() => workflowNodes.value.find((node) => node.key === selectedNodeKey.value) || workflowNodes.value[0])
+
+const selectedNodeOutputGroups = computed<OutputGroup[]>(() => {
+  if (!selectedNode.value) return []
+  return groupOutputEntriesByTurn(selectedNode.value.outputEntries)
+})
 
 onMounted(() => {
   loadPanelData()
@@ -465,6 +513,8 @@ function belongsToNode(event: TestTaskEvent, nodeKey: WorkflowNodeKey): boolean 
       return stage === 'context_loaded'
     case 'mcp_preflight':
       return stage === 'mcp_preflight'
+    case 'prepare_workspace':
+      return WORKSPACE_PREPARE_STAGES.has(stage)
     case 'generate_assets':
       return GENERATE_ASSET_STAGES.has(stage)
     case 'self_test':
@@ -476,7 +526,12 @@ function belongsToNode(event: TestTaskEvent, nodeKey: WorkflowNodeKey): boolean 
   }
 }
 
-function resolveNodeStatus(nodeKey: WorkflowNodeKey, events: TestTaskEvent[], taskStatus: string): WorkflowNodeStatus {
+function resolveNodeStatus(
+  nodeKey: WorkflowNodeKey,
+  events: TestTaskEvent[],
+  taskStatus: string,
+  resolvedStatuses: Map<WorkflowNodeKey, WorkflowNodeStatus>,
+): WorkflowNodeStatus {
   const stages = events.map((event) => String(event.stage || ''))
   const hasFailedEvent = events.some((event) => event.status === 'failed' || event.type === 'error')
 
@@ -492,6 +547,14 @@ function resolveNodeStatus(nodeKey: WorkflowNodeKey, events: TestTaskEvent[], ta
       return stages.includes('context_loaded') ? 'completed' : 'wait'
     case 'mcp_preflight':
       return stages.includes('mcp_preflight') ? 'completed' : previousNodeReady('prepare_context')
+    case 'prepare_workspace':
+      if (stages.includes('control_files_written') || stages.includes('workspace_prepared')) {
+        return 'completed'
+      }
+      if (events.length > 0) {
+        return 'running'
+      }
+      return previousNodeReady('mcp_preflight')
     case 'generate_assets':
       if (stages.includes('result_loaded') || stages.includes('runtime_completed') || stages.includes('artifacts_synced')) {
         return 'completed'
@@ -499,7 +562,7 @@ function resolveNodeStatus(nodeKey: WorkflowNodeKey, events: TestTaskEvent[], ta
       if (events.length > 0) {
         return 'running'
       }
-      return previousNodeReady('mcp_preflight')
+      return previousNodeReady('prepare_workspace')
     case 'self_test':
       if (stages.includes('self_test_completed')) {
         return 'completed'
@@ -521,9 +584,9 @@ function resolveNodeStatus(nodeKey: WorkflowNodeKey, events: TestTaskEvent[], ta
   }
 
   function previousNodeReady(previousKey: WorkflowNodeKey): WorkflowNodeStatus {
-    const previous = workflowNodes.value.find((node) => node.key === previousKey)
-    if (!previous) return 'wait'
-    return previous.status === 'completed' ? 'wait' : previous.status === 'failed' ? 'failed' : 'wait'
+    const previousStatus = resolvedStatuses.get(previousKey)
+    if (!previousStatus) return 'wait'
+    return previousStatus === 'failed' ? 'failed' : 'wait'
   }
 }
 
@@ -671,6 +734,54 @@ function formatJSON(value: unknown): string {
 
 function hasEventData(event: TestTaskEvent) {
   return !!event.data && Object.keys(event.data).length > 0
+}
+
+function isCollapsibleOutput(entry: OutputEntry) {
+  return entry.role === 'tool'
+}
+
+function outputPreview(entry: OutputEntry) {
+  const preview = entry.detail || entry.text || ''
+  return preview.length > 140 ? `${preview.slice(0, 140)}...` : preview
+}
+
+function groupOutputEntriesByTurn(entries: OutputEntry[]): OutputGroup[] {
+  const groups: OutputGroup[] = []
+  let currentGroup: OutputGroup | null = null
+  let standaloneIndex = 0
+
+  for (const entry of entries) {
+    const turnTitle = getModelTurnTitle(entry)
+    if (turnTitle) {
+      currentGroup = {
+        id: `turn-${entry.id}`,
+        title: turnTitle,
+        timestamp: entry.timestamp,
+        entries: [],
+      }
+      groups.push(currentGroup)
+      continue
+    }
+
+    if (!currentGroup) {
+      currentGroup = {
+        id: `standalone-${standaloneIndex}`,
+        entries: [],
+      }
+      standaloneIndex += 1
+      groups.push(currentGroup)
+    }
+
+    currentGroup.entries.push(entry)
+  }
+
+  return groups.filter((group) => group.entries.length > 0 || group.title)
+}
+
+function getModelTurnTitle(entry: OutputEntry) {
+  if (entry.role !== 'system') return ''
+  const text = String(entry.text || '').trim()
+  return /^模型回合\s+\d+$/u.test(text) ? text : ''
 }
 
 function nodeStatusColor(status: WorkflowNodeStatus) {
@@ -973,6 +1084,26 @@ function getStatusLabel(status: string) {
   gap: 12px;
 }
 
+.workflow-output-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.workflow-output-group__header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 2px 0;
+  background: #fbfdff;
+}
+
+.workflow-output-scroll {
+  max-height: 560px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
 .workflow-output {
   padding: 12px;
   border-radius: 14px;
@@ -998,6 +1129,32 @@ function getStatusLabel(status: string) {
 
 .workflow-output__header {
   margin-bottom: 8px;
+}
+
+.workflow-output__collapse {
+  display: block;
+}
+
+.workflow-output__summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.workflow-output__summary::-webkit-details-marker {
+  display: none;
+}
+
+.workflow-output__preview {
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.workflow-output__body {
+  margin-top: 10px;
 }
 
 .workflow-output__time,

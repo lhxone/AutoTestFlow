@@ -6,6 +6,21 @@ import (
 	"github.com/spf13/viper"
 )
 
+var envBindings = map[string]string{
+	"database.password":          "ATF_DATABASE_PASSWORD",
+	"database.dbname":            "ATF_DATABASE_DBNAME",
+	"jwt.secret":                 "ATF_JWT_SECRET",
+	"zentao.base_url":            "ATF_ZENTAO_BASE_URL",
+	"zentao.api_token":           "ATF_ZENTAO_API_TOKEN",
+	"git.work_dir":               "ATF_GIT_WORK_DIR",
+	"cli_runtime.workspace_root": "ATF_CLI_RUNTIME_WORKSPACE_ROOT",
+	"mail.host":                  "ATF_MAIL_HOST",
+	"mail.port":                  "ATF_MAIL_PORT",
+	"mail.username":              "ATF_MAIL_USERNAME",
+	"mail.password":              "ATF_MAIL_PASSWORD",
+	"mail.from":                  "ATF_MAIL_FROM",
+}
+
 // AppConfig 全局应用配置
 type AppConfig struct {
 	Server     ServerConfig     `mapstructure:"server"`
@@ -102,6 +117,12 @@ var Global *AppConfig
 func Load(path string) (*AppConfig, error) {
 	viper.SetConfigFile(path)
 	viper.SetConfigType("yaml")
+
+	for key, envName := range envBindings {
+		if err := viper.BindEnv(key, envName); err != nil {
+			return nil, fmt.Errorf("绑定环境变量失败 %s: %w", envName, err)
+		}
+	}
 
 	if err := viper.ReadInConfig(); err != nil {
 		return nil, fmt.Errorf("读取配置文件失败: %w", err)

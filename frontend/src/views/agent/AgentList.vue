@@ -22,12 +22,6 @@
           <a-tag v-if="record.is_default" color="gold">{{ t('agent.list.columns.defaultAgent') }}</a-tag>
           <span v-else>-</span>
         </template>
-        <template v-if="column.key === 'cli_command'">
-          <span v-if="getAgentCLICommand(record)">
-            <a-tag color="cyan">{{ getAgentCLICommand(record) }}</a-tag>
-          </span>
-          <span v-else class="text-muted">{{ t('agent.list.columns.globalDefault') }}</span>
-        </template>
         <template v-if="column.key === 'workflows'">
           <a-tag v-for="s in record.workflows" :key="s.id" color="geekblue">{{ s.name }}</a-tag>
           <span v-if="!record.workflows?.length">-</span>
@@ -141,44 +135,14 @@
           </a-space>
         </a-form-item>
 
-        <!-- CLI Runtime Configuration -->
+        <!-- Runtime Workspace Configuration -->
         <a-divider orientation="left">{{ t('agent.list.section.cliRuntime') }}</a-divider>
         <a-alert type="info" show-icon style="margin-bottom: 12px"
           :message="t('agent.list.cliRuntime.hint')" />
 
-        <a-row :gutter="16">
-          <a-col :span="12">
-            <a-form-item :label="t('agent.list.cliRuntime.command')">
-              <a-input v-model:value="cliForm.command" :placeholder="t('agent.list.cliRuntime.commandPlaceholder')" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item :label="t('agent.list.cliRuntime.timeout')">
-              <a-input v-model:value="cliForm.timeout" placeholder="20m" />
-            </a-form-item>
-          </a-col>
-        </a-row>
-
-        <a-form-item :label="t('agent.list.cliRuntime.argsJson')">
-          <a-textarea v-model:value="cliForm.args_json" :rows="2" placeholder='["exec", "--cd", "{{repo_dir}}"]' />
+        <a-form-item :label="t('agent.list.cliRuntime.workspaceRoot')">
+          <a-input v-model:value="cliForm.workspace_root" :placeholder="t('agent.list.cliRuntime.workspaceRootPlaceholder')" />
         </a-form-item>
-
-        <a-form-item :label="t('agent.list.cliRuntime.envJson')">
-          <a-textarea v-model:value="cliForm.env_json" :rows="2" placeholder='{"HTTP_PROXY":"http://127.0.0.1:7890"}' />
-        </a-form-item>
-
-        <a-row :gutter="16">
-          <a-col :span="12">
-            <a-form-item :label="t('agent.list.cliRuntime.workspaceRoot')">
-              <a-input v-model:value="cliForm.workspace_root" :placeholder="t('agent.list.cliRuntime.workspaceRootPlaceholder')" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item :label="t('agent.list.cliRuntime.preserveWorkspace')">
-              <a-switch v-model:checked="cliForm.preserve_workspace" />
-            </a-form-item>
-          </a-col>
-        </a-row>
 
         <a-alert
           v-if="testResult"
@@ -346,12 +310,7 @@ const form = reactive({
 })
 
 const cliForm = reactive({
-  command: '',
-  args_json: '',
-  timeout: '',
   workspace_root: '',
-  preserve_workspace: true,
-  env_json: '',
 })
 
 const mcpForm = reactive({
@@ -403,7 +362,6 @@ const columns = computed(() => [
   { title: t('agent.list.columns.name'), dataIndex: 'name', key: 'name' },
   { title: t('agent.list.columns.default'), key: 'is_default', width: 120 },
   { title: t('agent.list.columns.model'), key: 'model' },
-  { title: t('agent.list.columns.cliCommand'), key: 'cli_command' },
   { title: t('agent.list.columns.workflows'), key: 'workflows' },
   { title: t('agent.list.columns.mcpServers'), key: 'mcp_servers' },
   { title: t('agent.list.columns.status'), key: 'status', width: 80 },
@@ -462,16 +420,6 @@ function getProviderLabel(provider: string) {
   return provider || t('agent.list.form.custom')
 }
 
-function getAgentCLICommand(record: Agent): string {
-  try {
-    const cfg = record.config_json
-    if (cfg && typeof cfg === 'object' && cfg.cli_runtime && cfg.cli_runtime.command) {
-      return cfg.cli_runtime.command
-    }
-  } catch { /* ignore */ }
-  return ''
-}
-
 function applyProviderPreset(provider: Exclude<ProviderKey, 'custom'>) {
   const preset = MODEL_PRESETS[provider]
   form.base_url = preset.baseUrl
@@ -501,12 +449,7 @@ function resetForm() {
 
 function resetCliForm() {
   Object.assign(cliForm, {
-    command: '',
-    args_json: '',
-    timeout: '',
     workspace_root: '',
-    preserve_workspace: true,
-    env_json: '',
   })
 }
 
@@ -515,41 +458,13 @@ function loadCliFormFromConfigJSON(configJSON: any) {
   if (!configJSON || typeof configJSON !== 'object') return
   const cli = configJSON.cli_runtime
   if (!cli || typeof cli !== 'object') return
-  cliForm.command = cli.command || ''
-  cliForm.timeout = cli.timeout || ''
   cliForm.workspace_root = cli.workspace_root || ''
-  if (typeof cli.preserve_workspace === 'boolean') {
-    cliForm.preserve_workspace = cli.preserve_workspace
-  }
-  if (Array.isArray(cli.args)) {
-    cliForm.args_json = JSON.stringify(cli.args)
-  } else if (typeof cli.args === 'string') {
-    cliForm.args_json = cli.args
-  }
-  if (cli.env && typeof cli.env === 'object' && !Array.isArray(cli.env)) {
-    cliForm.env_json = JSON.stringify(cli.env)
-  } else if (typeof cli.env === 'string') {
-    cliForm.env_json = cli.env
-  }
 }
 
 function buildConfigJSON(): any {
-  const hasCliConfig = cliForm.command.trim()
-  if (!hasCliConfig) return null
-
-  const cli: any = {
-    command: cliForm.command.trim(),
-  }
-  if (cliForm.args_json.trim()) {
-    try { cli.args = JSON.parse(cliForm.args_json.trim()) } catch { /* keep raw */ }
-  }
-  if (cliForm.timeout.trim()) cli.timeout = cliForm.timeout.trim()
-  if (cliForm.workspace_root.trim()) cli.workspace_root = cliForm.workspace_root.trim()
-  cli.preserve_workspace = cliForm.preserve_workspace
-  if (cliForm.env_json.trim()) {
-    try { cli.env = JSON.parse(cliForm.env_json.trim()) } catch { /* keep raw */ }
-  }
-  return { runtime_type: 'cli', cli_runtime: cli }
+  const workspaceRoot = cliForm.workspace_root.trim()
+  if (!workspaceRoot) return null
+  return { cli_runtime: { workspace_root: workspaceRoot } }
 }
 
 function handleProviderChange(value: ProviderKey) {

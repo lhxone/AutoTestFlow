@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	defaultGenTestTurnLimit          = 24
+	defaultGenTestTurnLimit          = 100
 	defaultGenTestToolResultMaxBytes = 12_000
 	defaultGenTestReadMaxBytes       = 64_000
 )
@@ -82,7 +82,7 @@ func NewEinoGenTestRuntime(logger *zap.Logger) *EinoGenTestRuntime {
 		interactionRepo: repository.NewCLIInteractionRepo(),
 		workspace:       NewGenTestWorkspaceService(logger),
 		httpClient: &http.Client{
-			Timeout: 90 * time.Second,
+			Timeout: 180 * time.Second,
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 			},
