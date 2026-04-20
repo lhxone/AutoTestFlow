@@ -19,6 +19,22 @@ func TestResolveBranchesFromProducts(t *testing.T) {
 	}
 }
 
+func TestResolveBranchesFromProducts_BranchProductReturnsSelf(t *testing.T) {
+	products := []ZentaoProduct{
+		{ID: 100, Name: "智学平台", Type: "normal", Line: 10, Program: 88},
+		{ID: 101, Name: "智学平台-A", Type: "branch", Line: 10, Program: 100},
+		{ID: 102, Name: "智学平台-B", Type: "branch", Line: 10, Program: 100},
+	}
+
+	branches := resolveBranchesFromProducts("101", products)
+	if len(branches) != 1 {
+		t.Fatalf("expected 1 branch, got %d", len(branches))
+	}
+	if branches[0].ID != 101 {
+		t.Fatalf("unexpected branch ids: %+v", branches)
+	}
+}
+
 func TestParseBranchesFromHTML(t *testing.T) {
 	body := []byte(`<a href='/x' data-id='1'>ignore</a><a class='branch' href='/product' id='branch-11'>batchChangeBranch-11-foo">智学平台-A</a><a class='branch' href='/product' id='branch-12'>batchChangeBranch-12-bar">智学平台-B</a>`)
 

@@ -66,14 +66,18 @@ build-backend-image:
     - name: docker:${DOCKER_VERSION}-dind
   needs:
     - backend-test
+  variables:
+    DOCKER_BUILDKIT: "0"
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH'
   before_script:
     - sed -i "s|https\?://dl-cdn.alpinelinux.org/alpine|${ALPINE_MIRROR}/alpine|g" /etc/apk/repositories
     - docker info
+    - docker pull harbor.inspur.local/atf/golang:1.22-alpine
+    - docker pull harbor.inspur.local/atf/alpine:3.20
   script:
-    - docker build --pull -t auto-test-flow/backend:${CI_COMMIT_SHORT_SHA} backend
+    - docker build -t auto-test-flow/backend:${CI_COMMIT_SHORT_SHA} backend
 
 build-frontend-image:
   tags:
@@ -84,14 +88,18 @@ build-frontend-image:
     - name: docker:${DOCKER_VERSION}-dind
   needs:
     - frontend-check
+  variables:
+    DOCKER_BUILDKIT: "0"
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH'
   before_script:
     - sed -i "s|https\?://dl-cdn.alpinelinux.org/alpine|${ALPINE_MIRROR}/alpine|g" /etc/apk/repositories
     - docker info
+    - docker pull harbor.inspur.local/atf/node:20-alpine
+    - docker pull harbor.inspur.local/atf/nginx:1.27-alpine
   script:
-    - docker build --pull -t auto-test-flow/frontend:${CI_COMMIT_SHORT_SHA} frontend
+    - docker build -t auto-test-flow/frontend:${CI_COMMIT_SHORT_SHA} frontend
 
 deploy-production:
   tags:

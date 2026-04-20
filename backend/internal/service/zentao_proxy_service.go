@@ -202,6 +202,9 @@ func resolveBranchesFromProducts(productID string, products []ZentaoProduct) []Z
 	if target == nil {
 		return nil
 	}
+	if target.Type == "branch" {
+		return []ZentaoBranch{{ID: target.ID, Name: strings.TrimSpace(target.Name)}}
+	}
 
 	branches := make([]ZentaoBranch, 0)
 	seen := make(map[int]struct{})
@@ -223,8 +226,7 @@ func resolveBranchesFromProducts(productID string, products []ZentaoProduct) []Z
 
 		sameLine := target.Line > 0 && product.Line == target.Line
 		underSelectedProgram := product.Program > 0 && product.Program == target.ID
-		sameProgram := target.Program > 0 && product.Program == target.Program
-		if sameLine || underSelectedProgram || sameProgram {
+		if sameLine || underSelectedProgram {
 			appendBranch(product)
 		}
 	}

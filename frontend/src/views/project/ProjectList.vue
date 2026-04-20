@@ -123,7 +123,7 @@
               <a-form-item :label="t('project.list.form.zentaoBranch')">
                 <a-select v-model:value="form.zentao_branch" :placeholder="t('project.list.form.selectZentaoBranch')"
                           :loading="zentaoBranchesLoading" allowClear
-                          :disabled="!selectedZentaoProject" @focus="fetchZentaoBranches">
+                          :disabled="!selectedZentaoProject" @focus="() => fetchZentaoBranches()">
                   <a-select-option v-for="b in zentaoBranches" :key="b.id" :value="String(b.id)" :label="b.name">
                     {{ b.name }}
                   </a-select-option>
@@ -422,11 +422,14 @@ function onZentaoProjectChange(projectId: number | null | undefined) {
   }
 }
 
-async function fetchZentaoBranches(projectId: number | null = selectedZentaoProject.value) {
-  if (!projectId) return
+async function fetchZentaoBranches(projectId?: number | null | Event) {
+  const normalizedProjectId = typeof projectId === 'number'
+    ? projectId
+    : selectedZentaoProject.value
+  if (!normalizedProjectId) return
   zentaoBranchesLoading.value = true
   try {
-    const res = await getZentaoBranches(projectId)
+    const res = await getZentaoBranches(normalizedProjectId)
     zentaoBranches.value = res.data.data || []
     const matchedBranch = zentaoBranches.value.find(
       (branch) => String(branch.id) === form.zentao_branch || branch.name === form.zentao_branch,
