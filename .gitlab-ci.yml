@@ -4,7 +4,7 @@ stages:
   - deploy
 
 variables:
-  GO_VERSION: "1.25.0"
+  GO_VERSION: "1.22.0"
   NODE_VERSION: "20"
   DOCKER_VERSION: "27.4.1"
   DOCKER_TLS_CERTDIR: "/certs"
