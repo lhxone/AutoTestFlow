@@ -63,7 +63,7 @@ build-backend-image:
   stage: build
   image: harbor.inspur.local/atf/docker:${DOCKER_VERSION}-cli
   services:
-    - name: docker:${DOCKER_VERSION}-dind
+    - name: harbor.inspur.local/atf/docker:${DOCKER_VERSION}-dind
   needs:
     - backend-test
   variables:
@@ -89,7 +89,7 @@ build-frontend-image:
   stage: build
   image: harbor.inspur.local/atf/docker:${DOCKER_VERSION}-cli
   services:
-    - name: docker:${DOCKER_VERSION}-dind
+    - name: harbor.inspur.local/atf/docker:${DOCKER_VERSION}-dind
   needs:
     - frontend-check
   variables:
