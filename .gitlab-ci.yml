@@ -40,7 +40,7 @@ backend-test:
     - go env -w GOSUMDB="$GOSUMDB"
   script:
     - cd backend
-    - go test ./...
+    - go test ./cmd/... ./internal/...
 
 frontend-check:
   tags:
