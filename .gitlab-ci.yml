@@ -74,6 +74,10 @@ build-backend-image:
   before_script:
     - sed -i "s|https\?://dl-cdn.alpinelinux.org/alpine|${ALPINE_MIRROR}/alpine|g" /etc/apk/repositories
     - docker info
+    - |
+      docker login harbor.inspur.local \
+      -u "$DOCKER_USERNAME" \
+      -p "$DOCKER_PASSWORD"
     - docker pull harbor.inspur.local/atf/golang:1.22-alpine
     - docker pull harbor.inspur.local/atf/alpine:3.20
   script:
@@ -96,6 +100,10 @@ build-frontend-image:
   before_script:
     - sed -i "s|https\?://dl-cdn.alpinelinux.org/alpine|${ALPINE_MIRROR}/alpine|g" /etc/apk/repositories
     - docker info
+    - |
+      docker login harbor.inspur.local \
+      -u "$DOCKER_USERNAME" \
+      -p "$DOCKER_PASSWORD"
     - docker pull harbor.inspur.local/atf/node:20-alpine
     - docker pull harbor.inspur.local/atf/nginx:1.27-alpine
   script:
