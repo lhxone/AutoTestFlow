@@ -824,6 +824,7 @@
       "notEnabled": "Not enabled",
       "events": "events",
       "nodeOutput": "Node Output",
+      "autoScrollOutput": "Auto-scroll to bottom",
       "rawEvents": "Raw Events",
       "interactions": "Pending Interactions",
       "noNodeOutput": "No detailed output for this node yet",

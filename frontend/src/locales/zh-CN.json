@@ -824,6 +824,7 @@
       "notEnabled": "未启用",
       "events": "事件",
       "nodeOutput": "节点输出",
+      "autoScrollOutput": "自动滚动到底部",
       "rawEvents": "原始事件",
       "interactions": "待处理交互",
       "noNodeOutput": "当前节点暂无详细输出",

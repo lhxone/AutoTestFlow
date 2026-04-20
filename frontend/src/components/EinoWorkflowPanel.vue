@@ -61,7 +61,17 @@
 
             <a-tabs size="small">
               <a-tab-pane key="output" :tab="t('taskRun.workflow.nodeOutput')">
-                <div v-if="selectedNodeOutputGroups.length" class="workflow-output-scroll">
+                <div class="workflow-output-toolbar">
+                  <a-space :size="8">
+                    <span class="workflow-output-toolbar__label">{{ t('taskRun.workflow.autoScrollOutput') }}</span>
+                    <a-switch v-model:checked="autoScrollOutput" size="small" />
+                  </a-space>
+                </div>
+                <div
+                  v-if="selectedNodeOutputGroups.length"
+                  ref="outputScrollRef"
+                  class="workflow-output-scroll"
+                >
                   <div class="workflow-output-list">
                     <section
                       v-for="group in selectedNodeOutputGroups"
@@ -224,7 +234,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
 import {
@@ -367,6 +377,8 @@ const actionLoading = ref<Record<number, boolean>>({})
 const responses = ref<Record<number, string>>({})
 const selectedNodeKey = ref<WorkflowNodeKey>('prepare_context')
 const userSelectedNode = ref(false)
+const autoScrollOutput = ref(true)
+const outputScrollRef = ref<HTMLDivElement | null>(null)
 let interactionRefreshTimer: number | null = null
 
 const sourceEvents = computed<TestTaskEvent[]>(() => {
@@ -474,12 +486,38 @@ watch(workflowNodes, (nodes) => {
   }
 }, { immediate: true })
 
+watch(selectedNodeKey, async () => {
+  await scrollOutputToBottom()
+})
+
 watch(() => props.taskEvents, (events) => {
   if (events && events.length) {
     taskLogs.value = events.slice(-400)
     scheduleInteractionRefresh()
   }
 }, { immediate: true })
+
+watch(selectedNodeOutputGroups, async () => {
+  await scrollOutputToBottom()
+})
+
+watch(autoScrollOutput, async (enabled) => {
+  if (enabled) {
+    await scrollOutputToBottom(true)
+  }
+})
+
+async function scrollOutputToBottom(force = false) {
+  if (!force && !autoScrollOutput.value) {
+    return
+  }
+  await nextTick()
+  const container = outputScrollRef.value
+  if (!container) {
+    return
+  }
+  container.scrollTop = container.scrollHeight
+}
 
 function scheduleInteractionRefresh() {
   if (!props.taskId) return
@@ -1107,6 +1145,17 @@ function getStatusLabel(status: string) {
   margin-bottom: 12px;
   color: #475467;
   line-height: 1.65;
+}
+
+.workflow-output-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 10px;
+}
+
+.workflow-output-toolbar__label {
+  color: #667085;
+  font-size: 12px;
 }
 
 .workflow-output-list {
