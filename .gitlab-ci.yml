@@ -25,6 +25,8 @@ cache:
     - backend/pkg/mod/
 
 backend-test:
+  tags:
+    - docker
   stage: test
   image: golang:${GO_VERSION}
   rules:
@@ -41,6 +43,8 @@ backend-test:
     - go test ./...
 
 frontend-check:
+  tags:
+    - docker
   stage: test
   image: node:${NODE_VERSION}
   rules:
@@ -54,6 +58,8 @@ frontend-check:
     - npm run build
 
 build-backend-image:
+  tags:
+    - docker
   stage: build
   image: docker:${DOCKER_VERSION}-cli
   services:
@@ -70,6 +76,8 @@ build-backend-image:
     - docker build --pull -t auto-test-flow/backend:${CI_COMMIT_SHORT_SHA} backend
 
 build-frontend-image:
+  tags:
+    - docker
   stage: build
   image: docker:${DOCKER_VERSION}-cli
   services:
@@ -86,6 +94,8 @@ build-frontend-image:
     - docker build --pull -t auto-test-flow/frontend:${CI_COMMIT_SHORT_SHA} frontend
 
 deploy-production:
+  tags:
+    - docker
   stage: deploy
   image: alpine:3.20
   needs:
