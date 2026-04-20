@@ -78,7 +78,7 @@ build-backend-image:
       docker login harbor.inspur.local \
       -u "$DOCKER_USERNAME" \
       -p "$DOCKER_PASSWORD"
-    - docker pull harbor.inspur.local/atf/golang:1.22-alpine
+    - docker pull harbor.inspur.local/atf/golang:1.26.2
     - docker pull harbor.inspur.local/atf/alpine:3.20
   script:
     - docker build -t auto-test-flow/backend:${CI_COMMIT_SHORT_SHA} backend
