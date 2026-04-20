@@ -4,7 +4,7 @@ stages:
   - deploy
 
 variables:
-  GO_VERSION: "1.22.0"
+  GO_VERSION: "1.22"
   NODE_VERSION: "20"
   DOCKER_VERSION: "27.4.1"
   DOCKER_TLS_CERTDIR: "/certs"
@@ -28,7 +28,7 @@ backend-test:
   tags:
     - docker
   stage: test
-  image: harbor.inspur.local/atf/golang:${GO_VERSION}
+  image: harbor.inspur.local/atf/golang:${GO_VERSION}-alpine
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH'
