@@ -1,4 +1,4 @@
-FROM node:20-alpine AS builder
+FROM harbor.inspur.local/atf/node:20-alpine AS builder
 
 RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
 RUN npm config set registry https://registry.npmmirror.com
@@ -10,7 +10,7 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM nginx:1.27-alpine
+FROM harbor.inspur.local/atf/nginx:1.27-alpine
 
 COPY --from=builder /build/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf

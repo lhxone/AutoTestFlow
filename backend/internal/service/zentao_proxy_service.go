@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -141,6 +142,13 @@ func (s *ZentaoProxyService) GetProducts() ([]ZentaoProduct, error) {
 // 禅道 REST API v1 没有独立的 branches 端点，分支数据在产品页面的 HTML 中
 // 通过解析 /product-browse-{productID}.html 页面中的 batchChangeBranch 链接提取
 func (s *ZentaoProxyService) GetBranches(productID string) ([]ZentaoBranch, error) {
+	products, err := s.GetProducts()
+	if err == nil {
+		if branches := resolveBranchesFromProducts(productID, products); len(branches) > 0 {
+			return branches, nil
+		}
+	}
+
 	baseURL := s.settingRepo.GetValue("zentao", "base_url")
 	if baseURL == "" {
 		return nil, fmt.Errorf("禅道未配置，请先在「系统设置 → 禅道管理」中配置")
@@ -175,22 +183,77 @@ func (s *ZentaoProxyService) GetBranches(productID string) ([]ZentaoBranch, erro
 		return nil, fmt.Errorf("禅道返回错误 %d", resp.StatusCode)
 	}
 
-	// 从 HTML 中提取分支信息
+	return parseBranchesFromHTML(body), nil
+}
+
+func resolveBranchesFromProducts(productID string, products []ZentaoProduct) []ZentaoBranch {
+	targetID, err := strconv.Atoi(strings.TrimSpace(productID))
+	if err != nil {
+		return nil
+	}
+
+	var target *ZentaoProduct
+	for i := range products {
+		if products[i].ID == targetID {
+			target = &products[i]
+			break
+		}
+	}
+	if target == nil {
+		return nil
+	}
+
+	branches := make([]ZentaoBranch, 0)
+	seen := make(map[int]struct{})
+	appendBranch := func(product ZentaoProduct) {
+		if product.ID <= 0 {
+			return
+		}
+		if _, ok := seen[product.ID]; ok {
+			return
+		}
+		seen[product.ID] = struct{}{}
+		branches = append(branches, ZentaoBranch{ID: product.ID, Name: strings.TrimSpace(product.Name)})
+	}
+
+	for _, product := range products {
+		if product.Type != "branch" {
+			continue
+		}
+
+		sameLine := target.Line > 0 && product.Line == target.Line
+		underSelectedProgram := product.Program > 0 && product.Program == target.ID
+		sameProgram := target.Program > 0 && product.Program == target.Program
+		if sameLine || underSelectedProgram || sameProgram {
+			appendBranch(product)
+		}
+	}
+
+	return branches
+}
+
+func parseBranchesFromHTML(body []byte) []ZentaoBranch {
 	// 匹配格式: batchChangeBranch-{branchID}-xxx...>{branchName}</a>
 	re := regexp.MustCompile(`batchChangeBranch-(\d+)-[^>]*>([^<]+)</a>`)
 	matches := re.FindAllStringSubmatch(string(body), -1)
-
 	if len(matches) == 0 {
-		return []ZentaoBranch{}, nil
+		return []ZentaoBranch{}
 	}
 
 	branches := make([]ZentaoBranch, 0, len(matches))
+	seen := make(map[int]struct{})
 	for _, m := range matches {
-		id := 0
-		fmt.Sscanf(m[1], "%d", &id)
-		branches = append(branches, ZentaoBranch{ID: id, Name: m[2]})
+		id, err := strconv.Atoi(m[1])
+		if err != nil {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		branches = append(branches, ZentaoBranch{ID: id, Name: strings.TrimSpace(m[2])})
 	}
-	return branches, nil
+	return branches
 }
 
 // zentaoGet 发起禅道 GET 请求（自动获取 Token 和 BaseURL）

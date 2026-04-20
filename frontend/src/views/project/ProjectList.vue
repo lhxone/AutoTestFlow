@@ -112,7 +112,7 @@
                 <a-select v-model:value="selectedZentaoProject" :placeholder="t('project.list.form.selectZentaoProject')"
                           :loading="zentaoProjectsLoading" show-search :filter-option="filterOption"
                           allowClear @change="onZentaoProjectChange" @focus="fetchZentaoProjects">
-                  <a-select-option v-for="p in zentaoProjects" :key="p.id" :value="p.id">
+                  <a-select-option v-for="p in zentaoProjects" :key="p.id" :value="p.id" :label="p.label">
                     {{ p.name }} (ID: {{ p.id }})
                   </a-select-option>
                 </a-select>
@@ -124,7 +124,7 @@
                 <a-select v-model:value="form.zentao_branch" :placeholder="t('project.list.form.selectZentaoBranch')"
                           :loading="zentaoBranchesLoading" allowClear
                           :disabled="!selectedZentaoProject" @focus="fetchZentaoBranches">
-                  <a-select-option v-for="b in zentaoBranches" :key="b.id" :value="b.name">
+                  <a-select-option v-for="b in zentaoBranches" :key="b.id" :value="String(b.id)" :label="b.name">
                     {{ b.name }}
                   </a-select-option>
                 </a-select>
@@ -272,7 +272,7 @@ const editing = ref<Project | null>(null)
 const query = reactive({ keyword: '' })
 const pagination = reactive({ current: 1, pageSize: 20, total: 0 })
 
-const zentaoProjects = ref<{ id: number; name: string }[]>([])
+const zentaoProjects = ref<{ id: number; name: string; label: string }[]>([])
 const zentaoBranches = ref<{ id: number; name: string }[]>([])
 const zentaoProjectsLoading = ref(false)
 const zentaoBranchesLoading = ref(false)
@@ -387,6 +387,10 @@ function handleEdit(record: Project) {
     zentao_project_name: record.zentao_project_name,
     zentao_branch: record.zentao_branch,
   })
+  void fetchZentaoProjects()
+  if (record.zentao_project_id) {
+    void fetchZentaoBranches(record.zentao_project_id)
+  }
   showModal.value = true
 }
 
@@ -395,7 +399,10 @@ async function fetchZentaoProjects() {
   zentaoProjectsLoading.value = true
   try {
     const res = await getZentaoProducts()
-    zentaoProjects.value = res.data.data || []
+    zentaoProjects.value = (res.data.data || []).map((item: { id: number; name: string }) => ({
+      ...item,
+      label: `${item.name} (ID: ${item.id})`,
+    }))
   } catch {
     message.warning(t('project.list.messages.loadProductsFailed'))
   } finally {
@@ -403,23 +410,30 @@ async function fetchZentaoProjects() {
   }
 }
 
-function onZentaoProjectChange(projectId: number) {
-  const project = zentaoProjects.value.find((p) => p.id === projectId)
-  form.zentao_project_id = projectId || null
+function onZentaoProjectChange(projectId: number | null | undefined) {
+  const normalizedProjectId = projectId ?? null
+  const project = zentaoProjects.value.find((p) => p.id === normalizedProjectId)
+  form.zentao_project_id = normalizedProjectId
   form.zentao_project_name = project?.name || ''
   form.zentao_branch = ''
   zentaoBranches.value = []
-  if (projectId) {
-    fetchZentaoBranches()
+  if (normalizedProjectId) {
+    void fetchZentaoBranches(normalizedProjectId)
   }
 }
 
-async function fetchZentaoBranches() {
-  if (!selectedZentaoProject.value) return
+async function fetchZentaoBranches(projectId: number | null = selectedZentaoProject.value) {
+  if (!projectId) return
   zentaoBranchesLoading.value = true
   try {
-    const res = await getZentaoBranches(selectedZentaoProject.value)
+    const res = await getZentaoBranches(projectId)
     zentaoBranches.value = res.data.data || []
+    const matchedBranch = zentaoBranches.value.find(
+      (branch) => String(branch.id) === form.zentao_branch || branch.name === form.zentao_branch,
+    )
+    if (matchedBranch) {
+      form.zentao_branch = String(matchedBranch.id)
+    }
   } catch {
     message.warning(t('project.list.messages.loadBranchesFailed'))
   } finally {
@@ -428,7 +442,7 @@ async function fetchZentaoBranches() {
 }
 
 function filterOption(input: string, option: any) {
-  const label = option.children?.[0]?.children || ''
+  const label = option.label ?? option.value ?? ''
   return String(label).toLowerCase().includes(input.toLowerCase())
 }
 

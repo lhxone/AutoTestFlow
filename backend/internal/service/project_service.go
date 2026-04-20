@@ -88,15 +88,9 @@ func (s *ProjectService) Update(id uint64, req *dto.UpdateProjectRequest) (*mode
 	if req.GitPullInterval != nil {
 		p.GitPullInterval = *req.GitPullInterval
 	}
-	if req.ZentaoProjectID != nil {
-		p.ZentaoProjectID = req.ZentaoProjectID
-	}
-	if req.ZentaoProjectName != "" {
-		p.ZentaoProjectName = req.ZentaoProjectName
-	}
-	if req.ZentaoBranch != "" {
-		p.ZentaoBranch = req.ZentaoBranch
-	}
+	p.ZentaoProjectID = req.ZentaoProjectID
+	p.ZentaoProjectName = req.ZentaoProjectName
+	p.ZentaoBranch = req.ZentaoBranch
 	if req.Status != nil {
 		p.Status = *req.Status
 	}
