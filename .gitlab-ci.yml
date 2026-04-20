@@ -28,7 +28,7 @@ backend-test:
   tags:
     - docker
   stage: test
-  image: golang:${GO_VERSION}
+  image: harbor.inspur.local/atf/golang:${GO_VERSION}
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH'
@@ -46,12 +46,12 @@ frontend-check:
   tags:
     - docker
   stage: test
-  image: node:${NODE_VERSION}
+  image: harbor.inspur.local/atf/node:${NODE_VERSION}
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH'
   before_script:
-    - npm config set registry "$NPM_CONFIG_REGISTRY"
+    - npm config set registry "$NPM_CONFIG_REGISTRY" --legacy-peer-deps
   script:
     - cd frontend
     - npm ci
@@ -61,7 +61,7 @@ build-backend-image:
   tags:
     - docker
   stage: build
-  image: docker:${DOCKER_VERSION}-cli
+  image: harbor.inspur.local/atf/docker:${DOCKER_VERSION}-cli
   services:
     - name: docker:${DOCKER_VERSION}-dind
   needs:
@@ -79,7 +79,7 @@ build-frontend-image:
   tags:
     - docker
   stage: build
-  image: docker:${DOCKER_VERSION}-cli
+  image: harbor.inspur.local/atf/docker:${DOCKER_VERSION}-cli
   services:
     - name: docker:${DOCKER_VERSION}-dind
   needs:
@@ -97,7 +97,7 @@ deploy-production:
   tags:
     - docker
   stage: deploy
-  image: alpine:3.20
+  image: harbor.inspur.local/atf/alpine:3.20
   needs:
     - build-backend-image
     - build-frontend-image
