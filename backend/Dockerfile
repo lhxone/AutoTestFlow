@@ -6,7 +6,8 @@ RUN go env -w GOPROXY=https://goproxy.cn,direct && \
     go env -w GOSUMDB=sum.golang.google.cn
 
 COPY go.mod go.sum ./
-RUN go mod download
+RUN GODEBUG=x509ignoreCN=0 \
+    go mod download
 
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o server cmd/server/main.go
