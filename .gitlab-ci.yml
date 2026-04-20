@@ -16,7 +16,7 @@ variables:
   DEPLOY_HOST: "192.168.53.185"
   DEPLOY_PORT: "22"
   DEPLOY_USER: "ubuntu"
-  DEPLOY_BASE_DIR: "/data/AutoTestFlow"
+  DEPLOY_BASE_DIR: "/data1/AutoTestFlow"
 
 cache:
   paths:
@@ -126,7 +126,7 @@ deploy-production:
     - sed -i "s|https\?://dl-cdn.alpinelinux.org/alpine|${ALPINE_MIRROR}/alpine|g" /etc/apk/repositories
     - apk update
     - apk add --no-cache openssh-client rsync
-    - test -n "$DEPLOY_SSH_PRIVATE_KEY"
+    - test -n "$DEPLOY_SSH_PRIVATE_KEY" || { echo "DEPLOY_SSH_PRIVATE_KEY is required"; exit 1; }
     - mkdir -p ~/.ssh
     - chmod 700 ~/.ssh
     - printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/deploy_key.pem
