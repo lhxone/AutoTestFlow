@@ -224,7 +224,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
 import {
@@ -241,6 +241,8 @@ import type { TestTask, TestTaskEvent } from '@/types'
 type WorkflowNodeKey = 'prepare_context' | 'mcp_preflight' | 'prepare_workspace' | 'generate_assets' | 'self_test' | 'finalize_task'
 type WorkflowNodeStatus = 'wait' | 'running' | 'completed' | 'failed'
 type OutputRole = 'assistant' | 'tool' | 'system' | 'event' | 'error'
+
+const INTERACTION_REFRESH_DEBOUNCE_MS = 400
 
 interface WorkflowNodeDefinition {
   key: WorkflowNodeKey
@@ -331,11 +333,20 @@ const WORKSPACE_PREPARE_STAGES = new Set([
   'control_files_written',
   'git_skip',
   'git_init',
+  'git_clone_shared',
+  'git_clone_shared_done',
   'git_worktree_add',
+  'git_worktree_ready',
   'git_fetch',
   'git_pull',
+  'node_modules_scan_start',
+  'node_modules_existing',
+  'node_modules_reuse_shared_repo',
+  'node_modules_reuse',
   'npm_install',
   'npm_install_skip',
+  'node_modules_skip',
+  'node_modules_skip_no_existing',
 ])
 
 const legendStatuses: WorkflowNodeStatus[] = ['wait', 'running', 'completed', 'failed']
@@ -356,6 +367,7 @@ const actionLoading = ref<Record<number, boolean>>({})
 const responses = ref<Record<number, string>>({})
 const selectedNodeKey = ref<WorkflowNodeKey>('prepare_context')
 const userSelectedNode = ref(false)
+let interactionRefreshTimer: number | null = null
 
 const sourceEvents = computed<TestTaskEvent[]>(() => {
   if (props.taskEvents && props.taskEvents.length > 0) {
@@ -439,6 +451,13 @@ onMounted(() => {
   loadPanelData()
 })
 
+onBeforeUnmount(() => {
+  if (interactionRefreshTimer !== null) {
+    window.clearTimeout(interactionRefreshTimer)
+    interactionRefreshTimer = null
+  }
+})
+
 watch(() => props.taskId, () => {
   taskLogs.value = []
   interactions.value = []
@@ -458,8 +477,20 @@ watch(workflowNodes, (nodes) => {
 watch(() => props.taskEvents, (events) => {
   if (events && events.length) {
     taskLogs.value = events.slice(-400)
+    scheduleInteractionRefresh()
   }
 }, { immediate: true })
+
+function scheduleInteractionRefresh() {
+  if (!props.taskId) return
+  if (interactionRefreshTimer !== null) {
+    window.clearTimeout(interactionRefreshTimer)
+  }
+  interactionRefreshTimer = window.setTimeout(async () => {
+    interactionRefreshTimer = null
+    await Promise.all([loadInteractions(), loadPendingInteractions()])
+  }, INTERACTION_REFRESH_DEBOUNCE_MS)
+}
 
 async function loadPanelData() {
   if (!props.taskId) return

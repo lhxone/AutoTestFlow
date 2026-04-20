@@ -307,7 +307,8 @@ func (s *ZentaoService) getProductDetail(baseURL, token string, productID int) (
 }
 
 func (s *ZentaoService) resolveBranchFilterID(project *model.Project, product *zentaoProductDetail) (*int, error) {
-	if strings.TrimSpace(project.ZentaoBranch) == "" {
+	branchValue := strings.TrimSpace(project.ZentaoBranch)
+	if branchValue == "" || strings.EqualFold(branchValue, "all") {
 		return nil, nil
 	}
 
@@ -316,12 +317,12 @@ func (s *ZentaoService) resolveBranchFilterID(project *model.Project, product *z
 		return nil, nil
 	}
 
-	branchID, err := strconv.Atoi(strings.TrimSpace(project.ZentaoBranch))
+	branchID, err := strconv.Atoi(branchValue)
 	if err == nil {
 		return &branchID, nil
 	}
 
-	return nil, fmt.Errorf("当前项目配置的禅道分支为“%s”，但 bugs 接口返回的是数值 branch ID；请先将项目分支改为分支 ID，或选择分支型产品", project.ZentaoBranch)
+	return nil, fmt.Errorf("当前项目配置的禅道分支为“%s”，但 bugs 接口返回的是数值 branch ID；请先将项目分支改为分支 ID、主干(0)、所有(all)，或选择分支型产品", project.ZentaoBranch)
 }
 
 // parseAndSyncBugs 解析禅道 bug 列表并同步到数据库

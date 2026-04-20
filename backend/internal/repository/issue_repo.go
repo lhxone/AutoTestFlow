@@ -37,14 +37,11 @@ func (r *IssueRepo) GetByID(id uint64) (*model.Issue, error) {
 	return &issue, nil
 }
 
-func (r *IssueRepo) List(projectID, projectSetID uint64, zentaoStatus, testStatus, branch, keyword, assignee string, offset, limit int) ([]model.Issue, int64, error) {
+func (r *IssueRepo) List(projectID uint64, zentaoStatus, testStatus, branch, keyword, assignee string, offset, limit int) ([]model.Issue, int64, error) {
 	query := r.db.Model(&model.Issue{})
 
 	if projectID > 0 {
 		query = query.Where("project_id = ?", projectID)
-	}
-	if projectSetID > 0 {
-		query = query.Where("project_id IN (SELECT project_id FROM project WHERE project_set_id = ?)", projectSetID)
 	}
 	if zentaoStatus != "" {
 		query = query.Where("zentao_status = ?", zentaoStatus)

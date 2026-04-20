@@ -2,6 +2,7 @@ package handler
 
 import (
 	"auto-test-flow/internal/dto"
+	"auto-test-flow/internal/middleware"
 	"auto-test-flow/internal/pkg"
 	cliservice "auto-test-flow/internal/service"
 	"go.uber.org/zap"
@@ -113,8 +114,12 @@ func (h *CLIInteractionHandler) ReplyInteraction(c *gin.Context) {
 		return
 	}
 
-	userID, _ := c.Get("user_id")
-	if err := h.service.ReplyInteraction(uint(id), userID.(uint), req.Response); err != nil {
+	userID := middleware.GetCurrentUserID(c)
+	if userID == 0 {
+		pkg.Unauthorized(c, "用户未登录")
+		return
+	}
+	if err := h.service.ReplyInteraction(uint(id), uint(userID), req.Response); err != nil {
 		pkg.Fail(c, pkg.CodeInternalError, err.Error())
 		return
 	}
@@ -129,8 +134,12 @@ func (h *CLIInteractionHandler) ApproveInteraction(c *gin.Context) {
 		return
 	}
 
-	userID, _ := c.Get("user_id")
-	if err := h.service.ApproveInteraction(uint(id), userID.(uint)); err != nil {
+	userID := middleware.GetCurrentUserID(c)
+	if userID == 0 {
+		pkg.Unauthorized(c, "用户未登录")
+		return
+	}
+	if err := h.service.ApproveInteraction(uint(id), uint(userID)); err != nil {
 		pkg.Fail(c, pkg.CodeInternalError, err.Error())
 		return
 	}
@@ -151,8 +160,12 @@ func (h *CLIInteractionHandler) RejectInteraction(c *gin.Context) {
 		return
 	}
 
-	userID, _ := c.Get("user_id")
-	if err := h.service.RejectInteraction(uint(id), userID.(uint), req.Reason); err != nil {
+	userID := middleware.GetCurrentUserID(c)
+	if userID == 0 {
+		pkg.Unauthorized(c, "用户未登录")
+		return
+	}
+	if err := h.service.RejectInteraction(uint(id), uint(userID), req.Reason); err != nil {
 		pkg.Fail(c, pkg.CodeInternalError, err.Error())
 		return
 	}

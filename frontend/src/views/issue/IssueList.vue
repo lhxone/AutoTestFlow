@@ -19,8 +19,8 @@
         </a-select>
       </a-col>
       <a-col :span="4">
-        <a-select v-model:value="query.project_set_id" :placeholder="$t('issue.list.projectSet')" allowClear style="width: 100%" @change="handleProjectSetChange">
-          <a-select-option v-for="p in projectSets" :key="p.id" :value="p.id">{{ p.name }}</a-select-option>
+        <a-select v-model:value="query.project_id" :placeholder="$t('issue.list.project')" allowClear style="width: 100%" @change="handleProjectChange">
+          <a-select-option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</a-select-option>
         </a-select>
       </a-col>
       <a-col :span="4">
@@ -191,7 +191,7 @@ const router = useRouter()
 
 const list = ref<Issue[]>([])
 const loading = ref(false)
-const query = reactive({ keyword: '', zentao_status: 'resolved', test_status: undefined, project_set_id: undefined, branch: undefined })
+const query = reactive({ keyword: '', zentao_status: 'resolved', test_status: undefined, project_id: undefined as number | undefined, branch: undefined as string | undefined })
 const pagination = reactive({ current: 1, pageSize: 20, total: 0 })
 
 const syncModal = ref(false)
@@ -199,7 +199,7 @@ const syncing = ref(false)
 const syncForm = reactive({ project_id: undefined as number | undefined, full_sync: false })
 const projectList = ref<{ id: number; name: string; zentao_project_name?: string }[]>([])
 const projectListLoading = ref(false)
-const projectSets = ref<{ id: number; name: string }[]>([])
+const projects = ref<{ id: number; name: string }[]>([])
 const branches = ref<string[]>([])
 const testStatusMap = computed(() => getTestStatusMap(t))
 
@@ -233,7 +233,7 @@ const columns = computed(() => [
 
 onMounted(() => {
   fetchData()
-  fetchProjectSets()
+  fetchProjects()
 })
 
 async function fetchData() {
@@ -277,13 +277,13 @@ async function fetchProjectList() {
   }
 }
 
-async function fetchProjectSets() {
-  if (projectSets.value.length > 0) return
+async function fetchProjects() {
+  if (projects.value.length > 0) return
   try {
     const res = await getProjectList({ page: 1, page_size: 100 })
-    projectSets.value = res.data.data?.list?.map((p: any) => ({ id: p.id, name: p.name })) || []
+    projects.value = res.data.data?.list?.map((project: any) => ({ id: project.id, name: project.name })) || []
   } catch (error) {
-    console.error(t('issue.list.messages.projectSetLoadFailed'), error)
+    console.error(t('issue.list.messages.projectLoadFailed'), error)
   }
 }
 
@@ -292,23 +292,11 @@ function filterOption(input: string, option: any) {
   return String(label).toLowerCase().includes(input.toLowerCase())
 }
 
-async function handleProjectSetChange(value: number | undefined) {
-  if (!value) {
-    branches.value = []
-    return
-  }
-  try {
-    const res = await getProjectList({ project_set_id: value, page: 1, page_size: 100 })
-    const projects = res.data.data?.list || []
-    const allBranches = new Set<string>()
-    projects.forEach((project: any) => {
-      if (project.branch) allBranches.add(project.branch)
-    })
-    branches.value = Array.from(allBranches)
-  } catch (error) {
-    console.error(t('issue.list.messages.branchLoadFailed'), error)
-    branches.value = []
-  }
+async function handleProjectChange(value: number | undefined) {
+  query.project_id = value
+  query.branch = undefined
+  pagination.current = 1
+  await fetchData()
 }
 
 async function doSync() {
@@ -458,12 +446,15 @@ function formatSeverity(severity: string) {
 }
 
 function canGenerateTest(issue: Issue) {
-  if (issue.zentao_status !== 'resolved') {
-    return false
+  if (issue.test_status === 'error') {
+    return issue.zentao_status === 'resolved'
   }
 
-  // 允许首次生成(pending)和失败后重试(error)
-  return issue.test_status === 'pending' || issue.test_status === 'error'
+  if (issue.test_status === 'pending') {
+    return issue.zentao_status === 'resolved' || issue.zentao_status === 'active'
+  }
+
+  return false
 }
 </script>
 

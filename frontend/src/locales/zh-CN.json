@@ -114,7 +114,7 @@
       "search": "搜索标题",
       "zentaoStatus": "禅道状态",
       "testStatus": "测试状态",
-      "projectSet": "项目集",
+      "project": "项目",
       "branch": "分支",
       "sync": "同步禅道",
       "syncModal": {
@@ -157,7 +157,7 @@
         "noDescription": "暂无描述"
       },
       "messages": {
-        "projectSetLoadFailed": "获取项目集失败",
+        "projectLoadFailed": "获取项目失败",
         "branchLoadFailed": "获取项目分支失败",
         "selectProjectWarning": "请选择项目",
         "syncTriggered": "同步任务已触发，请稍后刷新查看结果",

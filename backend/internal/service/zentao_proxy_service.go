@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -56,7 +55,7 @@ type ZentaoProduct struct {
 
 // ZentaoBranch 禅道分支（同产品线下的其他产品）
 type ZentaoBranch struct {
-	ID   int    `json:"id"`
+	ID   string `json:"id"`
 	Name string `json:"name"`
 }
 
@@ -139,16 +138,9 @@ func (s *ZentaoProxyService) GetProducts() ([]ZentaoProduct, error) {
 }
 
 // GetBranches 获取禅道产品的分支列表
-// 禅道 REST API v1 没有独立的 branches 端点，分支数据在产品页面的 HTML 中
-// 通过解析 /product-browse-{productID}.html 页面中的 batchChangeBranch 链接提取
+// 优先解析 branch-ajaxGetDropMenu 返回的 HTML，下拉中的 data-app='product' 链接即分支选项。
+// 兼容保留对旧 product-browse 页面 HTML 的兜底解析。
 func (s *ZentaoProxyService) GetBranches(productID string) ([]ZentaoBranch, error) {
-	products, err := s.GetProducts()
-	if err == nil {
-		if branches := resolveBranchesFromProducts(productID, products); len(branches) > 0 {
-			return branches, nil
-		}
-	}
-
 	baseURL := s.settingRepo.GetValue("zentao", "base_url")
 	if baseURL == "" {
 		return nil, fmt.Errorf("禅道未配置，请先在「系统设置 → 禅道管理」中配置")
@@ -160,93 +152,123 @@ func (s *ZentaoProxyService) GetBranches(productID string) ([]ZentaoBranch, erro
 	}
 
 	base := strings.TrimRight(baseURL, "/")
-	url := fmt.Sprintf("%s/product-browse-%s.html", base, productID)
+	branchMenuURL := fmt.Sprintf("%s/branch-ajaxGetDropMenu-%s-all-product-browse-storyType=story.html", base, productID)
+	body, statusCode, err := s.doZentaoHTMLGet(branchMenuURL, token)
+	if err == nil {
+		if branches := parseBranchesFromDropMenuHTML(body, productID); len(branches) > 0 {
+			return branches, nil
+		}
+	} else {
+		s.logger.Warn("request zentao branch drop menu failed", zap.String("product_id", productID), zap.Error(err))
+	}
 
-	req, err := http.NewRequest("GET", url, nil)
+	productURL := fmt.Sprintf("%s/product-browse-%s.html", base, productID)
+	body, statusCode, err = s.doZentaoHTMLGet(productURL, token)
 	if err != nil {
 		return nil, err
+	}
+	if statusCode != http.StatusOK {
+		return nil, fmt.Errorf("禅道返回错误 %d", statusCode)
+	}
+
+	return parseBranchesFromLegacyHTML(body), nil
+	}
+
+
+func (s *ZentaoProxyService) doZentaoHTMLGet(url, token string) ([]byte, int, error) {
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, 0, err
 	}
 	req.Header.Set("Token", token)
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("请求禅道产品页面失败: %w", err)
+		return nil, 0, fmt.Errorf("请求禅道页面失败: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("读取禅道产品页面失败: %w", err)
+		return nil, resp.StatusCode, fmt.Errorf("读取禅道页面失败: %w", err)
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("禅道返回错误 %d", resp.StatusCode)
-	}
-
-	return parseBranchesFromHTML(body), nil
+	return body, resp.StatusCode, nil
 }
 
-func resolveBranchesFromProducts(productID string, products []ZentaoProduct) []ZentaoBranch {
-	targetID, err := strconv.Atoi(strings.TrimSpace(productID))
-	if err != nil {
-		return nil
+func parseBranchesFromDropMenuHTML(body []byte, productID string) []ZentaoBranch {
+	anchorRe := regexp.MustCompile(`(?is)<a\b([^>]*)>(.*?)</a>`)
+	branchPathRe := regexp.MustCompile(fmt.Sprintf(`(?i)product-browse-%s-([^-/?#'"\\]+)`, regexp.QuoteMeta(strings.TrimSpace(productID))))
+	tagRe := regexp.MustCompile(`(?is)<[^>]+>`)
+
+	matches := anchorRe.FindAllStringSubmatch(string(body), -1)
+	if len(matches) == 0 {
+		return []ZentaoBranch{}
 	}
 
-	var target *ZentaoProduct
-	for i := range products {
-		if products[i].ID == targetID {
-			target = &products[i]
-			break
-		}
-	}
-	if target == nil {
-		return nil
-	}
-	if target.Type == "branch" {
-		return []ZentaoBranch{{ID: target.ID, Name: strings.TrimSpace(target.Name)}}
-	}
-
-	branches := make([]ZentaoBranch, 0)
-	seen := make(map[int]struct{})
-	appendBranch := func(product ZentaoProduct) {
-		if product.ID <= 0 {
-			return
-		}
-		if _, ok := seen[product.ID]; ok {
-			return
-		}
-		seen[product.ID] = struct{}{}
-		branches = append(branches, ZentaoBranch{ID: product.ID, Name: strings.TrimSpace(product.Name)})
-	}
-
-	for _, product := range products {
-		if product.Type != "branch" {
+	branches := make([]ZentaoBranch, 0, len(matches))
+	seen := make(map[string]struct{})
+	for _, match := range matches {
+		attrs := match[1]
+		if !strings.EqualFold(strings.TrimSpace(extractHTMLAttr(attrs, "data-app")), "product") {
 			continue
 		}
 
-		sameLine := target.Line > 0 && product.Line == target.Line
-		underSelectedProgram := product.Program > 0 && product.Program == target.ID
-		if sameLine || underSelectedProgram {
-			appendBranch(product)
+		href := extractHTMLAttr(attrs, "href")
+		if href == "" {
+			continue
 		}
+
+		branchMatch := branchPathRe.FindStringSubmatch(href)
+		if len(branchMatch) < 2 {
+			continue
+		}
+
+		id := strings.TrimSpace(branchMatch[1])
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+
+		name := strings.TrimSpace(tagRe.ReplaceAllString(match[2], ""))
+		if name == "" {
+			continue
+		}
+
+		seen[id] = struct{}{}
+		branches = append(branches, ZentaoBranch{ID: id, Name: name})
 	}
 
 	return branches
 }
 
-func parseBranchesFromHTML(body []byte) []ZentaoBranch {
+func extractHTMLAttr(attrs, name string) string {
+	re := regexp.MustCompile(fmt.Sprintf(`(?i)\b%s\s*=\s*(?:"([^"]*)"|'([^']*)')`, regexp.QuoteMeta(name)))
+	match := re.FindStringSubmatch(attrs)
+	if len(match) < 3 {
+		return ""
+	}
+	if match[1] != "" {
+		return match[1]
+	}
+	return match[2]
+}
+
+func parseBranchesFromLegacyHTML(body []byte) []ZentaoBranch {
 	// 匹配格式: batchChangeBranch-{branchID}-xxx...>{branchName}</a>
-	re := regexp.MustCompile(`batchChangeBranch-(\d+)-[^>]*>([^<]+)</a>`)
+	re := regexp.MustCompile(`batchChangeBranch-([^-'"\\]+)-[^>]*>([^<]+)</a>`)
 	matches := re.FindAllStringSubmatch(string(body), -1)
 	if len(matches) == 0 {
 		return []ZentaoBranch{}
 	}
 
 	branches := make([]ZentaoBranch, 0, len(matches))
-	seen := make(map[int]struct{})
+	seen := make(map[string]struct{})
 	for _, m := range matches {
-		id, err := strconv.Atoi(m[1])
-		if err != nil {
+		id := strings.TrimSpace(m[1])
+		if id == "" {
 			continue
 		}
 		if _, ok := seen[id]; ok {

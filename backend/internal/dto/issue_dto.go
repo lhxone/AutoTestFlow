@@ -2,15 +2,15 @@ package dto
 
 // IssueListQuery 问题单列表查询
 type IssueListQuery struct {
-	Page          int    `form:"page" binding:"omitempty,min=1"`
-	PageSize      int    `form:"page_size" binding:"omitempty,min=1,max=100"`
-	ProjectID     uint64 `form:"project_id"`
-	ProjectSetID  uint64 `form:"project_set_id"`
-	ZentaoStatus  string `form:"zentao_status"`
-	TestStatus    string `form:"test_status"`
-	Branch        string `form:"branch"`
-	Keyword       string `form:"keyword"`
-	Assignee      string `form:"assignee"`
+	Page                int    `form:"page" binding:"omitempty,min=1"`
+	PageSize            int    `form:"page_size" binding:"omitempty,min=1,max=100"`
+	ProjectID           uint64 `form:"project_id"`
+	LegacyProjectSetID  uint64 `form:"project_set_id"`
+	ZentaoStatus        string `form:"zentao_status"`
+	TestStatus          string `form:"test_status"`
+	Branch              string `form:"branch"`
+	Keyword             string `form:"keyword"`
+	Assignee            string `form:"assignee"`
 }
 
 // SyncIssuesRequest 同步问题单请求

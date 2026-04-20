@@ -114,7 +114,7 @@
       "search": "Search title",
       "zentaoStatus": "Zentao Status",
       "testStatus": "Test Status",
-      "projectSet": "Project Set",
+      "project": "Project",
       "branch": "Branch",
       "sync": "Sync Zentao",
       "syncModal": {
@@ -157,7 +157,7 @@
         "noDescription": "No description"
       },
       "messages": {
-        "projectSetLoadFailed": "Failed to load project sets",
+        "projectLoadFailed": "Failed to load projects",
         "branchLoadFailed": "Failed to load project branches",
         "selectProjectWarning": "Please select a project",
         "syncTriggered": "Sync task triggered. Please refresh to see results.",

@@ -45,13 +45,14 @@ func (h *IssueHandler) List(c *gin.Context) {
 	if query.PageSize <= 0 {
 		query.PageSize = 20
 	}
-	if query.ZentaoStatus == "" {
-		query.ZentaoStatus = "resolved"
+	projectID := query.ProjectID
+	if projectID == 0 {
+		projectID = query.LegacyProjectSetID
 	}
 	offset := (query.Page - 1) * query.PageSize
 
 	issues, total, err := h.issueRepo.List(
-		query.ProjectID, query.ProjectSetID, query.ZentaoStatus, query.TestStatus,
+		projectID, query.ZentaoStatus, query.TestStatus,
 		query.Branch, query.Keyword, query.Assignee, offset, query.PageSize,
 	)
 	if err != nil {

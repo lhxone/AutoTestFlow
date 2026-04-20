@@ -225,17 +225,17 @@ func (r *EinoGenTestRuntime) buildPrompt(
 	inputJSON, _ := json.MarshalIndent(input, "", "  ")
 	return fmt.Sprintf(`# AutoTestFlow Eino Runtime
 
-你正在执行 AutoTestFlow 的 gen-test 任务，请在当前仓库目录内完成测试资产生成。
+你正在执行 AutoTestFlow 的生成测试用例/脚本任务，请在当前仓库目录内完成测试资产生成。
 
 ## 强制规则
-- 优先遵循 gen-test 技能流程：探索测试结构 -> 发现共享工具/数据 -> 生成测试文档和脚本 -> 运行自测 -> 修复 -> 重试。
+- 优先遵循流程：探索测试结构 -> 发现共享工具/数据 -> 生成测试文档和脚本 -> 运行自测 -> 修复 -> 重试。
 - 你必须通过可用工具真实地探索仓库和运行命令，不要凭空假设项目结构。
-- 如果是 Web UI 测试且有 Chrome MCP，优先用 Chrome MCP 确认 DOM、交互和选择器。
-- 禁止默认执行 npm install；如确需安装依赖，只允许使用 pnpm。
+- 如果是 Web UI 测试且有 Chrome MCP，优先用 Chrome MCP 确认 DOM、交互和选择器。选择器优先使用data-testid等稳定属性，不要使用过于脆弱的层级或文本选择器。
 - 生成的测试脚本必须包含至少一个可执行断言。
 - 必须把实际文件写入仓库目录。
 - 完成后必须调用 SubmitGenTestResult 工具提交结构化结果，而不是只输出自然语言。
 - 若关键信息缺失，可调用 AskUserQuestion；若需要人工许可，可调用 RequestPermission。
+- 必须在确认系统架构后，使用相应的工具。比如在Windows环境下，必选使用Powershell
 
 ## 可用路径
 - 仓库根目录: %s

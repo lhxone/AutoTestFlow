@@ -273,7 +273,7 @@ const query = reactive({ keyword: '' })
 const pagination = reactive({ current: 1, pageSize: 20, total: 0 })
 
 const zentaoProjects = ref<{ id: number; name: string; label: string }[]>([])
-const zentaoBranches = ref<{ id: number; name: string }[]>([])
+const zentaoBranches = ref<{ id: string; name: string }[]>([])
 const zentaoProjectsLoading = ref(false)
 const zentaoBranchesLoading = ref(false)
 const selectedZentaoProject = ref<number | null>(null)
