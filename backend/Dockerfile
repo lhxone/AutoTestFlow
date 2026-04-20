@@ -2,7 +2,7 @@ FROM harbor.inspur.local/atf/golang:1.26.2 AS builder
 
 WORKDIR /build
 
-RUN go env -w GOPROXY=https://mirrors.aliyun.com/golang/,direct && \
+RUN go env -w GOPROXY=https://mirrors.aliyun.com/goproxy/,direct && \
     go env -w GOSUMDB=sum.golang.google.cn
 
 COPY go.mod go.sum ./
