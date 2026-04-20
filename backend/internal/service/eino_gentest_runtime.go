@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	defaultGenTestTurnLimit          = 100
+	defaultGenTestTurnLimit          = 1000
 	defaultGenTestToolResultMaxBytes = 12_000
 	defaultGenTestReadMaxBytes       = 64_000
 )

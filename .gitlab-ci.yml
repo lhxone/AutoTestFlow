@@ -9,7 +9,7 @@ variables:
   DOCKER_VERSION: "27.4.1"
   DOCKER_TLS_CERTDIR: "/certs"
   DOCKER_BUILDKIT: "1"
-  GOPROXY: "https://mirrors.aliyun.com/goproxy/,https://goproxy.cn,direct"
+  GOPROXY: "https://mirrors.aliyun.com/goproxy/,direct"
   GOSUMDB: "sum.golang.google.cn"
   NPM_CONFIG_REGISTRY: "https://registry.npmmirror.com"
   ALPINE_MIRROR: "https://mirrors.aliyun.com"
