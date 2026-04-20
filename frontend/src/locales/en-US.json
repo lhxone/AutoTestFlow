@@ -1007,6 +1007,7 @@
     "task": {
       "pending": "Pending",
       "running": "Running",
+      "warning": "Needs Manual Review",
       "completed": "Completed",
       "failed": "Failed"
     },

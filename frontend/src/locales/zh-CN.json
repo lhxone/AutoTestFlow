@@ -1007,6 +1007,7 @@
     "task": {
       "pending": "待执行",
       "running": "执行中",
+      "warning": "待人工确认",
       "completed": "已完成",
       "failed": "失败"
     },

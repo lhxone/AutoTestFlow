@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"auto-test-flow/internal/repository"
 
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 type GenTestService struct {
@@ -439,16 +441,25 @@ func (s *GenTestService) FinalizeTask(taskID uint64, report *SelfTestReport) err
 
 	if report != nil && !report.Passed {
 		now := time.Now()
-		task.Status = model.TaskStatusFailed
+		task.Status = model.TaskStatusWarning
 		task.CompletedAt = &now
 		task.ErrorMessage = report.Summary
 		_ = s.testTaskRepo.Update(task)
-		_ = s.issueRepo.ForceUpdateTestStatus(task.IssueID, model.TestStatusError)
+		_ = s.issueRepo.ForceUpdateTestStatus(task.IssueID, model.TestStatusReviewPending)
 		s.publishTaskEvent(task.ID, TaskEvent{
 			Type:    taskEventTypeStatus,
 			Stage:   "self_test_failed",
-			Status:  model.TaskStatusFailed,
+			Status:  model.TaskStatusWarning,
 			Message: report.Summary,
+		})
+		if _, err := s.ensureReviewTask(task, "测试资产已生成，自测失败，可继续编辑、审批和提交"); err != nil {
+			return err
+		}
+		s.publishTaskEvent(task.ID, TaskEvent{
+			Type:    taskEventTypeStatus,
+			Stage:   "review_pending",
+			Status:  model.TaskStatusWarning,
+			Message: "测试资产已生成，自测未通过，已进入 Review 阶段，可继续人工处理",
 		})
 		return nil
 	}
@@ -462,29 +473,16 @@ func (s *GenTestService) FinalizeTask(taskID uint64, report *SelfTestReport) err
 	}
 
 	_ = s.issueRepo.ForceUpdateTestStatus(task.IssueID, model.TestStatusReviewPending)
+	review, err := s.ensureReviewTask(task, "测试任务已生成完成，进入 Review 阶段")
+	if err != nil {
+		return err
+	}
 	s.publishTaskEvent(task.ID, TaskEvent{
 		Type:    taskEventTypeStatus,
 		Stage:   "review_pending",
 		Status:  model.TaskStatusCompleted,
 		Message: "测试任务已生成完成，进入 Review 阶段",
 	})
-
-	input, err := s.loadInputForTask(task)
-	if err != nil {
-		return err
-	}
-
-	review := &model.ReviewTask{
-		TestTaskID:  task.ID,
-		IssueID:     task.IssueID,
-		ProjectID:   task.ProjectID,
-		Title:       fmt.Sprintf("Review: %s", input.IssueTitle),
-		Status:      model.ReviewStatusPending,
-		SubmittedBy: task.CreatedBy,
-	}
-	if err := s.reviewRepo.Create(review); err != nil {
-		return err
-	}
 
 	s.logger.Info("测试生成任务已完成并进入Review",
 		zap.Uint64("task_id", task.ID),
@@ -672,6 +670,30 @@ func (s *GenTestService) markTaskFailedIfStillRunning(taskID uint64, reason erro
 		return // 已经被 runGenerateTask 等流程处理过了
 	}
 
+	if s.taskHasGeneratedArtifacts(task) {
+		now := time.Now()
+		task.Status = model.TaskStatusWarning
+		task.ErrorMessage = reason.Error()
+		task.CompletedAt = &now
+		_ = s.testTaskRepo.Update(task)
+		_ = s.issueRepo.ForceUpdateTestStatus(task.IssueID, model.TestStatusReviewPending)
+		if _, ensureErr := s.ensureReviewTask(task, "生成阶段存在异常，但已保留当前产物，可继续编辑、审批和提交"); ensureErr == nil {
+			s.publishTaskEvent(taskID, TaskEvent{
+				Type:    taskEventTypeError,
+				Stage:   "runtime_failed",
+				Status:  model.TaskStatusWarning,
+				Message: reason.Error(),
+			})
+			s.publishTaskEvent(taskID, TaskEvent{
+				Type:    taskEventTypeStatus,
+				Stage:   "review_pending",
+				Status:  model.TaskStatusWarning,
+				Message: "生成过程中出现异常，但当前产物已保留，已进入 Review 阶段",
+			})
+			return
+		}
+	}
+
 	now := time.Now()
 	task.Status = model.TaskStatusFailed
 	task.ErrorMessage = reason.Error()
@@ -685,6 +707,60 @@ func (s *GenTestService) markTaskFailedIfStillRunning(taskID uint64, reason erro
 		Status:  model.TaskStatusFailed,
 		Message: reason.Error(),
 	})
+}
+
+func (s *GenTestService) taskHasGeneratedArtifacts(task *model.TestTask) bool {
+	if task == nil {
+		return false
+	}
+	if len(task.AIOutput) > 0 {
+		return true
+	}
+	cases, _ := s.testTaskRepo.GetTestCasesByTaskID(task.ID)
+	if len(cases) > 0 {
+		return true
+	}
+	scripts, _ := s.testTaskRepo.GetTestScriptsByTaskID(task.ID)
+	if len(scripts) > 0 {
+		return true
+	}
+	docs, _ := s.testTaskRepo.GetTestDocsByTaskID(task.ID)
+	return len(docs) > 0
+}
+
+func (s *GenTestService) ensureReviewTask(task *model.TestTask, note string) (*model.ReviewTask, error) {
+	if task == nil {
+		return nil, fmt.Errorf("测试任务不能为空")
+	}
+
+	review, err := s.reviewRepo.GetLatestByTestTaskID(task.ID)
+	if err == nil {
+		return review, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+
+	input, inputErr := s.loadInputForTask(task)
+	title := fmt.Sprintf("Review: Task #%d", task.ID)
+	if inputErr == nil && input != nil && strings.TrimSpace(input.IssueTitle) != "" {
+		title = fmt.Sprintf("Review: %s", input.IssueTitle)
+	}
+
+	review = &model.ReviewTask{
+		TestTaskID:  task.ID,
+		IssueID:     task.IssueID,
+		ProjectID:   task.ProjectID,
+		Title:       title,
+		Status:      model.ReviewStatusPending,
+		SubmittedBy: task.CreatedBy,
+		ReviewNote:  note,
+	}
+	if err := s.reviewRepo.Create(review); err != nil {
+		return nil, err
+	}
+
+	return review, nil
 }
 
 func (s *GenTestService) persistGeneratedArtifacts(task *model.TestTask, output *GenTestOutput) error {

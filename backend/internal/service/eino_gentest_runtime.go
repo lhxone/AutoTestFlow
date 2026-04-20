@@ -238,6 +238,7 @@ func (r *EinoGenTestRuntime) buildPrompt(
 - 完成后必须调用 SubmitGenTestResult 工具提交结构化结果，而不是只输出自然语言。
 - 若关键信息缺失，可调用 AskUserQuestion；若需要人工许可，可调用 RequestPermission。
 - 必须在确认系统架构后，使用相应的工具。比如在Windows环境下，必须使用Powershell，不能使用bash。
+- 在创建文件/编辑文件后，必须实时更新结果文件，不要等最后一步才写入结果文件。
 
 ## 可用路径
 - 仓库根目录: %s

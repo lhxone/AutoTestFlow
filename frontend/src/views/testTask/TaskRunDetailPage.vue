@@ -460,7 +460,7 @@ function closeEventSource() {
 
 function taskStatusColor(s: string) {
   const map: Record<string, string> = {
-    pending: 'default', running: 'processing', completed: 'success', failed: 'error',
+    pending: 'default', running: 'processing', completed: 'success', failed: 'error', warning: 'warning',
   }
   return map[s] || 'default'
 }

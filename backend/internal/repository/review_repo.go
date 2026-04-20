@@ -27,6 +27,18 @@ func (r *ReviewRepo) GetByID(id uint64) (*model.ReviewTask, error) {
 	return &rt, nil
 }
 
+func (r *ReviewRepo) GetLatestByTestTaskID(testTaskID uint64) (*model.ReviewTask, error) {
+	var rt model.ReviewTask
+	err := r.db.Preload("TestTask").Preload("Issue").Preload("Reviewer").
+		Where("test_task_id = ?", testTaskID).
+		Order("id DESC").
+		First(&rt).Error
+	if err != nil {
+		return nil, err
+	}
+	return &rt, nil
+}
+
 func (r *ReviewRepo) Update(task *model.ReviewTask) error {
 	return r.db.Model(&model.ReviewTask{}).
 		Where("id = ?", task.ID).

@@ -473,6 +473,7 @@ function taskStatusColor(status: string) {
     running: 'processing',
     completed: 'success',
     failed: 'error',
+    warning: 'warning',
   }
   return map[status] || 'default'
 }
