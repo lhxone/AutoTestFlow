@@ -1,4 +1,4 @@
-FROM harbor.inspur.local/atf/golang:1.22-alpine AS builder
+FROM harbor.inspur.local/atf/golang:1.26.2 AS builder
 
 WORKDIR /build
 
