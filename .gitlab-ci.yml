@@ -13,9 +13,9 @@ variables:
   GOSUMDB: "sum.golang.google.cn"
   NPM_CONFIG_REGISTRY: "https://registry.npmmirror.com"
   ALPINE_MIRROR: "https://mirrors.aliyun.com"
-  DEPLOY_HOST: "192.168.53.106"
+  DEPLOY_HOST: "192.168.53.185"
   DEPLOY_PORT: "22"
-  DEPLOY_USER: "root"
+  DEPLOY_USER: "ubuntu"
   DEPLOY_BASE_DIR: "/data/AutoTestFlow"
 
 cache:
@@ -42,7 +42,7 @@ backend-test:
     - cd backend
     - go test ./cmd/... ./internal/...
 
-frontend-check:
+frontend-test:
   tags:
     - docker
   stage: test
@@ -91,7 +91,7 @@ build-frontend-image:
   services:
     - name: harbor.inspur.local/atf/docker:${DOCKER_VERSION}-dind
   needs:
-    - frontend-check
+    - frontend-test
   variables:
     DOCKER_BUILDKIT: "0"
   rules:
@@ -119,16 +119,18 @@ deploy-production:
     - build-frontend-image
   environment:
     name: production
-    url: http://192.168.53.106
+    url: http://192.168.53.185
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push"'
   before_script:
     - sed -i "s|https\?://dl-cdn.alpinelinux.org/alpine|${ALPINE_MIRROR}/alpine|g" /etc/apk/repositories
     - apk update
-    - apk add --no-cache openssh-client rsync sshpass
-    - test -n "$DEPLOY_PASSWORD"
+    - apk add --no-cache openssh-client rsync
+    - test -n "$DEPLOY_SSH_PRIVATE_KEY"
     - mkdir -p ~/.ssh
     - chmod 700 ~/.ssh
+    - printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/deploy_key.pem
+    - chmod 600 ~/.ssh/deploy_key.pem
     - |
       if [ -n "$DEPLOY_SSH_KNOWN_HOSTS" ]; then
         printf '%s\n' "$DEPLOY_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
@@ -165,8 +167,7 @@ deploy-production:
       ATF_MAIL_PASSWORD=${ATF_MAIL_PASSWORD}
       ATF_MAIL_FROM=${ATF_MAIL_FROM:-autotest@example.com}
       EOF
-    - export SSHPASS="$DEPLOY_PASSWORD"
-    - sshpass -e ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$APP_DIR' '${DEPLOY_BASE_DIR}/mysql' '${DEPLOY_BASE_DIR}/workspace/repos' '${DEPLOY_BASE_DIR}/workspace/cli-runtime' '${DEPLOY_BASE_DIR}/logs'"
-    - sshpass -e rsync -az --delete --exclude '.git/' --exclude '.deploy/' --exclude 'frontend/node_modules/' --exclude 'backend/bin/' --exclude 'logs/' ./ "$DEPLOY_USER@$DEPLOY_HOST:$APP_DIR/"
-    - sshpass -e rsync -az .deploy/.env.deploy "$DEPLOY_USER@$DEPLOY_HOST:$APP_DIR/.env.deploy"
-    - sshpass -e ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "cd '$APP_DIR' && docker compose --env-file .env.deploy -f docker-compose.prod.yml up -d --build --remove-orphans"
+    - ssh -i ~/.ssh/deploy_key.pem -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$APP_DIR' '${DEPLOY_BASE_DIR}/mysql' '${DEPLOY_BASE_DIR}/workspace/repos' '${DEPLOY_BASE_DIR}/workspace/cli-runtime' '${DEPLOY_BASE_DIR}/logs'"
+    - rsync -az --delete -e "ssh -i ~/.ssh/deploy_key.pem -p $DEPLOY_PORT" --exclude '.git/' --exclude '.deploy/' --exclude 'frontend/node_modules/' --exclude 'backend/bin/' --exclude 'logs/' ./ "$DEPLOY_USER@$DEPLOY_HOST:$APP_DIR/"
+    - rsync -az -e "ssh -i ~/.ssh/deploy_key.pem -p $DEPLOY_PORT" .deploy/.env.deploy "$DEPLOY_USER@$DEPLOY_HOST:$APP_DIR/.env.deploy"
+    - ssh -i ~/.ssh/deploy_key.pem -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "cd '$APP_DIR' && if docker compose version >/dev/null 2>&1; then docker compose --env-file .env.deploy -f docker-compose.prod.yml up -d --build --remove-orphans; elif command -v docker-compose >/dev/null 2>&1; then docker-compose --env-file .env.deploy -f docker-compose.prod.yml up -d --build --remove-orphans; else echo 'Docker Compose is not installed on target host' >&2; exit 1; fi"
