@@ -209,4 +209,10 @@ deploy-production:
         fi
 
         \${COMPOSE_CMD} -p auto-test-flow --env-file .env.deploy -f docker-compose.prod.yml pull
-        \${COMPOSE_CMD} -p auto-test-flow --env-file .env.deploy -f docker-compose.prod.yml up -d --remove-orphans"
+        if ! \${COMPOSE_CMD} -p auto-test-flow --env-file .env.deploy -f docker-compose.prod.yml up -d --remove-orphans; then
+          \${COMPOSE_CMD} -p auto-test-flow --env-file .env.deploy -f docker-compose.prod.yml ps || true
+          \${COMPOSE_CMD} -p auto-test-flow --env-file .env.deploy -f docker-compose.prod.yml logs --tail=200 mysql || true
+          \${COMPOSE_CMD} -p auto-test-flow --env-file .env.deploy -f docker-compose.prod.yml logs --tail=200 backend || true
+          \${COMPOSE_CMD} -p auto-test-flow --env-file .env.deploy -f docker-compose.prod.yml logs --tail=200 frontend || true
+          exit 1
+        fi"
