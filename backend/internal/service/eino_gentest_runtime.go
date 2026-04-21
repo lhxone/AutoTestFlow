@@ -229,16 +229,59 @@ func (r *EinoGenTestRuntime) buildPrompt(
 
 ## 强制规则
 - 优先遵循流程：探索测试结构 -> 发现共享工具(helper路径下)/数据 -> 生成测试文档和脚本 -> 运行自测 -> 修复。
-- 必须在50轮操作之内生成，减少上下文空间。
+- 必须在50轮操作之内完成生成并调用SubmitGenTestResult 工具，避免占用过多上下文空间。
 - 你必须通过可用工具真实地探索仓库和运行命令，不要凭空假设项目结构。
 - 如果是 Web UI 测试且有 Chrome MCP，优先用 Chrome MCP 确认 DOM、交互和选择器。
 - 选择器优先使用data-testid等稳定属性，不要使用过于脆弱的层级或文本选择器。
 - 生成的测试脚本必须包含至少一个可执行断言。
 - 必须把实际文件写入仓库目录。
 - 完成后必须调用 SubmitGenTestResult 工具提交结构化结果，而不是只输出自然语言。
+- SubmitGenTestResult 必须严格使用标准字段名，禁止使用 path、case_name、prerequisites、module、status、expected_result 等别名字段。
 - 若关键信息缺失，可调用 AskUserQuestion；若需要人工许可，可调用 RequestPermission。
 - 必须在确认系统架构后，使用相应的工具。比如在Windows环境下，必须使用Powershell，不能使用bash。
 - 在创建文件/编辑文件后，必须实时更新结果文件，不要等最后一步才写入结果文件。
+
+## SubmitGenTestResult 标准示例
+你最终调用 SubmitGenTestResult 时，参数必须遵循下面的结构；字段名必须完全一致：
+
+{
+	"test_cases": [
+		{
+			"title": "验证语言从简体中文切换到 English 后导航菜单翻译为英文",
+			"category": "顶部导航-语言切换",
+			"precondition": "1. 用户已登录系统\n2. 当前页面语言为简体中文",
+			"steps": "1. 打开首页\n2. 切换语言到 English\n3. 检查导航菜单文本",
+			"expected": "导航菜单项显示为英文，不再包含中文文本",
+			"self_test_result": "pass",
+			"priority": 1
+		}
+	],
+	"test_script": {
+		"file_path": "test-cases/zentao/script/example.spec.ts",
+		"file_content": "",
+		"language": "typescript"
+	},
+	"test_doc": {
+		"title": "禅道回归测试文档",
+		"file_path": "test-cases/zentao/docs/example.md",
+		"content": ""
+	},
+	"self_test": {
+		"passed": true,
+		"summary": "自测通过",
+		"checks": ["Playwright 用例通过"]
+	},
+	"summary": "已生成测试用例、脚本和文档"
+}
+
+禁止输出以下错误写法：
+- test_script.path
+- test_doc.path
+- test_cases.case_name
+- test_cases.prerequisites
+- test_cases.module
+- test_cases.status
+- test_cases.expected_result
 
 ## 可用路径
 - 仓库根目录: %s
@@ -997,7 +1040,12 @@ func buildAnthropicToolPayloads(tools []genTestToolSpec) []map[string]any {
 }
 
 func buildGenTestOutput(args map[string]any) (*GenTestOutput, error) {
-	data, err := json.Marshal(args)
+	normalizedArgs := normalizeGenTestOutputArgs(args)
+	validationErrs := validateNormalizedGenTestOutputArgs(normalizedArgs)
+	if len(validationErrs) > 0 {
+		return nil, fmt.Errorf("SubmitGenTestResult 参数无效: %s", strings.Join(validationErrs, "; "))
+	}
+	data, err := json.Marshal(normalizedArgs)
 	if err != nil {
 		return nil, err
 	}
@@ -1006,6 +1054,174 @@ func buildGenTestOutput(args map[string]any) (*GenTestOutput, error) {
 		return nil, err
 	}
 	return &output, nil
+}
+
+func normalizeGenTestOutputArgs(args map[string]any) map[string]any {
+	if args == nil {
+		return map[string]any{}
+	}
+	normalized, ok := deepCloneAny(args).(map[string]any)
+	if !ok || normalized == nil {
+		return map[string]any{}
+	}
+
+	if testCases, ok := normalized["test_cases"].([]any); ok {
+		normalizedCases := make([]any, 0, len(testCases))
+		for _, item := range testCases {
+			caseMap, ok := item.(map[string]any)
+			if !ok {
+				normalizedCases = append(normalizedCases, item)
+				continue
+			}
+			cloneCase, _ := deepCloneAny(caseMap).(map[string]any)
+			if cloneCase == nil {
+				cloneCase = map[string]any{}
+			}
+			aliasStringField(cloneCase, "title", "case_name", "name")
+			aliasStringField(cloneCase, "category", "module", "case_type")
+			aliasStringField(cloneCase, "precondition", "prerequisites", "preconditions")
+			aliasStringField(cloneCase, "expected", "expected_result", "expected_results", "result")
+			aliasStringField(cloneCase, "self_test_result", "status", "self_result")
+			aliasIntField(cloneCase, "priority", "severity_level", "level")
+			if rawSteps, exists := cloneCase["steps"]; exists {
+				cloneCase["steps"] = normalizeStepValue(rawSteps)
+			}
+			normalizedCases = append(normalizedCases, cloneCase)
+		}
+		normalized["test_cases"] = normalizedCases
+	}
+
+	if testScript, ok := normalized["test_script"].(map[string]any); ok {
+		cloneScript, _ := deepCloneAny(testScript).(map[string]any)
+		if cloneScript == nil {
+			cloneScript = map[string]any{}
+		}
+		aliasStringField(cloneScript, "file_path", "path", "script_path")
+		aliasStringField(cloneScript, "file_content", "content", "script_content")
+		aliasStringField(cloneScript, "language", "lang")
+		normalized["test_script"] = cloneScript
+	}
+
+	if testDoc, ok := normalized["test_doc"].(map[string]any); ok {
+		cloneDoc, _ := deepCloneAny(testDoc).(map[string]any)
+		if cloneDoc == nil {
+			cloneDoc = map[string]any{}
+		}
+		aliasStringField(cloneDoc, "file_path", "path", "doc_path")
+		aliasStringField(cloneDoc, "content", "file_content", "doc_content")
+		aliasStringField(cloneDoc, "title", "name", "doc_title")
+		normalized["test_doc"] = cloneDoc
+	}
+
+	return normalized
+}
+
+func validateNormalizedGenTestOutputArgs(args map[string]any) []string {
+	errs := make([]string, 0, 8)
+
+	testCasesRaw, ok := args["test_cases"]
+	if !ok {
+		return append(errs, "缺少 test_cases")
+	}
+	testCases, ok := testCasesRaw.([]any)
+	if !ok {
+		return append(errs, "test_cases 必须是数组")
+	}
+	for index, item := range testCases {
+		caseMap, ok := item.(map[string]any)
+		if !ok {
+			errs = append(errs, fmt.Sprintf("test_cases[%d] 必须是对象", index))
+			continue
+		}
+		if strings.TrimSpace(stringArg(caseMap, "title", "")) == "" {
+			errs = append(errs, fmt.Sprintf("test_cases[%d].title 不能为空", index))
+		}
+		if strings.TrimSpace(stringArg(caseMap, "steps", "")) == "" {
+			errs = append(errs, fmt.Sprintf("test_cases[%d].steps 不能为空", index))
+		}
+		if strings.TrimSpace(stringArg(caseMap, "expected", "")) == "" {
+			errs = append(errs, fmt.Sprintf("test_cases[%d].expected 不能为空", index))
+		}
+	}
+
+	if testScript, ok := args["test_script"].(map[string]any); ok {
+		if strings.TrimSpace(stringArg(testScript, "file_path", "")) == "" && strings.TrimSpace(stringArg(testScript, "file_content", "")) == "" {
+			errs = append(errs, "test_script.file_path 和 test_script.file_content 不能同时为空")
+		}
+	} else {
+		errs = append(errs, "test_script 必须是对象")
+	}
+
+	if testDoc, ok := args["test_doc"].(map[string]any); ok {
+		if strings.TrimSpace(stringArg(testDoc, "file_path", "")) == "" && strings.TrimSpace(stringArg(testDoc, "content", "")) == "" {
+			errs = append(errs, "test_doc.file_path 和 test_doc.content 不能同时为空")
+		}
+	} else {
+		errs = append(errs, "test_doc 必须是对象")
+	}
+
+	if strings.TrimSpace(stringArg(args, "summary", "")) == "" {
+		errs = append(errs, "summary 不能为空")
+	}
+
+	return errs
+}
+
+func aliasStringField(target map[string]any, canonical string, aliases ...string) {
+	if strings.TrimSpace(stringArg(target, canonical, "")) != "" {
+		return
+	}
+	for _, alias := range aliases {
+		if value := strings.TrimSpace(stringArg(target, alias, "")); value != "" {
+			target[canonical] = value
+			return
+		}
+	}
+}
+
+func aliasIntField(target map[string]any, canonical string, aliases ...string) {
+	if _, exists := target[canonical]; exists {
+		return
+	}
+	for _, alias := range aliases {
+		if value, exists := target[alias]; exists && value != nil {
+			target[canonical] = intArg(target, alias, 0)
+			return
+		}
+	}
+}
+
+func normalizeStepValue(value any) string {
+	switch v := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return strings.TrimSpace(v)
+	case []any:
+		parts := make([]string, 0, len(v))
+		for index, item := range v {
+			text := strings.TrimSpace(fmt.Sprintf("%v", item))
+			if text == "" {
+				continue
+			}
+			parts = append(parts, fmt.Sprintf("%d. %s", index+1, text))
+		}
+		return strings.Join(parts, "\n")
+	default:
+		return strings.TrimSpace(fmt.Sprintf("%v", value))
+	}
+}
+
+func deepCloneAny(value any) any {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return value
+	}
+	var cloned any
+	if err := json.Unmarshal(data, &cloned); err != nil {
+		return value
+	}
+	return cloned
 }
 
 func parseGenTestOutputFromText(text string) (*GenTestOutput, error) {

@@ -1,4 +1,4 @@
-name: auto-test-flow
+version: "3.8"
 
 services:
   mysql:
