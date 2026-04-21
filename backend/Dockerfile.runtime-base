@@ -1,0 +1,94 @@
+ARG BASE_IMAGE=harbor.inspur.local/atf/node:20
+FROM ${BASE_IMAGE}
+
+ARG CHROME_DEVTOOLS_MCP_VERSION=0.21.0
+ARG DEBIAN_MIRROR=https://mirrors.aliyun.com/debian
+ARG DEBIAN_SECURITY_MIRROR=https://mirrors.aliyun.com/debian-security
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+ARG ALPINE_MIRROR=https://mirrors.aliyun.com/alpine
+
+RUN if command -v apt-get >/dev/null 2>&1; then \
+      # Debian 12+ (Bookworm) 使用 DEB822 格式 \
+      if [ -f /etc/apt/sources.list.d/debian.sources ]; then \
+        sed -i "s|http://deb.debian.org/debian|${DEBIAN_MIRROR}|g; s|http://security.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" /etc/apt/sources.list.d/debian.sources; \
+      fi; \
+      # 传统 sources.list 格式 \
+      if [ -f /etc/apt/sources.list ]; then \
+        sed -i "s|http://deb.debian.org/debian|${DEBIAN_MIRROR}|g; s|http://security.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" /etc/apt/sources.list; \
+      fi; \
+      # 其他可能的源文件 \
+      for f in /etc/apt/sources.list.d/*.list; do \
+        [ -f "$f" ] && sed -i "s|http://deb.debian.org/debian|${DEBIAN_MIRROR}|g; s|http://security.debian.org/debian-security|${DEBIAN_SECURITY_MIRROR}|g" "$f"; \
+      done; \
+      apt-get -o Acquire::Retries=5 update && \
+      apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
+        bash \
+        ca-certificates \
+        chromium \
+        fonts-liberation \
+        fonts-noto-cjk \
+        git \
+        openssh-client \
+        tzdata \
+        wget && \
+      rm -rf /var/lib/apt/lists/*; \
+    elif command -v apk >/dev/null 2>&1; then \
+      sed -i "s|https://dl-cdn.alpinelinux.org/alpine|${ALPINE_MIRROR}|g" /etc/apk/repositories; \
+      apk add --no-cache \
+        bash \
+        ca-certificates \
+        chromium \
+        font-noto-cjk \
+        freetype \
+        git \
+        harfbuzz \
+        nss \
+        openssh-client \
+        ttf-freefont \
+        tzdata \
+        wget; \
+    else \
+      echo "unsupported runtime image: apt-get/apk not found" >&2; \
+      exit 1; \
+    fi
+
+RUN npm install -g "chrome-devtools-mcp@${CHROME_DEVTOOLS_MCP_VERSION}" --registry="${NPM_REGISTRY}" && \
+    npm cache clean --force
+
+RUN set -eu; \
+    chrome_path=""; \
+    for candidate in /usr/bin/chromium /usr/bin/chromium-browser /usr/bin/google-chrome /usr/bin/google-chrome-stable; do \
+      if [ -x "$candidate" ]; then chrome_path="$candidate"; break; fi; \
+    done; \
+    test -n "$chrome_path"; \
+    printf '%s\n' \
+      '#!/usr/bin/env bash' \
+      'set -euo pipefail' \
+      'chrome_path="${CHROME_PATH:-'${chrome_path}'}"' \
+      'profile_dir="${CHROME_DEVTOOLS_MCP_USER_DATA_DIR:-/tmp/auto-test-flow/chrome-profile}"' \
+      'mkdir -p "${profile_dir}"' \
+      'exec chrome-devtools-mcp \' \
+      '  --headless \' \
+      '  --executablePath "${chrome_path}" \' \
+      '  --userDataDir "${profile_dir}" \' \
+      '  --chromeArg=--no-sandbox \' \
+      '  --chromeArg=--disable-setuid-sandbox \' \
+      '  --chromeArg=--disable-dev-shm-usage \' \
+      '  --chromeArg=--disable-gpu \' \
+      '  --no-usage-statistics \' \
+      '  "$@"' \
+      > /usr/local/bin/chrome-devtools-mcp-docker; \
+    chmod +x /usr/local/bin/chrome-devtools-mcp-docker; \
+    ln -sf "$chrome_path" /usr/local/bin/chrome
+
+ENV CHROME_PATH=/usr/local/bin/chrome \
+    CHROME_DEVTOOLS_MCP_USER_DATA_DIR=/tmp/auto-test-flow/chrome-profile
+
+RUN bash --version >/dev/null && \
+    git --version >/dev/null && \
+    node --version >/dev/null && \
+    npm --version >/dev/null && \
+    wget --version >/dev/null && \
+    chrome --version >/dev/null && \
+    chrome-devtools-mcp --version >/dev/null && \
+    chrome-devtools-mcp-docker --help >/dev/null
