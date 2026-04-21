@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"auto-test-flow/internal/config"
 	appCron "auto-test-flow/internal/cron"
@@ -18,6 +19,11 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"gorm.io/gorm"
+)
+
+const (
+	databaseInitMaxAttempts = 40
+	databaseInitRetryDelay  = 3 * time.Second
 )
 
 func main() {
@@ -46,7 +52,7 @@ func main() {
 	}
 
 	// 4. 初始化数据库
-	if err := repository.InitDB(&cfg.Database, logger); err != nil {
+	if err := initDBWithRetry(&cfg.Database, logger); err != nil {
 		logger.Fatal("初始化数据库失败", zap.Error(err))
 	}
 
@@ -80,6 +86,33 @@ func main() {
 
 	scheduler.Stop()
 	logger.Info("AutoTestFlow 已停止")
+}
+
+func initDBWithRetry(cfg *config.DatabaseConfig, logger *zap.Logger) error {
+	var lastErr error
+	for attempt := 1; attempt <= databaseInitMaxAttempts; attempt++ {
+		if err := repository.InitDB(cfg, logger); err == nil {
+			if attempt > 1 {
+				logger.Info("数据库已就绪，启动继续", zap.Int("attempt", attempt))
+			}
+			return nil
+		} else {
+			lastErr = err
+		}
+
+		if attempt == databaseInitMaxAttempts {
+			break
+		}
+
+		logger.Warn("数据库未就绪，等待后重试",
+			zap.Int("attempt", attempt),
+			zap.Int("max_attempts", databaseInitMaxAttempts),
+			zap.Duration("retry_delay", databaseInitRetryDelay),
+			zap.Error(lastErr))
+		time.Sleep(databaseInitRetryDelay)
+	}
+
+	return lastErr
 }
 
 // loadPermissionCache 从数据库加载角色权限到内存缓存
