@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	stdruntime "runtime"
 	"strings"
 	"testing"
 
@@ -261,6 +262,30 @@ func TestCommandToolSpecs_ByOS(t *testing.T) {
 	windowsTools := commandToolSpecs("windows")
 	if len(windowsTools) != 1 || windowsTools[0].Name != "PowerShell" {
 		t.Fatalf("expected windows to expose only PowerShell, got %#v", windowsTools)
+	}
+}
+
+func TestEinoGenTestRuntimeRunCommand_EmptyOutputReturnsMessage(t *testing.T) {
+	repoDir := t.TempDir()
+	program := "sh"
+	args := []string{"-c", "true"}
+	if stdruntime.GOOS == "windows" {
+		program = "cmd"
+		args = []string{"/c", "exit", "0"}
+	}
+
+	runtime := NewEinoGenTestRuntime(zap.NewNop())
+	result, err := runtime.runCommand(context.Background(), &genTestToolCallContext{
+		Workspace: &RuntimeWorkspace{RepoDir: repoDir},
+	}, program, args)
+	if err != nil {
+		t.Fatalf("runCommand returned error: %v", err)
+	}
+	if result == nil || result.IsError {
+		t.Fatalf("expected non-error command result, got %#v", result)
+	}
+	if !strings.Contains(result.Content, "completed successfully with no output") {
+		t.Fatalf("expected explicit empty-output success message, got %q", result.Content)
 	}
 }
 

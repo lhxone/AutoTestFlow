@@ -1001,18 +1001,28 @@ func (r *EinoGenTestRuntime) runCommand(
 	program string,
 	args []string,
 ) (*genTestToolResult, error) {
+	if _, err := exec.LookPath(program); err != nil {
+		return nil, fmt.Errorf("命令不可用: %s，请确认运行镜像已安装该命令: %w", program, err)
+	}
+
 	callCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
 	cmd := exec.CommandContext(callCtx, program, args...)
 	cmd.Dir = toolCtx.Workspace.RepoDir
 	output, err := cmd.CombinedOutput()
-	result := truncateByBytes(string(output), defaultGenTestToolResultMaxBytes)
+	result := strings.TrimSpace(truncateByBytes(string(output), defaultGenTestToolResultMaxBytes))
 	if err != nil {
+		if result == "" {
+			result = "(no output)"
+		}
 		return &genTestToolResult{
 			Content: fmt.Sprintf("%s failed: %v\n%s", program, err, result),
 			IsError: true,
 		}, nil
+	}
+	if result == "" {
+		result = fmt.Sprintf("%s completed successfully with no output", program)
 	}
 	return &genTestToolResult{Content: result}, nil
 }

@@ -30,7 +30,7 @@ ai:
   temperature: 0.3
 
 git:
-  work_dir: "/data1/AutoTestFlow/workspace/repos"
+  work_dir: "/tmp/auto-test-flow/repos"
   commit_author: "AutoTestFlow"
   commit_email: "autotest@example.com"
 
@@ -38,7 +38,7 @@ cli_runtime:
   command: ""
   args: []
   timeout: "20m"
-  workspace_root: "/data1/AutoTestFlow/workspace/cli-runtime"
+  workspace_root: "/tmp/auto-test-flow/cli-runtime"
   repo_dir_name: "repo"
   control_dir_name: ".autotestflow"
   input_file_name: "input.json"
@@ -58,4 +58,4 @@ mail:
 
 log:
   level: "info"
-  file: "/data1/AutoTestFlow/logs/app.log"
+  file: "/tmp/auto-test-flow/logs/app.log"

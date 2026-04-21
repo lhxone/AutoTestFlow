@@ -12,7 +12,7 @@ services:
     ports:
       - "${MYSQL_PORT:-3306}:3306"
     volumes:
-      - ${ATF_MYSQL_DATA_DIR:-/data1/AutoTestFlow/mysql}:/var/lib/mysql
+      - ${ATF_MYSQL_DATA_DIR:-/data2/AutoTestFlow/mysql}:/var/lib/mysql
       - ./backend/migrations:/docker-entrypoint-initdb.d:ro
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     healthcheck:
@@ -30,8 +30,8 @@ services:
       TZ: Asia/Shanghai
       ATF_DATABASE_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
       ATF_DATABASE_DBNAME: ${MYSQL_DATABASE:-auto_test_flow}
-      ATF_GIT_WORK_DIR: ${ATF_GIT_WORK_DIR:-/data1/AutoTestFlow/workspace/repos}
-      ATF_CLI_RUNTIME_WORKSPACE_ROOT: ${ATF_CLI_WORKSPACE_DIR:-/data1/AutoTestFlow/workspace/cli-runtime}
+      ATF_GIT_WORK_DIR: /tmp/auto-test-flow/repos
+      ATF_CLI_RUNTIME_WORKSPACE_ROOT: /tmp/auto-test-flow/cli-runtime
       ATF_JWT_SECRET: ${ATF_JWT_SECRET:-change-me-jwt-secret-in-production}
       ATF_ZENTAO_BASE_URL: ${ATF_ZENTAO_BASE_URL:-}
       ATF_ZENTAO_API_TOKEN: ${ATF_ZENTAO_API_TOKEN:-}
@@ -44,9 +44,7 @@ services:
       - "${BACKEND_PORT:-8080}:8080"
     volumes:
       - ./backend/configs/config.docker.yaml:/app/configs/config.yaml:ro
-      - ${ATF_GIT_WORK_DIR:-/data1/AutoTestFlow/workspace/repos}:${ATF_GIT_WORK_DIR:-/data1/AutoTestFlow/workspace/repos}
-      - ${ATF_CLI_WORKSPACE_DIR:-/data1/AutoTestFlow/workspace/cli-runtime}:${ATF_CLI_WORKSPACE_DIR:-/data1/AutoTestFlow/workspace/cli-runtime}
-      - ${ATF_LOG_DIR:-/data1/AutoTestFlow/logs}:${ATF_LOG_DIR:-/data1/AutoTestFlow/logs}
+      - ${ATF_RUNTIME_HOST_DIR:-/data2/auto-test-flow}:/tmp/auto-test-flow
     depends_on:
       mysql:
         condition: service_healthy

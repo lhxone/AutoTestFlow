@@ -83,7 +83,7 @@ build-backend-image:
       -u "$DOCKER_USERNAME" \
       -p "$DOCKER_PASSWORD"
     - docker pull harbor.inspur.local/atf/golang:1.26.2
-    - docker pull harbor.inspur.local/atf/alpine:3.20
+    - docker pull harbor.inspur.local/atf/auto-test-flow-backend-runtime:node20-bash
   script:
     - export BACKEND_IMAGE="${BACKEND_IMAGE_REPO}:${CI_COMMIT_SHORT_SHA}"
     - echo "BACKEND_IMAGE=${BACKEND_IMAGE}"
@@ -160,6 +160,7 @@ deploy-production:
     - export BACKEND_PORT_VALUE="${BACKEND_PORT:-8080}"
     - export MYSQL_PORT_VALUE="${MYSQL_PORT:-3306}"
     - export JWT_SECRET_VALUE="${ATF_JWT_SECRET:-change-me-jwt-secret-in-production}"
+    - export RUNTIME_HOST_DIR_VALUE="${ATF_RUNTIME_HOST_DIR:-/data2/auto-test-flow}"
     - mkdir -p .deploy
     - |
       cat > .deploy/.env.deploy <<EOF
@@ -172,9 +173,7 @@ deploy-production:
       BACKEND_PORT=${BACKEND_PORT_VALUE}
       MYSQL_PORT=${MYSQL_PORT_VALUE}
       ATF_MYSQL_DATA_DIR=${DEPLOY_BASE_DIR}/mysql
-      ATF_GIT_WORK_DIR=${DEPLOY_BASE_DIR}/workspace/repos
-      ATF_CLI_WORKSPACE_DIR=${DEPLOY_BASE_DIR}/workspace/cli-runtime
-      ATF_LOG_DIR=${DEPLOY_BASE_DIR}/logs
+      ATF_RUNTIME_HOST_DIR=${RUNTIME_HOST_DIR_VALUE}
       ATF_JWT_SECRET=${JWT_SECRET_VALUE}
       ATF_ZENTAO_BASE_URL=${ATF_ZENTAO_BASE_URL}
       ATF_ZENTAO_API_TOKEN=${ATF_ZENTAO_API_TOKEN}
@@ -184,7 +183,7 @@ deploy-production:
       ATF_MAIL_PASSWORD=${ATF_MAIL_PASSWORD}
       ATF_MAIL_FROM=${ATF_MAIL_FROM:-autotest@example.com}
       EOF
-    - ssh -i ~/.ssh/deploy_key.pem -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "sudo -n mkdir -p '$APP_DIR' '${DEPLOY_BASE_DIR}/mysql' '${DEPLOY_BASE_DIR}/workspace/repos' '${DEPLOY_BASE_DIR}/workspace/cli-runtime' '${DEPLOY_BASE_DIR}/logs'"
+    - ssh -i ~/.ssh/deploy_key.pem -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "sudo -n mkdir -p '$APP_DIR' '${DEPLOY_BASE_DIR}/mysql' '${RUNTIME_HOST_DIR_VALUE}/repos' '${RUNTIME_HOST_DIR_VALUE}/cli-runtime' '${RUNTIME_HOST_DIR_VALUE}/logs'"
     - rsync -az --delete --rsync-path="sudo -n rsync" -e "ssh -i ~/.ssh/deploy_key.pem -p $DEPLOY_PORT" --exclude '.git/' --exclude '.deploy/' --exclude 'frontend/node_modules/' --exclude 'backend/bin/' --exclude 'logs/' ./ "$DEPLOY_USER@$DEPLOY_HOST:$APP_DIR/"
     - rsync -az --rsync-path="sudo -n rsync" -e "ssh -i ~/.ssh/deploy_key.pem -p $DEPLOY_PORT" .deploy/.env.deploy "$DEPLOY_USER@$DEPLOY_HOST:$APP_DIR/.env.deploy"
     - |

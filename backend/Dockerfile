@@ -1,3 +1,5 @@
+ARG RUNTIME_IMAGE=harbor.inspur.local/atf/auto-test-flow-backend-runtime:node20-bash
+
 FROM harbor.inspur.local/atf/golang:1.26.2 AS builder
 
 WORKDIR /build
@@ -12,7 +14,7 @@ RUN GODEBUG=x509ignoreCN=0 \
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o server cmd/server/main.go
 
-FROM harbor.inspur.local/atf/alpine-base:3.20-cn-node
+FROM ${RUNTIME_IMAGE}
 
 WORKDIR /app
 COPY --from=builder /build/server /app/server
