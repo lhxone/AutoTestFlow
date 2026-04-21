@@ -7,6 +7,10 @@ variables:
   GO_VERSION: "1.26.2"
   NODE_VERSION: "20"
   DOCKER_VERSION: "27.4.1"
+  HARBOR_REGISTRY: "harbor.inspur.local"
+  HARBOR_PROJECT: "atf"
+  BACKEND_IMAGE_REPO: "harbor.inspur.local/atf/auto-test-flow-backend"
+  FRONTEND_IMAGE_REPO: "harbor.inspur.local/atf/auto-test-flow-frontend"
   DOCKER_TLS_CERTDIR: "/certs"
   DOCKER_BUILDKIT: "1"
   GOPROXY: "https://mirrors.aliyun.com/goproxy,direct"
@@ -75,13 +79,16 @@ build-backend-image:
     - sed -i "s|https\?://dl-cdn.alpinelinux.org/alpine|${ALPINE_MIRROR}/alpine|g" /etc/apk/repositories
     - docker info
     - |
-      docker login harbor.inspur.local \
+      docker login "$HARBOR_REGISTRY" \
       -u "$DOCKER_USERNAME" \
       -p "$DOCKER_PASSWORD"
     - docker pull harbor.inspur.local/atf/golang:1.26.2
     - docker pull harbor.inspur.local/atf/alpine:3.20
   script:
-    - docker build -t auto-test-flow/backend:${CI_COMMIT_SHORT_SHA} backend
+    - export BACKEND_IMAGE="${BACKEND_IMAGE_REPO}:${CI_COMMIT_SHORT_SHA}"
+    - echo "BACKEND_IMAGE=${BACKEND_IMAGE}"
+    - docker build -t "$BACKEND_IMAGE" backend
+    - docker push "$BACKEND_IMAGE"
 
 build-frontend-image:
   tags:
@@ -101,13 +108,16 @@ build-frontend-image:
     - sed -i "s|https\?://dl-cdn.alpinelinux.org/alpine|${ALPINE_MIRROR}/alpine|g" /etc/apk/repositories
     - docker info
     - |
-      docker login harbor.inspur.local \
+      docker login "$HARBOR_REGISTRY" \
       -u "$DOCKER_USERNAME" \
       -p "$DOCKER_PASSWORD"
     - docker pull harbor.inspur.local/atf/node:20-alpine
     - docker pull harbor.inspur.local/atf/nginx:1.27-alpine
   script:
-    - docker build -t auto-test-flow/frontend:${CI_COMMIT_SHORT_SHA} frontend
+    - export FRONTEND_IMAGE="${FRONTEND_IMAGE_REPO}:${CI_COMMIT_SHORT_SHA}"
+    - echo "FRONTEND_IMAGE=${FRONTEND_IMAGE}"
+    - docker build -t "$FRONTEND_IMAGE" frontend
+    - docker push "$FRONTEND_IMAGE"
 
 deploy-production:
   tags:
@@ -140,8 +150,12 @@ deploy-production:
     - chmod 600 ~/.ssh/known_hosts
   script:
     - export APP_DIR="${DEPLOY_BASE_DIR}/app"
+    - export BACKEND_IMAGE_VALUE="${BACKEND_IMAGE_REPO}:${CI_COMMIT_SHORT_SHA}"
+    - export FRONTEND_IMAGE_VALUE="${FRONTEND_IMAGE_REPO}:${CI_COMMIT_SHORT_SHA}"
     - echo "DEPLOY_BASE_DIR=${DEPLOY_BASE_DIR}"
     - echo "APP_DIR=${APP_DIR}"
+    - echo "BACKEND_IMAGE=${BACKEND_IMAGE_VALUE}"
+    - echo "FRONTEND_IMAGE=${FRONTEND_IMAGE_VALUE}"
     - export MYSQL_PASSWORD_VALUE="${MYSQL_ROOT_PASSWORD:-root}"
     - export MYSQL_DATABASE_VALUE="${MYSQL_DATABASE:-auto_test_flow}"
     - export MYSQL_IMAGE_VALUE="${MYSQL_IMAGE:-mysql:8.0}"
@@ -155,6 +169,8 @@ deploy-production:
       MYSQL_ROOT_PASSWORD=${MYSQL_PASSWORD_VALUE}
       MYSQL_DATABASE=${MYSQL_DATABASE_VALUE}
       MYSQL_IMAGE=${MYSQL_IMAGE_VALUE}
+      BACKEND_IMAGE=${BACKEND_IMAGE_VALUE}
+      FRONTEND_IMAGE=${FRONTEND_IMAGE_VALUE}
       FRONTEND_PORT=${FRONTEND_PORT_VALUE}
       BACKEND_PORT=${BACKEND_PORT_VALUE}
       MYSQL_PORT=${MYSQL_PORT_VALUE}
@@ -178,6 +194,13 @@ deploy-production:
       ssh -i ~/.ssh/deploy_key.pem -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "set -eu
         cd '$APP_DIR'
 
+        if command -v docker >/dev/null 2>&1 && sudo -n docker version >/dev/null 2>&1; then
+          printf '%s\n' '$DOCKER_PASSWORD' | sudo -n docker login '$HARBOR_REGISTRY' --username '$DOCKER_USERNAME' --password-stdin
+        else
+          echo 'Unable to access docker on target host via passwordless sudo. Ensure the deploy user can run sudo -n docker.' >&2
+          exit 1
+        fi
+
         if command -v docker-compose >/dev/null 2>&1 && sudo -n docker-compose version >/dev/null 2>&1; then
           COMPOSE_CMD='sudo -n docker-compose'
         else
@@ -185,4 +208,5 @@ deploy-production:
           exit 1
         fi
 
-        \${COMPOSE_CMD} -p auto-test-flow --env-file .env.deploy -f docker-compose.prod.yml up -d --build --remove-orphans"
+        \${COMPOSE_CMD} -p auto-test-flow --env-file .env.deploy -f docker-compose.prod.yml pull
+        \${COMPOSE_CMD} -p auto-test-flow --env-file .env.deploy -f docker-compose.prod.yml up -d --remove-orphans"

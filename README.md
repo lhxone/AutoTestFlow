@@ -106,12 +106,21 @@ docker compose version
 - MySQL root 密码: `root`
 - MySQL 镜像: `mysql:8.0`
 
+生产编排会从环境变量读取镜像地址：
+
+- `BACKEND_IMAGE`
+- `FRONTEND_IMAGE`
+
+在 GitLab CI 部署中，这两个变量会自动写入 `.env.deploy`；手动部署时需要你自行设置。
+
 如需覆盖，可在命令前设置环境变量：
 
 ```powershell
 $env:MYSQL_ROOT_PASSWORD='YourStrongPassword'
 $env:MYSQL_DATABASE='auto_test_flow'
 $env:MYSQL_IMAGE='harbor.example.com/library/mysql:8.0'
+$env:BACKEND_IMAGE='harbor.inspur.local/atf/auto-test-flow-backend:20260421'
+$env:FRONTEND_IMAGE='harbor.inspur.local/atf/auto-test-flow-frontend:20260421'
 $env:FRONTEND_PORT='80'
 $env:BACKEND_PORT='8080'
 $env:MYSQL_PORT='3306'
@@ -121,19 +130,21 @@ $env:ATF_CLI_WORKSPACE_DIR='/data/AutoTestFlow/workspace/cli-runtime'
 $env:ATF_LOG_DIR='/data/AutoTestFlow/logs'
 ```
 
-#### 3) 构建并启动
+#### 3) 拉取并启动
 
 ```powershell
-docker compose -f docker-compose.prod.yml up -d --build
+docker login harbor.inspur.local
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
 ```
 
 默认持久化目录布局：
 
-- `/data/AutoTestFlow/app`：部署到服务器上的项目工作区
-- `/data/AutoTestFlow/mysql`：MySQL 数据目录
-- `/data/AutoTestFlow/workspace/repos`：Git 工作目录
-- `/data/AutoTestFlow/workspace/cli-runtime`：CLI / Eino 运行时工作区
-- `/data/AutoTestFlow/logs`：后端日志目录
+- `${DEPLOY_BASE_DIR}/app`：部署到服务器上的项目工作区
+- `${DEPLOY_BASE_DIR}/mysql`：MySQL 数据目录
+- `${DEPLOY_BASE_DIR}/workspace/repos`：Git 工作目录
+- `${DEPLOY_BASE_DIR}/workspace/cli-runtime`：CLI / Eino 运行时工作区
+- `${DEPLOY_BASE_DIR}/logs`：后端日志目录
 
 #### 4) 查看状态与日志
 
@@ -173,22 +184,28 @@ docker compose -f docker-compose.prod.yml down -v
 
 - `backend-test`：执行 `go test ./...`
 - `frontend-check`：执行 `npm ci && npm run build`
-- `build-backend-image` / `build-frontend-image`：验证前后端 Docker 镜像可构建
-- `deploy-production`：通过 SSH 把仓库同步到目标服务器，随后在远端执行 `sudo -n docker-compose up -d --build`
+- `build-backend-image` / `build-frontend-image`：构建前后端 Docker 镜像并推送到 Harbor
+- `deploy-production`：通过 SSH 把仓库同步到目标服务器，随后在远端执行 `sudo -n docker login`、`docker-compose pull`、`docker-compose up -d`
 
 当前默认部署用户是 `ubuntu`。远端部署用户需要具备无密码 `sudo`，用于以下操作：
 
-- 创建 `/data1/AutoTestFlow` 下的部署目录
+- 创建 `${DEPLOY_BASE_DIR}` 下的部署目录
 - 通过 `rsync` 写入部署目录
+- 执行 `sudo -n docker`
 - 执行 `sudo -n docker-compose`
 
 需要在 GitLab CI/CD Variables 中至少配置以下变量：
 
 - `DEPLOY_SSH_PRIVATE_KEY`：用于登录目标服务器的 SSH 私钥
 - `MYSQL_ROOT_PASSWORD`：生产环境 MySQL root 密码
+- `DOCKER_USERNAME`：Harbor 登录用户名
+- `DOCKER_PASSWORD`：Harbor 登录密码
 
 建议同时配置以下变量：
 
+- `HARBOR_REGISTRY`
+- `BACKEND_IMAGE_REPO`
+- `FRONTEND_IMAGE_REPO`
 - `MYSQL_IMAGE`：生产环境 MySQL 镜像地址；如果目标机无法访问 Docker Hub，应配置为内网镜像仓库地址
 - `DEPLOY_HOST`
 - `DEPLOY_PORT`
