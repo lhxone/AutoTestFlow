@@ -104,12 +104,14 @@ docker compose version
 - Backend: `8080`
 - MySQL: `3306`
 - MySQL root 密码: `root`
+- MySQL 镜像: `mysql:8.0`
 
 如需覆盖，可在命令前设置环境变量：
 
 ```powershell
 $env:MYSQL_ROOT_PASSWORD='YourStrongPassword'
 $env:MYSQL_DATABASE='auto_test_flow'
+$env:MYSQL_IMAGE='harbor.example.com/library/mysql:8.0'
 $env:FRONTEND_PORT='80'
 $env:BACKEND_PORT='8080'
 $env:MYSQL_PORT='3306'
@@ -187,6 +189,7 @@ docker compose -f docker-compose.prod.yml down -v
 
 建议同时配置以下变量：
 
+- `MYSQL_IMAGE`：生产环境 MySQL 镜像地址；如果目标机无法访问 Docker Hub，应配置为内网镜像仓库地址
 - `DEPLOY_HOST`
 - `DEPLOY_PORT`
 - `DEPLOY_USER`

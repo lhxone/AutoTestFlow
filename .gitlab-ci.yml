@@ -16,7 +16,7 @@ variables:
   DEPLOY_HOST: "192.168.53.185"
   DEPLOY_PORT: "22"
   DEPLOY_USER: "ubuntu"
-  DEPLOY_BASE_DIR: "/data1/AutoTestFlow"
+  DEPLOY_BASE_DIR: "/opt/AutoTestFlow"
 
 cache:
   paths:
@@ -144,6 +144,7 @@ deploy-production:
     - echo "APP_DIR=${APP_DIR}"
     - export MYSQL_PASSWORD_VALUE="${MYSQL_ROOT_PASSWORD:-root}"
     - export MYSQL_DATABASE_VALUE="${MYSQL_DATABASE:-auto_test_flow}"
+    - export MYSQL_IMAGE_VALUE="${MYSQL_IMAGE:-mysql:8.0}"
     - export FRONTEND_PORT_VALUE="${FRONTEND_PORT:-80}"
     - export BACKEND_PORT_VALUE="${BACKEND_PORT:-8080}"
     - export MYSQL_PORT_VALUE="${MYSQL_PORT:-3306}"
@@ -153,6 +154,7 @@ deploy-production:
       cat > .deploy/.env.deploy <<EOF
       MYSQL_ROOT_PASSWORD=${MYSQL_PASSWORD_VALUE}
       MYSQL_DATABASE=${MYSQL_DATABASE_VALUE}
+      MYSQL_IMAGE=${MYSQL_IMAGE_VALUE}
       FRONTEND_PORT=${FRONTEND_PORT_VALUE}
       BACKEND_PORT=${BACKEND_PORT_VALUE}
       MYSQL_PORT=${MYSQL_PORT_VALUE}
