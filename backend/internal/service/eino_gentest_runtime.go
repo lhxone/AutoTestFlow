@@ -631,7 +631,7 @@ func (r *EinoGenTestRuntime) executeTool(ctx context.Context, toolCtx *genTestTo
 		if err != nil {
 			return nil, err
 		}
-		return r.runRead(toolCtx.Workspace.RepoDir, path)
+		return r.runRead(toolCtx.Workspace, path)
 	case "Glob":
 		pattern, err := requiredString(call.Arguments, "pattern")
 		if err != nil {
@@ -715,9 +715,8 @@ func (r *EinoGenTestRuntime) executeTool(ctx context.Context, toolCtx *genTestTo
 	}
 }
 
-func (r *EinoGenTestRuntime) runRead(repoDir, path string) (*genTestToolResult, error) {
-	relativePath := normalizeRepoRelativePath(path)
-	fullPath, err := resolveRepoToolPath(repoDir, relativePath)
+func (r *EinoGenTestRuntime) runRead(workspace *RuntimeWorkspace, path string) (*genTestToolResult, error) {
+	fullPath, displayPath, err := resolveReadableToolPath(workspace, path)
 	if err != nil {
 		return nil, err
 	}
@@ -725,23 +724,55 @@ func (r *EinoGenTestRuntime) runRead(repoDir, path string) (*genTestToolResult, 
 	info, err := os.Stat(fullPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &genTestToolResult{Content: fmt.Sprintf("path not found: %s\nUse Glob to discover existing files before reading.", relativePath)}, nil
+			return &genTestToolResult{Content: fmt.Sprintf("path not found: %s\nUse Glob to discover existing files before reading.", displayPath)}, nil
 		}
 		return nil, fmt.Errorf("读取产物路径失败: %w", err)
 	}
 	if info.IsDir() {
-		content, err := listRepoDirectoryForRead(fullPath, relativePath)
+		content, err := listRepoDirectoryForRead(fullPath, displayPath)
 		if err != nil {
 			return nil, err
 		}
 		return &genTestToolResult{Content: content}, nil
 	}
 
-	content, err := readRepoFile(repoDir, relativePath)
+	data, err := os.ReadFile(fullPath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("读取产物文件失败: %w", err)
 	}
-	return &genTestToolResult{Content: truncateByBytes(content, defaultGenTestReadMaxBytes)}, nil
+	return &genTestToolResult{Content: truncateByBytes(string(data), defaultGenTestReadMaxBytes)}, nil
+}
+
+func resolveReadableToolPath(workspace *RuntimeWorkspace, path string) (string, string, error) {
+	if workspace == nil {
+		return "", "", fmt.Errorf("运行时工作区不能为空")
+	}
+	trimmedPath := strings.TrimSpace(path)
+	if trimmedPath == "" {
+		trimmedPath = "."
+	}
+	if filepath.IsAbs(trimmedPath) {
+		cleanRoot, err := filepath.Abs(workspace.RootDir)
+		if err != nil {
+			return "", "", fmt.Errorf("解析运行时工作区失败: %w", err)
+		}
+		cleanTarget, err := filepath.Abs(trimmedPath)
+		if err != nil {
+			return "", "", fmt.Errorf("解析读取路径失败: %w", err)
+		}
+		rootPrefix := cleanRoot + string(filepath.Separator)
+		if cleanTarget != cleanRoot && !strings.HasPrefix(cleanTarget, rootPrefix) {
+			return "", "", fmt.Errorf("读取路径非法，绝对路径仅允许位于运行时工作区内: %s", trimmedPath)
+		}
+		return cleanTarget, cleanTarget, nil
+	}
+
+	relativePath := normalizeRepoRelativePath(trimmedPath)
+	fullPath, err := resolveRepoToolPath(workspace.RepoDir, relativePath)
+	if err != nil {
+		return "", "", err
+	}
+	return fullPath, relativePath, nil
 }
 
 func resolveRepoToolPath(repoDir, relativePath string) (string, error) {
@@ -1108,7 +1139,7 @@ func (r *EinoGenTestRuntime) baseToolSpecs() []genTestToolSpec {
 	specs := []genTestToolSpec{
 		{
 			Name:        "Read",
-			Description: "Read a repository file by relative path. If the path is a directory, returns its immediate entries. If it does not exist, returns a not-found hint; use Glob to discover files.",
+			Description: "Read a file by repository-relative path, or by absolute path within the current runtime workspace. If the path is a directory, returns its immediate entries. If it does not exist, returns a not-found hint; use Glob to discover repository files.",
 			Schema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{

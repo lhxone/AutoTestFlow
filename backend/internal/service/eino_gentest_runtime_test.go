@@ -163,7 +163,8 @@ func TestEinoGenTestRuntimeGenerate_WithOpenAITools(t *testing.T) {
 }
 
 func TestEinoGenTestRuntimeRunRead_DirectoryReturnsListing(t *testing.T) {
-	repoDir := t.TempDir()
+	rootDir := t.TempDir()
+	repoDir := filepath.Join(rootDir, "repo")
 	helperDir := filepath.Join(repoDir, "test-cases", "helpers")
 	if err := os.MkdirAll(helperDir, 0o755); err != nil {
 		t.Fatalf("mkdir helper dir: %v", err)
@@ -173,7 +174,7 @@ func TestEinoGenTestRuntimeRunRead_DirectoryReturnsListing(t *testing.T) {
 	}
 
 	runtime := NewEinoGenTestRuntime(zap.NewNop())
-	result, err := runtime.runRead(repoDir, "test-cases/helpers")
+	result, err := runtime.runRead(&RuntimeWorkspace{RootDir: rootDir, RepoDir: repoDir}, "test-cases/helpers")
 	if err != nil {
 		t.Fatalf("runRead directory returned error: %v", err)
 	}
@@ -186,10 +187,14 @@ func TestEinoGenTestRuntimeRunRead_DirectoryReturnsListing(t *testing.T) {
 }
 
 func TestEinoGenTestRuntimeRunRead_MissingPathReturnsHint(t *testing.T) {
-	repoDir := t.TempDir()
+	rootDir := t.TempDir()
+	repoDir := filepath.Join(rootDir, "repo")
+	if err := os.MkdirAll(repoDir, 0o755); err != nil {
+		t.Fatalf("mkdir repo dir: %v", err)
+	}
 
 	runtime := NewEinoGenTestRuntime(zap.NewNop())
-	result, err := runtime.runRead(repoDir, "docs")
+	result, err := runtime.runRead(&RuntimeWorkspace{RootDir: rootDir, RepoDir: repoDir}, "docs")
 	if err != nil {
 		t.Fatalf("runRead missing path returned error: %v", err)
 	}
@@ -202,11 +207,43 @@ func TestEinoGenTestRuntimeRunRead_MissingPathReturnsHint(t *testing.T) {
 }
 
 func TestEinoGenTestRuntimeRunRead_RejectsPathTraversal(t *testing.T) {
-	repoDir := t.TempDir()
+	rootDir := t.TempDir()
+	repoDir := filepath.Join(rootDir, "repo")
+	if err := os.MkdirAll(repoDir, 0o755); err != nil {
+		t.Fatalf("mkdir repo dir: %v", err)
+	}
 
 	runtime := NewEinoGenTestRuntime(zap.NewNop())
-	if _, err := runtime.runRead(repoDir, "../secret.txt"); err == nil {
+	if _, err := runtime.runRead(&RuntimeWorkspace{RootDir: rootDir, RepoDir: repoDir}, "../secret.txt"); err == nil {
 		t.Fatalf("expected path traversal to be rejected")
+	}
+}
+
+func TestEinoGenTestRuntimeRunRead_AllowsAbsolutePathWithinWorkspace(t *testing.T) {
+	rootDir := t.TempDir()
+	repoDir := filepath.Join(rootDir, "repo")
+	controlDir := filepath.Join(rootDir, ".autotestflow")
+	if err := os.MkdirAll(repoDir, 0o755); err != nil {
+		t.Fatalf("mkdir repo dir: %v", err)
+	}
+	if err := os.MkdirAll(controlDir, 0o755); err != nil {
+		t.Fatalf("mkdir control dir: %v", err)
+	}
+	promptFile := filepath.Join(controlDir, "prompt.md")
+	if err := os.WriteFile(promptFile, []byte("# prompt\n"), 0o644); err != nil {
+		t.Fatalf("write prompt file: %v", err)
+	}
+
+	runtime := NewEinoGenTestRuntime(zap.NewNop())
+	result, err := runtime.runRead(&RuntimeWorkspace{RootDir: rootDir, RepoDir: repoDir}, promptFile)
+	if err != nil {
+		t.Fatalf("runRead absolute path returned error: %v", err)
+	}
+	if result == nil || result.IsError {
+		t.Fatalf("expected non-error absolute-path result, got %#v", result)
+	}
+	if !strings.Contains(result.Content, "# prompt") {
+		t.Fatalf("expected prompt content, got %q", result.Content)
 	}
 }
 
