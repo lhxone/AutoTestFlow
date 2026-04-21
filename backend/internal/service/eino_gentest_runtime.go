@@ -5,11 +5,16 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
+	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -26,6 +31,8 @@ const (
 	defaultGenTestReadMaxBytes       = 64_000
 )
 
+var errStopRepoWalk = errors.New("stop repo walk")
+
 type EinoGenTestRuntime struct {
 	logger          *zap.Logger
 	eventHub        *TaskEventHub
@@ -39,7 +46,7 @@ type genTestToolCallContext struct {
 	Input     *GenTestInput
 	Workflow  *model.Skill
 	Agent     *model.Agent
-	Workspace *CLIRuntimeWorkspace
+	Workspace *RuntimeWorkspace
 	MCP       *MCPRuntime
 }
 
@@ -189,7 +196,7 @@ func (r *EinoGenTestRuntime) Generate(
 }
 
 func (r *EinoGenTestRuntime) buildPrompt(
-	workspace *CLIRuntimeWorkspace,
+	workspace *RuntimeWorkspace,
 	task *model.TestTask,
 	input *GenTestInput,
 	workflow *model.Skill,
@@ -229,16 +236,15 @@ func (r *EinoGenTestRuntime) buildPrompt(
 
 ## 强制规则
 - 优先遵循流程：探索测试结构 -> 发现共享工具(helper路径下)/数据 -> 生成测试文档和脚本 -> 运行自测 -> 修复。
-- 必须在50轮操作之内完成生成并调用SubmitGenTestResult 工具，避免占用过多上下文空间。
+- 不需要确保所有用例通过，因为功能未修复而导致的用例失败可以视为已经生成成功，允许调用SubmitGenTestResult 工具。
 - 你必须通过可用工具真实地探索仓库和运行命令，不要凭空假设项目结构。
-- 如果是 Web UI 测试且有 Chrome MCP，优先用 Chrome MCP 确认 DOM、交互和选择器。
-- 选择器优先使用data-testid等稳定属性，不要使用过于脆弱的层级或文本选择器。
+- 如果是 Web UI 测试且有 Chrome MCP，优先用 Chrome MCP 通过data-testid确认 DOM、交互和选择器。
 - 生成的测试脚本必须包含至少一个可执行断言。
 - 必须把实际文件写入仓库目录。
 - 完成后必须调用 SubmitGenTestResult 工具提交结构化结果，而不是只输出自然语言。
 - SubmitGenTestResult 必须严格使用标准字段名，禁止使用 path、case_name、prerequisites、module、status、expected_result 等别名字段。
 - 若关键信息缺失，可调用 AskUserQuestion；若需要人工许可，可调用 RequestPermission。
-- 必须在确认系统架构后，使用相应的工具。比如在Windows环境下，必须使用Powershell，不能使用bash。
+- 必须根据当前运行平台选择命令工具；当前平台: %s；可用命令工具: %s。
 - 在创建文件/编辑文件后，必须实时更新结果文件，不要等最后一步才写入结果文件。
 
 ## SubmitGenTestResult 标准示例
@@ -283,6 +289,41 @@ func (r *EinoGenTestRuntime) buildPrompt(
 - test_cases.status
 - test_cases.expected_result
 
+
+严格按照如下结构生成测试用例markdown文件。
+
+**文件名**
+ZentaoBugTestcase-{禅道问题单的ID}-{禅道问题单标题的英文翻译，简写}
+
+**内容要求**
+严格以中文简体输出测试用例文档，UTF-8编码
+
+**文档结构**（严格按照以下结构，禁止新增/缺少内容块）：
+
+Title
+{用不超过80字描述[模块] [场景] [触发条件] [异常现象]，用禅道问题单标题}
+
+Objective
+{用一句话描述测试目的：To verify the function that ...}
+
+Prerequisites
+1. {具体前置条件}
+2. {具体前置条件}
+...
+
+| Step | Procedure | Expected result |
+|------|-----------|-----------------|
+| 1 | {操作步骤描述} | {该步骤完成后的具体可见结果} |
+| 2 | {操作步骤描述} | {该步骤完成后的具体可见结果} |
+| ... | ... | ... |
+
+Remarks
+{备注（可选）}
+
+Caution
+{注意事项（可选）}
+
+
 ## 可用路径
 - 仓库根目录: %s
 - 输入文件: %s
@@ -299,6 +340,8 @@ func (r *EinoGenTestRuntime) buildPrompt(
 ## 输入上下文 JSON
 %s
 %s%s%s`,
+		runtime.GOOS,
+		strings.Join(availableCommandToolNames(runtime.GOOS), ", "),
 		workspace.RepoDir,
 		workspace.InputFile,
 		workspace.PromptFile,
@@ -588,11 +631,7 @@ func (r *EinoGenTestRuntime) executeTool(ctx context.Context, toolCtx *genTestTo
 		if err != nil {
 			return nil, err
 		}
-		content, err := readRepoFile(toolCtx.Workspace.RepoDir, normalizeRepoRelativePath(path))
-		if err != nil {
-			return nil, err
-		}
-		return &genTestToolResult{Content: truncateByBytes(content, defaultGenTestReadMaxBytes)}, nil
+		return r.runRead(toolCtx.Workspace.RepoDir, path)
 	case "Glob":
 		pattern, err := requiredString(call.Arguments, "pattern")
 		if err != nil {
@@ -624,12 +663,18 @@ func (r *EinoGenTestRuntime) executeTool(ctx context.Context, toolCtx *genTestTo
 	case "Edit":
 		return r.runEdit(toolCtx, call.Arguments)
 	case "PowerShell":
+		if runtime.GOOS != "windows" {
+			return nil, fmt.Errorf("当前运行平台为 %s，禁止使用 PowerShell，请改用 Bash", runtime.GOOS)
+		}
 		command, err := requiredString(call.Arguments, "command")
 		if err != nil {
 			return nil, err
 		}
 		return r.runCommand(ctx, toolCtx, "powershell", []string{"-NoProfile", "-Command", command})
 	case "Bash":
+		if runtime.GOOS == "windows" {
+			return nil, fmt.Errorf("当前运行平台为 Windows，禁止使用 Bash，请改用 PowerShell")
+		}
 		command, err := requiredString(call.Arguments, "command")
 		if err != nil {
 			return nil, err
@@ -670,29 +715,249 @@ func (r *EinoGenTestRuntime) executeTool(ctx context.Context, toolCtx *genTestTo
 	}
 }
 
+func (r *EinoGenTestRuntime) runRead(repoDir, path string) (*genTestToolResult, error) {
+	relativePath := normalizeRepoRelativePath(path)
+	fullPath, err := resolveRepoToolPath(repoDir, relativePath)
+	if err != nil {
+		return nil, err
+	}
+
+	info, err := os.Stat(fullPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return &genTestToolResult{Content: fmt.Sprintf("path not found: %s\nUse Glob to discover existing files before reading.", relativePath)}, nil
+		}
+		return nil, fmt.Errorf("读取产物路径失败: %w", err)
+	}
+	if info.IsDir() {
+		content, err := listRepoDirectoryForRead(fullPath, relativePath)
+		if err != nil {
+			return nil, err
+		}
+		return &genTestToolResult{Content: content}, nil
+	}
+
+	content, err := readRepoFile(repoDir, relativePath)
+	if err != nil {
+		return nil, err
+	}
+	return &genTestToolResult{Content: truncateByBytes(content, defaultGenTestReadMaxBytes)}, nil
+}
+
+func resolveRepoToolPath(repoDir, relativePath string) (string, error) {
+	if strings.TrimSpace(relativePath) == "" {
+		relativePath = "."
+	}
+	if filepath.IsAbs(relativePath) {
+		return "", fmt.Errorf("仓库路径必须是相对路径: %s", relativePath)
+	}
+
+	cleanRepo, err := filepath.Abs(repoDir)
+	if err != nil {
+		return "", fmt.Errorf("解析仓库目录失败: %w", err)
+	}
+	targetPath := filepath.Join(cleanRepo, filepath.FromSlash(relativePath))
+	cleanTarget, err := filepath.Abs(targetPath)
+	if err != nil {
+		return "", fmt.Errorf("解析仓库路径失败: %w", err)
+	}
+
+	repoPrefix := cleanRepo + string(filepath.Separator)
+	if cleanTarget != cleanRepo && !strings.HasPrefix(cleanTarget, repoPrefix) {
+		return "", fmt.Errorf("仓库路径非法: %s", relativePath)
+	}
+	return cleanTarget, nil
+}
+
+func listRepoDirectoryForRead(dir, relativePath string) (string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", fmt.Errorf("读取产物目录失败: %w", err)
+	}
+
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() {
+			name += "/"
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	if len(names) > 200 {
+		names = append(names[:200], fmt.Sprintf("... %d more entries", len(entries)-200))
+	}
+	if len(names) == 0 {
+		return fmt.Sprintf("directory: %s\n(empty)", relativePath), nil
+	}
+	return fmt.Sprintf("directory: %s\n%s", relativePath, strings.Join(names, "\n")), nil
+}
+
+func compileRepoGlob(pattern string) (func(string) bool, error) {
+	normalized := normalizeRepoRelativePath(pattern)
+	if normalized == "" {
+		return nil, fmt.Errorf("Glob pattern 不能为空")
+	}
+	var builder strings.Builder
+	builder.WriteString("^")
+	for i := 0; i < len(normalized); {
+		switch {
+		case strings.HasPrefix(normalized[i:], "**/"):
+			builder.WriteString("(?:.*/)?")
+			i += 3
+		case strings.HasPrefix(normalized[i:], "**"):
+			builder.WriteString(".*")
+			i += 2
+		default:
+			ch := normalized[i]
+			switch ch {
+			case '*':
+				builder.WriteString("[^/]*")
+			case '?':
+				builder.WriteString("[^/]")
+			default:
+				builder.WriteString(regexp.QuoteMeta(string(ch)))
+			}
+			i++
+		}
+	}
+	builder.WriteString("$")
+	re, err := regexp.Compile(builder.String())
+	if err != nil {
+		return nil, fmt.Errorf("Glob pattern 无效: %w", err)
+	}
+	return re.MatchString, nil
+}
+
+func shouldSkipRepoSearchDir(name string) bool {
+	switch name {
+	case ".git", "node_modules", ".pnpm-store", "dist", "build", "coverage", ".next", ".nuxt":
+		return true
+	default:
+		return false
+	}
+}
+
+func looksBinary(data []byte) bool {
+	limit := len(data)
+	if limit > 8000 {
+		limit = 8000
+	}
+	for i := 0; i < limit; i++ {
+		if data[i] == 0 {
+			return true
+		}
+	}
+	return false
+}
+
 func (r *EinoGenTestRuntime) runGlob(repoDir, pattern string) (*genTestToolResult, error) {
-	cmd := exec.Command("rg", "--files", "-g", pattern)
-	cmd.Dir = repoDir
-	output, err := cmd.CombinedOutput()
-	if err != nil && len(output) == 0 {
+	matcher, err := compileRepoGlob(pattern)
+	if err != nil {
+		return nil, err
+	}
+	matches := make([]string, 0, 200)
+	err = filepath.WalkDir(repoDir, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return nil
+		}
+		name := d.Name()
+		if d.IsDir() && shouldSkipRepoSearchDir(name) && path != repoDir {
+			return filepath.SkipDir
+		}
+		if d.IsDir() {
+			return nil
+		}
+		relPath, err := filepath.Rel(repoDir, path)
+		if err != nil {
+			return nil
+		}
+		normalized := filepath.ToSlash(relPath)
+		if matcher(normalized) {
+			matches = append(matches, normalized)
+		}
+		if len(matches) >= 200 {
+			return errStopRepoWalk
+		}
+		return nil
+	})
+	if err != nil && err != errStopRepoWalk {
 		return nil, fmt.Errorf("Glob 执行失败: %w", err)
 	}
-	lines := compactLines(string(output), 200)
-	return &genTestToolResult{Content: strings.Join(lines, "\n")}, nil
+	sort.Strings(matches)
+	return &genTestToolResult{Content: strings.Join(matches, "\n")}, nil
 }
 
 func (r *EinoGenTestRuntime) runGrep(repoDir, pattern, scope string, maxMatches int) (*genTestToolResult, error) {
 	if maxMatches <= 0 {
 		maxMatches = 50
 	}
-	args := []string{"-n", "--no-heading", "--color", "never", "--max-count", strconv.Itoa(maxMatches), pattern, scope}
-	cmd := exec.Command("rg", args...)
-	cmd.Dir = repoDir
-	output, err := cmd.CombinedOutput()
-	if err != nil && len(output) == 0 {
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, fmt.Errorf("Grep pattern 不是有效正则: %w", err)
+	}
+	scopePath, err := resolveRepoToolPath(repoDir, normalizeRepoRelativePath(scope))
+	if err != nil {
+		return nil, err
+	}
+	info, err := os.Stat(scopePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return &genTestToolResult{Content: fmt.Sprintf("path not found: %s", normalizeRepoRelativePath(scope))}, nil
+		}
+		return nil, fmt.Errorf("读取搜索范围失败: %w", err)
+	}
+
+	matches := make([]string, 0, maxMatches)
+	visitFile := func(path string) {
+		if len(matches) >= maxMatches {
+			return
+		}
+		data, err := os.ReadFile(path)
+		if err != nil || looksBinary(data) {
+			return
+		}
+		relPath, err := filepath.Rel(repoDir, path)
+		if err != nil {
+			return
+		}
+		lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
+		for index, line := range lines {
+			if re.MatchString(line) {
+				matches = append(matches, fmt.Sprintf("%s:%d:%s", filepath.ToSlash(relPath), index+1, line))
+				if len(matches) >= maxMatches {
+					return
+				}
+			}
+		}
+	}
+
+	if !info.IsDir() {
+		visitFile(scopePath)
+		return &genTestToolResult{Content: truncateByBytes(strings.Join(matches, "\n"), defaultGenTestToolResultMaxBytes)}, nil
+	}
+
+	err = filepath.WalkDir(scopePath, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return nil
+		}
+		name := d.Name()
+		if d.IsDir() && shouldSkipRepoSearchDir(name) && path != scopePath {
+			return filepath.SkipDir
+		}
+		if d.IsDir() {
+			return nil
+		}
+		visitFile(path)
+		if len(matches) >= maxMatches {
+			return errStopRepoWalk
+		}
+		return nil
+	})
+	if err != nil && err != errStopRepoWalk {
 		return nil, fmt.Errorf("Grep 执行失败: %w", err)
 	}
-	return &genTestToolResult{Content: truncateByBytes(string(output), defaultGenTestToolResultMaxBytes)}, nil
+	return &genTestToolResult{Content: truncateByBytes(strings.Join(matches, "\n"), defaultGenTestToolResultMaxBytes)}, nil
 }
 
 func (r *EinoGenTestRuntime) runEdit(toolCtx *genTestToolCallContext, args map[string]any) (*genTestToolResult, error) {
@@ -791,11 +1056,49 @@ func (r *EinoGenTestRuntime) waitForInteraction(ctx context.Context, taskID uint
 	}
 }
 
-func (r *EinoGenTestRuntime) baseToolSpecs() []genTestToolSpec {
+func availableCommandToolNames(goos string) []string {
+	if goos == "windows" {
+		return []string{"PowerShell"}
+	}
+	return []string{"Bash"}
+}
+
+func commandToolSpecs(goos string) []genTestToolSpec {
+	if goos == "windows" {
+		return []genTestToolSpec{
+			{
+				Name:        "PowerShell",
+				Description: "Execute a PowerShell command in the repository root. Only available on Windows runtime.",
+				Schema: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"command": map[string]any{"type": "string"},
+					},
+					"required": []string{"command"},
+				},
+			},
+		}
+	}
 	return []genTestToolSpec{
 		{
+			Name:        "Bash",
+			Description: "Execute a bash command in the repository root. Only available on Linux/macOS runtime; use this in Docker/Linux deployments.",
+			Schema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"command": map[string]any{"type": "string"},
+				},
+				"required": []string{"command"},
+			},
+		},
+	}
+}
+
+func (r *EinoGenTestRuntime) baseToolSpecs() []genTestToolSpec {
+	specs := []genTestToolSpec{
+		{
 			Name:        "Read",
-			Description: "Read a repository file by relative path.",
+			Description: "Read a repository file by relative path. If the path is a directory, returns its immediate entries. If it does not exist, returns a not-found hint; use Glob to discover files.",
 			Schema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -806,7 +1109,7 @@ func (r *EinoGenTestRuntime) baseToolSpecs() []genTestToolSpec {
 		},
 		{
 			Name:        "Glob",
-			Description: "Find repository files by rg glob pattern, for example **/*.spec.ts.",
+			Description: "Find repository files by glob pattern, for example **/*.spec.ts.",
 			Schema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -817,7 +1120,7 @@ func (r *EinoGenTestRuntime) baseToolSpecs() []genTestToolSpec {
 		},
 		{
 			Name:        "Grep",
-			Description: "Search file contents with ripgrep.",
+			Description: "Search repository file contents with a regular expression.",
 			Schema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -854,28 +1157,9 @@ func (r *EinoGenTestRuntime) baseToolSpecs() []genTestToolSpec {
 				"required": []string{"path", "old_string", "new_string"},
 			},
 		},
-		{
-			Name:        "PowerShell",
-			Description: "Execute a PowerShell command in the repository root.",
-			Schema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"command": map[string]any{"type": "string"},
-				},
-				"required": []string{"command"},
-			},
-		},
-		{
-			Name:        "Bash",
-			Description: "Execute a bash command in the repository root.",
-			Schema: map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"command": map[string]any{"type": "string"},
-				},
-				"required": []string{"command"},
-			},
-		},
+	}
+	specs = append(specs, commandToolSpecs(runtime.GOOS)...)
+	specs = append(specs, []genTestToolSpec{
 		{
 			Name:        "AskUserQuestion",
 			Description: "Ask the user for missing information and wait for the reply.",
@@ -915,7 +1199,8 @@ func (r *EinoGenTestRuntime) baseToolSpecs() []genTestToolSpec {
 				"required": []string{"test_cases", "test_script", "test_doc", "summary"},
 			},
 		},
-	}
+	}...)
+	return specs
 }
 
 func buildOpenAIHistory(history []runtimeMessage) []map[string]any {

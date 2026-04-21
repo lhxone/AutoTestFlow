@@ -70,7 +70,7 @@ type GenTestOutput struct {
 	TestScript GenTestScript        `json:"test_script"`
 	TestDoc    GenTestDoc           `json:"test_doc"`
 	SelfTest   *SelfTestReport      `json:"self_test,omitempty"`
-	Workspace  *CLIRuntimeWorkspace `json:"workspace,omitempty"`
+	Workspace  *RuntimeWorkspace    `json:"workspace,omitempty"`
 	Workflow   *GenTestWorkflowMeta `json:"workflow,omitempty"`
 	Summary    string               `json:"summary"`
 }

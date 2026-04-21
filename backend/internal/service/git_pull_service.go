@@ -18,14 +18,14 @@ import (
 // GitPullService 周期性拉取项目共享仓库，保证 worktree 来源持续更新。
 type GitPullService struct {
 	projectRepo *repository.ProjectRepo
-	cliRuntime  *CLIRuntime
+	repoSupport *RuntimeRepoSupport
 	logger      *zap.Logger
 }
 
 func NewGitPullService(logger *zap.Logger) *GitPullService {
 	return &GitPullService{
 		projectRepo: repository.NewProjectRepo(),
-		cliRuntime:  NewCLIRuntime(logger),
+		repoSupport: NewRuntimeRepoSupport(logger, nil),
 		logger:      logger,
 	}
 }
@@ -79,14 +79,13 @@ func (s *GitPullService) pullProjectSharedRepo(ctx context.Context, project *mod
 	}
 
 	branch := projectDefaultBranch(project)
-	projectDir := filepath.Join(workspaceRoot, fmt.Sprintf("project_%d", project.ID))
-	sharedRepoDir := filepath.Join(projectDir, "_shared", "repo_"+sanitizePathComponent(branch))
+	sharedRepoDir := s.repoSupport.SharedRepoDir(workspaceRoot, project.ID, branch)
 
 	if _, err := os.Stat(filepath.Join(sharedRepoDir, ".git")); err == nil {
-		if err := s.cliRuntime.runGitCommand(ctx, 0, sharedRepoDir, "fetch", "--depth", "1", "origin", branch); err != nil {
+		if err := s.repoSupport.RunGitCommand(ctx, 0, sharedRepoDir, "fetch", "--depth", "1", "origin", branch); err != nil {
 			return err
 		}
-		if err := s.cliRuntime.runGitCommand(ctx, 0, sharedRepoDir, "reset", "--hard", "origin/"+branch); err != nil {
+		if err := s.repoSupport.RunGitCommand(ctx, 0, sharedRepoDir, "reset", "--hard", "origin/"+branch); err != nil {
 			return err
 		}
 		s.logger.Info("项目共享仓库拉取完成",
@@ -101,8 +100,8 @@ func (s *GitPullService) pullProjectSharedRepo(ctx context.Context, project *mod
 		return fmt.Errorf("创建共享仓库目录失败: %w", err)
 	}
 
-	repoURL := s.cliRuntime.withGitCredentials(project.GitRepoURL)
-	if err := s.cliRuntime.runGitCommand(ctx, 0, filepath.Dir(sharedRepoDir),
+	repoURL := s.repoSupport.WithGitCredentials(project.GitRepoURL)
+	if err := s.repoSupport.RunGitCommand(ctx, 0, filepath.Dir(sharedRepoDir),
 		"clone", "-c", "core.longpaths=true", "--depth", "1", "--single-branch", "-b", branch, repoURL, sharedRepoDir); err != nil {
 		return err
 	}
@@ -116,7 +115,7 @@ func (s *GitPullService) pullProjectSharedRepo(ctx context.Context, project *mod
 }
 
 func resolveWorkspaceRoot() string {
-	raw := LoadCLIRuntimeConfig()
+	raw := LoadRuntimeWorkspaceConfig()
 	workspaceRoot := strings.TrimSpace(raw.WorkspaceRoot)
 	if workspaceRoot != "" {
 		return workspaceRoot

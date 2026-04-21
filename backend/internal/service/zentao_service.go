@@ -365,20 +365,20 @@ func (s *ZentaoService) parseAndSyncBugs(body []byte, project *model.Project, pr
 		description := normalizeZentaoRichText(bug.Steps, baseURL)
 
 		issue := &model.Issue{
-			ZentaoID:     bug.ID,
-			ProjectID:    project.ID,
-			Title:        bug.Title,
-			Description:  description,
-			IssueType:    "bug",
-			ZentaoStatus: mapZentaoStatus(bug.Status),
-			Severity:     mapSeverity(bug.Severity),
-			Priority:     int8(bug.Pri),
-			Reporter:     reporter,
+			ZentaoID:      bug.ID,
+			ProjectID:     project.ID,
+			Title:         bug.Title,
+			Description:   description,
+			IssueType:     "bug",
+			ZentaoStatus:  mapZentaoStatus(bug.Status),
+			Severity:      mapSeverity(bug.Severity),
+			Priority:      int8(bug.Pri),
+			Reporter:      reporter,
 			ReporterEmail: reporterEmail,
-			Assignee:     assignee,
+			Assignee:      assignee,
 			AssigneeEmail: assigneeEmail,
-			Branch:       issueBranch,
-			SyncedAt:     &now,
+			Branch:        issueBranch,
+			SyncedAt:      &now,
 		}
 
 		if bug.ResolvedDate != nil && *bug.ResolvedDate != "" {

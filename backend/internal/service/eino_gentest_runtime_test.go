@@ -161,6 +161,109 @@ func TestEinoGenTestRuntimeGenerate_WithOpenAITools(t *testing.T) {
 	}
 }
 
+func TestEinoGenTestRuntimeRunRead_DirectoryReturnsListing(t *testing.T) {
+	repoDir := t.TempDir()
+	helperDir := filepath.Join(repoDir, "test-cases", "helpers")
+	if err := os.MkdirAll(helperDir, 0o755); err != nil {
+		t.Fatalf("mkdir helper dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(helperDir, "auth.ts"), []byte("export const login = () => {}\n"), 0o644); err != nil {
+		t.Fatalf("write helper file: %v", err)
+	}
+
+	runtime := NewEinoGenTestRuntime(zap.NewNop())
+	result, err := runtime.runRead(repoDir, "test-cases/helpers")
+	if err != nil {
+		t.Fatalf("runRead directory returned error: %v", err)
+	}
+	if result == nil || result.IsError {
+		t.Fatalf("expected non-error directory result, got %#v", result)
+	}
+	if !strings.Contains(result.Content, "directory: test-cases/helpers") || !strings.Contains(result.Content, "auth.ts") {
+		t.Fatalf("expected directory listing, got %q", result.Content)
+	}
+}
+
+func TestEinoGenTestRuntimeRunRead_MissingPathReturnsHint(t *testing.T) {
+	repoDir := t.TempDir()
+
+	runtime := NewEinoGenTestRuntime(zap.NewNop())
+	result, err := runtime.runRead(repoDir, "docs")
+	if err != nil {
+		t.Fatalf("runRead missing path returned error: %v", err)
+	}
+	if result == nil || result.IsError {
+		t.Fatalf("expected non-error missing-path result, got %#v", result)
+	}
+	if !strings.Contains(result.Content, "path not found: docs") {
+		t.Fatalf("expected not-found hint, got %q", result.Content)
+	}
+}
+
+func TestEinoGenTestRuntimeRunRead_RejectsPathTraversal(t *testing.T) {
+	repoDir := t.TempDir()
+
+	runtime := NewEinoGenTestRuntime(zap.NewNop())
+	if _, err := runtime.runRead(repoDir, "../secret.txt"); err == nil {
+		t.Fatalf("expected path traversal to be rejected")
+	}
+}
+
+func TestEinoGenTestRuntimeRunGlob_UsesNativeMatcher(t *testing.T) {
+	repoDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repoDir, "tests", "generated"), 0o755); err != nil {
+		t.Fatalf("mkdir tests dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, "tests", "generated", "issue.spec.ts"), []byte("test('ok', () => {})\n"), 0o644); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, "tests", "generated", "issue.txt"), []byte("not a spec\n"), 0o644); err != nil {
+		t.Fatalf("write txt: %v", err)
+	}
+
+	runtime := NewEinoGenTestRuntime(zap.NewNop())
+	result, err := runtime.runGlob(repoDir, "**/*.spec.ts")
+	if err != nil {
+		t.Fatalf("runGlob returned error: %v", err)
+	}
+	if !strings.Contains(result.Content, "tests/generated/issue.spec.ts") {
+		t.Fatalf("expected spec match, got %q", result.Content)
+	}
+	if strings.Contains(result.Content, "issue.txt") {
+		t.Fatalf("did not expect txt match, got %q", result.Content)
+	}
+}
+
+func TestEinoGenTestRuntimeRunGrep_UsesNativeSearch(t *testing.T) {
+	repoDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repoDir, "src"), 0o755); err != nil {
+		t.Fatalf("mkdir src dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, "src", "login.ts"), []byte("const dataTestId = 'login-button'\n"), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	runtime := NewEinoGenTestRuntime(zap.NewNop())
+	result, err := runtime.runGrep(repoDir, "login-button", "src", 10)
+	if err != nil {
+		t.Fatalf("runGrep returned error: %v", err)
+	}
+	if !strings.Contains(result.Content, "src/login.ts:1:") {
+		t.Fatalf("expected grep match, got %q", result.Content)
+	}
+}
+
+func TestCommandToolSpecs_ByOS(t *testing.T) {
+	linuxTools := commandToolSpecs("linux")
+	if len(linuxTools) != 1 || linuxTools[0].Name != "Bash" {
+		t.Fatalf("expected linux to expose only Bash, got %#v", linuxTools)
+	}
+	windowsTools := commandToolSpecs("windows")
+	if len(windowsTools) != 1 || windowsTools[0].Name != "PowerShell" {
+		t.Fatalf("expected windows to expose only PowerShell, got %#v", windowsTools)
+	}
+}
+
 func mustJSONString(t *testing.T, value any) string {
 	t.Helper()
 	data, err := json.Marshal(value)

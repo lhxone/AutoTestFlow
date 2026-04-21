@@ -172,8 +172,7 @@ func (s *ZentaoProxyService) GetBranches(productID string) ([]ZentaoBranch, erro
 	}
 
 	return parseBranchesFromLegacyHTML(body), nil
-	}
-
+}
 
 func (s *ZentaoProxyService) doZentaoHTMLGet(url, token string) ([]byte, int, error) {
 	req, err := http.NewRequest("GET", url, nil)

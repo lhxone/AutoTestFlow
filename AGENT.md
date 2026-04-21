@@ -223,9 +223,22 @@ src/
 
 ## 编译和测试
 
+```sh
+# 后端编译
+export GOPROXY = "https://goproxy.cn,direct"
+cd backend
+go build -o bin/server cmd/server/main.go
+
+# 前端构建
+cd frontend
+npm run build
+
+# 数据库 migration
+cat backend/migrations/0xx_xxx.sql | docker exec -i atf-mysql mysql -uroot -proot
+```
+
 ```powershell
 # 后端编译
-$env:Path = "D:\Program Files\Go\bin;" + $env:Path
 $env:GOPROXY = "https://goproxy.cn,direct"
 cd backend
 go build -o bin/server.exe cmd/server/main.go

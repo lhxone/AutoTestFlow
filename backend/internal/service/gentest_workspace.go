@@ -1,22 +1,17 @@
 package service
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 	"time"
 
-	"auto-test-flow/internal/config"
 	"auto-test-flow/internal/model"
-	"auto-test-flow/internal/repository"
 
 	"go.uber.org/zap"
 )
@@ -34,85 +29,24 @@ type GenTestWorkspaceConfig struct {
 
 type GenTestWorkspaceService struct {
 	logger      *zap.Logger
-	settingRepo *repository.SettingRepo
 	eventHub    *TaskEventHub
+	repoSupport *RuntimeRepoSupport
 }
 
 func NewGenTestWorkspaceService(logger *zap.Logger) *GenTestWorkspaceService {
 	return &GenTestWorkspaceService{
 		logger:      logger,
-		settingRepo: repository.NewSettingRepo(),
 		eventHub:    DefaultTaskEventHub,
+		repoSupport: NewRuntimeRepoSupport(logger, DefaultTaskEventHub),
 	}
 }
 
 func ResolveGenTestWorkspaceConfig(agent *model.Agent) (GenTestWorkspaceConfig, error) {
-	raw := LoadCLIRuntimeConfig()
-	cfg := GenTestWorkspaceConfig{
-		WorkspaceRoot:     strings.TrimSpace(raw.WorkspaceRoot),
-		RepoDirName:       strings.TrimSpace(raw.RepoDirName),
-		ControlDirName:    strings.TrimSpace(raw.ControlDirName),
-		InputFileName:     strings.TrimSpace(raw.InputFileName),
-		PromptFileName:    strings.TrimSpace(raw.PromptFileName),
-		ResultFileName:    strings.TrimSpace(raw.ResultFileName),
-		LogFileName:       strings.TrimSpace(raw.LogFileName),
-		PreserveWorkspace: raw.PreserveWorkspace,
-	}
-
-	override, err := parseAgentRuntimeSettings(agent)
+	cfg, err := ResolveRuntimeWorkspaceConfig(agent)
 	if err != nil {
 		return GenTestWorkspaceConfig{}, err
 	}
-	if override != nil && override.CLIRuntime != nil {
-		cli := override.CLIRuntime
-		if value := strings.TrimSpace(cli.WorkspaceRoot); value != "" {
-			cfg.WorkspaceRoot = value
-		}
-		if value := strings.TrimSpace(cli.RepoDirName); value != "" {
-			cfg.RepoDirName = value
-		}
-		if value := strings.TrimSpace(cli.ControlDirName); value != "" {
-			cfg.ControlDirName = value
-		}
-		if value := strings.TrimSpace(cli.InputFileName); value != "" {
-			cfg.InputFileName = value
-		}
-		if value := strings.TrimSpace(cli.PromptFileName); value != "" {
-			cfg.PromptFileName = value
-		}
-		if value := strings.TrimSpace(cli.ResultFileName); value != "" {
-			cfg.ResultFileName = value
-		}
-		if value := strings.TrimSpace(cli.LogFileName); value != "" {
-			cfg.LogFileName = value
-		}
-		if cli.PreserveWorkspace != nil {
-			cfg.PreserveWorkspace = *cli.PreserveWorkspace
-		}
-	}
-
-	if cfg.WorkspaceRoot == "" {
-		cfg.WorkspaceRoot = filepath.Join(config.Global.Git.WorkDir, "cli-runtime")
-	}
-	if cfg.RepoDirName == "" {
-		cfg.RepoDirName = defaultCLIRepoDirName
-	}
-	if cfg.ControlDirName == "" {
-		cfg.ControlDirName = defaultCLIControlDirName
-	}
-	if cfg.InputFileName == "" {
-		cfg.InputFileName = defaultCLIInputFileName
-	}
-	if cfg.PromptFileName == "" {
-		cfg.PromptFileName = defaultCLIPromptFileName
-	}
-	if cfg.ResultFileName == "" {
-		cfg.ResultFileName = defaultCLIResultFileName
-	}
-	if cfg.LogFileName == "" {
-		cfg.LogFileName = defaultCLILogFileName
-	}
-	return cfg, nil
+	return GenTestWorkspaceConfig(cfg), nil
 }
 
 func (s *GenTestWorkspaceService) Prepare(
@@ -120,7 +54,7 @@ func (s *GenTestWorkspaceService) Prepare(
 	taskID uint64,
 	task *model.TestTask,
 	cfg GenTestWorkspaceConfig,
-) (*CLIRuntimeWorkspace, error) {
+) (*RuntimeWorkspace, error) {
 	projectDir := filepath.Join(cfg.WorkspaceRoot, fmt.Sprintf("project_%d", task.ProjectID))
 	rootDir := filepath.Join(projectDir, fmt.Sprintf("task_%d", task.ID))
 	repoDir := filepath.Join(rootDir, cfg.RepoDirName)
@@ -129,7 +63,7 @@ func (s *GenTestWorkspaceService) Prepare(
 	sharedRepoDir := filepath.Join(projectDir, "_shared", "repo_"+sanitizePathComponent(branch))
 	sharedNodeModulesDir := filepath.Join(projectDir, "_shared", "node_modules")
 
-	workspace := &CLIRuntimeWorkspace{
+	workspace := &RuntimeWorkspace{
 		RootDir:           rootDir,
 		RepoDir:           repoDir,
 		ControlDir:        controlDir,
@@ -156,7 +90,7 @@ func (s *GenTestWorkspaceService) prepareRepository(ctx context.Context, taskID 
 	if project == nil {
 		return fmt.Errorf("项目不能为空")
 	}
-	if s.isValidRepo(repoDir) {
+	if s.repoSupport.IsValidRepo(repoDir) {
 		s.publish(taskID, taskEventTypeLog, "git_skip", model.TaskStatusRunning, "仓库目录已存在且有效，跳过 clone", nil)
 		return nil
 	}
@@ -167,19 +101,19 @@ func (s *GenTestWorkspaceService) prepareRepository(ctx context.Context, taskID 
 			return fmt.Errorf("创建本地仓库目录失败: %w", err)
 		}
 		s.publish(taskID, taskEventTypeLog, "git_init", model.TaskStatusRunning, "项目未配置 Git 仓库地址，使用 git init 创建空仓库", nil)
-		_ = s.runGitCommand(ctx, 0, filepath.Dir(repoDir), "init", "--initial-branch", projectDefaultBranch(project), repoDir)
+		_ = s.repoSupport.RunGitCommand(ctx, 0, filepath.Dir(repoDir), "init", "--initial-branch", projectDefaultBranch(project), repoDir)
 		return nil
 	}
 
 	sharedRepoDir := filepath.Join(projectDir, "_shared", "repo_"+sanitizePathComponent(branch))
-	if err := s.prepareSharedRepository(ctx, taskID, project, branch, sharedRepoDir); err != nil {
+	if err := s.repoSupport.EnsureSharedRepository(ctx, taskID, project, branch, sharedRepoDir); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(repoDir), 0o755); err != nil {
 		return fmt.Errorf("创建任务工作区父目录失败: %w", err)
 	}
 
-	_ = s.runGitCommand(ctx, taskID, sharedRepoDir, "worktree", "prune")
+	_ = s.repoSupport.RunGitCommand(ctx, taskID, sharedRepoDir, "worktree", "prune")
 	ref := "origin/" + branch
 	s.publish(taskID, taskEventTypeLog, "git_worktree_add", model.TaskStatusRunning,
 		fmt.Sprintf("基于共享仓库创建任务工作树 (branch=%s)", branch), map[string]any{
@@ -187,7 +121,7 @@ func (s *GenTestWorkspaceService) prepareRepository(ctx context.Context, taskID 
 			"worktree":    repoDir,
 			"ref":         ref,
 		})
-	if err := s.runGitCommand(ctx, taskID, sharedRepoDir, "worktree", "add", "--force", repoDir, ref); err != nil {
+	if err := s.repoSupport.RunGitCommand(ctx, taskID, sharedRepoDir, "worktree", "add", "--force", repoDir, ref); err != nil {
 		return fmt.Errorf("创建任务工作树失败 (branch=%s): %w", branch, err)
 	}
 	s.publish(taskID, taskEventTypeLog, "git_worktree_ready", model.TaskStatusRunning, "任务工作树已就绪", map[string]any{
@@ -387,155 +321,6 @@ func (s *GenTestWorkspaceService) copyNodeModules(src, dst string) error {
 	return nil
 }
 
-func (s *GenTestWorkspaceService) prepareSharedRepository(ctx context.Context, taskID uint64, project *model.Project, branch, sharedRepoDir string) error {
-	if s.isValidRepo(sharedRepoDir) {
-		s.publish(taskID, taskEventTypeLog, "git_fetch", model.TaskStatusRunning, fmt.Sprintf("复用共享仓库并更新分支 (branch=%s)", branch), map[string]any{
-			"shared_repo": sharedRepoDir,
-		})
-		if err := s.runGitCommand(ctx, taskID, sharedRepoDir, "fetch", "--depth", "1", "origin", branch); err != nil {
-			return fmt.Errorf("更新共享仓库失败 (branch=%s): %w", branch, err)
-		}
-		return nil
-	}
-
-	_ = os.RemoveAll(sharedRepoDir)
-	parentDir := filepath.Dir(sharedRepoDir)
-	if err := os.MkdirAll(parentDir, 0o755); err != nil {
-		return fmt.Errorf("创建共享仓库父目录失败: %w", err)
-	}
-
-	repoURL := s.withGitCredentials(project.GitRepoURL)
-	s.publish(taskID, taskEventTypeLog, "git_clone_shared", model.TaskStatusRunning, fmt.Sprintf("首次克隆共享仓库 (branch=%s)：%s", branch, project.GitRepoURL), map[string]any{
-		"shared_repo": sharedRepoDir,
-	})
-	if err := s.runGitCommand(ctx, taskID, parentDir, "clone", "-c", "core.longpaths=true", "--depth", "1", "--single-branch", "-b", branch, repoURL, sharedRepoDir); err != nil {
-		_ = os.RemoveAll(sharedRepoDir)
-		return fmt.Errorf("克隆共享仓库失败 (branch=%s): %w", branch, err)
-	}
-	s.publish(taskID, taskEventTypeLog, "git_clone_shared_done", model.TaskStatusRunning, "共享仓库克隆完成", map[string]any{
-		"shared_repo": sharedRepoDir,
-	})
-	return nil
-}
-
-func (s *GenTestWorkspaceService) isValidRepo(repoDir string) bool {
-	gitDir := filepath.Join(repoDir, ".git")
-	info, err := os.Stat(gitDir)
-	if err != nil || !info.IsDir() {
-		return false
-	}
-
-	headData, err := os.ReadFile(filepath.Join(gitDir, "HEAD"))
-	if err != nil {
-		return false
-	}
-	head := strings.TrimSpace(string(headData))
-	if strings.HasPrefix(head, "ref: ") {
-		refPath := filepath.Join(gitDir, strings.TrimPrefix(head, "ref: "))
-		if _, err := os.Stat(refPath); err != nil {
-			packedRefs := filepath.Join(gitDir, "packed-refs")
-			if _, err := os.Stat(packedRefs); err != nil {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func (s *GenTestWorkspaceService) withGitCredentials(repoURL string) string {
-	if s.settingRepo == nil {
-		return repoURL
-	}
-	token := strings.TrimSpace(s.settingRepo.GetValue("gitlab", "access_token"))
-	baseURL := strings.TrimSpace(s.settingRepo.GetValue("gitlab", "base_url"))
-	if token == "" || baseURL == "" {
-		return repoURL
-	}
-
-	baseParsed, err := parseGitURL(baseURL)
-	if err != nil {
-		return repoURL
-	}
-	repoParsed, err := parseGitURL(repoURL)
-	if err != nil || !strings.EqualFold(baseParsed.Host, repoParsed.Host) {
-		return repoURL
-	}
-	repoParsed.User = modelGitUserPassword(token)
-	return repoParsed.String()
-}
-
-func (s *GenTestWorkspaceService) runGitCommand(ctx context.Context, taskID uint64, dir string, args ...string) error {
-	timeout := 2 * time.Minute
-	if len(args) > 0 && args[0] == "clone" {
-		timeout = 10 * time.Minute
-	}
-	callCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(callCtx, "git", args...)
-	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GCM_INTERACTIVE=Never", "GIT_ASKPASS=")
-
-	if taskID == 0 || s.eventHub == nil {
-		if output, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("git %s 失败: %w, output=%s", strings.Join(args, " "), err, strings.TrimSpace(string(output)))
-		}
-		return nil
-	}
-
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("获取 git stdout 失败: %w", err)
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return fmt.Errorf("获取 git stderr 失败: %w", err)
-	}
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("启动 git %s 失败: %w", args[0], err)
-	}
-
-	var (
-		wg       sync.WaitGroup
-		outputMu sync.Mutex
-		combined strings.Builder
-	)
-	collectAndPublish := func(streamName string, pipe io.ReadCloser) {
-		defer wg.Done()
-		defer pipe.Close()
-		scanner := bufio.NewScanner(pipe)
-		scanner.Buffer(make([]byte, 0, 64*1024), 256*1024)
-		scanner.Split(scanCROrLF)
-		for scanner.Scan() {
-			line := strings.TrimSpace(scanner.Text())
-			if line == "" {
-				continue
-			}
-			outputMu.Lock()
-			combined.WriteString(line)
-			combined.WriteByte('\n')
-			outputMu.Unlock()
-			s.publish(taskID, taskEventTypeLog, "git_output", model.TaskStatusRunning, line, map[string]any{
-				"stream": streamName,
-			})
-		}
-	}
-
-	wg.Add(2)
-	go collectAndPublish("stdout", stdout)
-	go collectAndPublish("stderr", stderr)
-
-	waitErr := cmd.Wait()
-	wg.Wait()
-	if waitErr != nil {
-		outputMu.Lock()
-		out := combined.String()
-		outputMu.Unlock()
-		return fmt.Errorf("git %s 失败: %w, output=%s", strings.Join(args, " "), waitErr, strings.TrimSpace(out))
-	}
-	return nil
-}
-
 func (s *GenTestWorkspaceService) SyncArtifacts(repoDir string, task *model.TestTask, input *GenTestInput, output *GenTestOutput) error {
 	if output == nil {
 		return fmt.Errorf("运行时输出为空")
@@ -598,7 +383,7 @@ func (s *GenTestWorkspaceService) SyncArtifacts(repoDir string, task *model.Test
 	return nil
 }
 
-func (s *GenTestWorkspaceService) WriteControlFiles(workspace *CLIRuntimeWorkspace, input *GenTestInput, prompt string, agent *model.Agent) error {
+func (s *GenTestWorkspaceService) WriteControlFiles(workspace *RuntimeWorkspace, input *GenTestInput, prompt string, agent *model.Agent) error {
 	if err := writeJSONFile(workspace.InputFile, input); err != nil {
 		return fmt.Errorf("写入运行时输入文件失败: %w", err)
 	}
@@ -614,7 +399,7 @@ func (s *GenTestWorkspaceService) WriteControlFiles(workspace *CLIRuntimeWorkspa
 	return nil
 }
 
-func (s *GenTestWorkspaceService) WriteResultFile(workspace *CLIRuntimeWorkspace, output *GenTestOutput) error {
+func (s *GenTestWorkspaceService) WriteResultFile(workspace *RuntimeWorkspace, output *GenTestOutput) error {
 	return writeJSONFile(workspace.ResultFile, output)
 }
 
