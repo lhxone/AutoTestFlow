@@ -201,14 +201,24 @@ deploy-production:
           exit 1
         fi
 
-        if command -v docker-compose >/dev/null 2>&1 && sudo -n docker-compose version >/dev/null 2>&1; then
+        COMPOSE_LEGACY='0'
+        if sudo -n docker compose version >/dev/null 2>&1; then
+          COMPOSE_CMD='sudo -n docker compose'
+        elif command -v docker-compose >/dev/null 2>&1 && sudo -n docker-compose version >/dev/null 2>&1; then
           COMPOSE_CMD='sudo -n docker-compose'
+          COMPOSE_LEGACY='1'
         else
-          echo 'Unable to access docker-compose on target host via passwordless sudo. Ensure the deploy user can run sudo -n docker-compose.' >&2
+          echo 'Unable to access docker compose on target host. Ensure the deploy user can run sudo -n docker compose or sudo -n docker-compose.' >&2
           exit 1
         fi
 
         \${COMPOSE_CMD} -p auto-test-flow --env-file .env.deploy -f docker-compose.prod.yml pull
+
+        if [ "\${COMPOSE_LEGACY}" = '1' ]; then
+          sudo -n docker rm -f atf-frontend atf-backend >/dev/null 2>&1 || true
+          sudo -n docker rm -f 5b0a28087046_atf-backend >/dev/null 2>&1 || true
+        fi
+
         if ! \${COMPOSE_CMD} -p auto-test-flow --env-file .env.deploy -f docker-compose.prod.yml up -d --remove-orphans; then
           \${COMPOSE_CMD} -p auto-test-flow --env-file .env.deploy -f docker-compose.prod.yml ps || true
           \${COMPOSE_CMD} -p auto-test-flow --env-file .env.deploy -f docker-compose.prod.yml logs --tail=200 mysql || true
