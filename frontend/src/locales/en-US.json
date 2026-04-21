@@ -211,6 +211,7 @@
         "gitBranch": "Git Branch",
         "gitPullInterval": "Git Pull Interval (minutes)",
         "gitPullIntervalHint": "0 disables scheduled pulls. Recommended minimum is 5 minutes, maximum is 1440 minutes.",
+        "status": "Project Status",
         "zentaoProject": "Zentao Project",
         "zentaoBranch": "Zentao Branch",
         "selectZentaoProject": "Select a Zentao project",

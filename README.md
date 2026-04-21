@@ -172,15 +172,25 @@ docker compose -f docker-compose.prod.yml down -v
 - `backend-test`：执行 `go test ./...`
 - `frontend-check`：执行 `npm ci && npm run build`
 - `build-backend-image` / `build-frontend-image`：验证前后端 Docker 镜像可构建
-- `deploy-production`：通过 SSH 把仓库同步到 `root@192.168.53.106:/data/AutoTestFlow/app`，随后在远端执行 `docker compose up -d --build`
+- `deploy-production`：通过 SSH 把仓库同步到目标服务器，随后在远端执行 `sudo -n docker-compose up -d --build`
+
+当前默认部署用户是 `ubuntu`。远端部署用户需要具备无密码 `sudo`，用于以下操作：
+
+- 创建 `/data1/AutoTestFlow` 下的部署目录
+- 通过 `rsync` 写入部署目录
+- 执行 `sudo -n docker-compose`
 
 需要在 GitLab CI/CD Variables 中至少配置以下变量：
 
-- `DEPLOY_PASSWORD`：用于登录 `root@192.168.53.106` 的 SSH 密码
+- `DEPLOY_SSH_PRIVATE_KEY`：用于登录目标服务器的 SSH 私钥
 - `MYSQL_ROOT_PASSWORD`：生产环境 MySQL root 密码
 
 建议同时配置以下变量：
 
+- `DEPLOY_HOST`
+- `DEPLOY_PORT`
+- `DEPLOY_USER`
+- `DEPLOY_BASE_DIR`
 - `ATF_JWT_SECRET`
 - `ATF_ZENTAO_BASE_URL`
 - `ATF_ZENTAO_API_TOKEN`

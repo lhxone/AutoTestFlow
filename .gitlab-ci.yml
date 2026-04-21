@@ -167,7 +167,20 @@ deploy-production:
       ATF_MAIL_PASSWORD=${ATF_MAIL_PASSWORD}
       ATF_MAIL_FROM=${ATF_MAIL_FROM:-autotest@example.com}
       EOF
-    - ssh -i ~/.ssh/deploy_key.pem -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$APP_DIR' '${DEPLOY_BASE_DIR}/mysql' '${DEPLOY_BASE_DIR}/workspace/repos' '${DEPLOY_BASE_DIR}/workspace/cli-runtime' '${DEPLOY_BASE_DIR}/logs'"
-    - rsync -az --delete -e "ssh -i ~/.ssh/deploy_key.pem -p $DEPLOY_PORT" --exclude '.git/' --exclude '.deploy/' --exclude 'frontend/node_modules/' --exclude 'backend/bin/' --exclude 'logs/' ./ "$DEPLOY_USER@$DEPLOY_HOST:$APP_DIR/"
-    - rsync -az -e "ssh -i ~/.ssh/deploy_key.pem -p $DEPLOY_PORT" .deploy/.env.deploy "$DEPLOY_USER@$DEPLOY_HOST:$APP_DIR/.env.deploy"
-    - ssh -i ~/.ssh/deploy_key.pem -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "cd '$APP_DIR' && if docker compose version >/dev/null 2>&1; then docker compose -p auto-test-flow --env-file .env.deploy -f docker-compose.prod.yml up -d --build --remove-orphans; elif command -v docker-compose >/dev/null 2>&1; then docker-compose -p auto-test-flow --env-file .env.deploy -f docker-compose.prod.yml up -d --build --remove-orphans; else echo 'Docker Compose is not installed on target host' >&2; exit 1; fi"
+    - ssh -i ~/.ssh/deploy_key.pem -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "sudo -n mkdir -p '$APP_DIR' '${DEPLOY_BASE_DIR}/mysql' '${DEPLOY_BASE_DIR}/workspace/repos' '${DEPLOY_BASE_DIR}/workspace/cli-runtime' '${DEPLOY_BASE_DIR}/logs'"
+    - rsync -az --delete --rsync-path="sudo -n rsync" -e "ssh -i ~/.ssh/deploy_key.pem -p $DEPLOY_PORT" --exclude '.git/' --exclude '.deploy/' --exclude 'frontend/node_modules/' --exclude 'backend/bin/' --exclude 'logs/' ./ "$DEPLOY_USER@$DEPLOY_HOST:$APP_DIR/"
+    - rsync -az --rsync-path="sudo -n rsync" -e "ssh -i ~/.ssh/deploy_key.pem -p $DEPLOY_PORT" .deploy/.env.deploy "$DEPLOY_USER@$DEPLOY_HOST:$APP_DIR/.env.deploy"
+    - |
+      ssh -i ~/.ssh/deploy_key.pem -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" '
+        set -eu
+        cd '"'"'$APP_DIR'"'"'
+
+        if command -v docker-compose >/dev/null 2>&1 && sudo -n docker-compose version >/dev/null 2>&1; then
+          COMPOSE_CMD="sudo -n docker-compose"
+        else
+          echo "Unable to access docker-compose on target host via passwordless sudo. Ensure ${USER} can run sudo -n docker-compose." >&2
+          exit 1
+        fi
+
+        ${COMPOSE_CMD} -p auto-test-flow --env-file .env.deploy -f docker-compose.prod.yml up -d --build --remove-orphans
+      '

@@ -174,13 +174,21 @@ func (s *GenTestService) CreatePendingTask(issueID uint64, agentID *uint64, crea
 		return nil, err
 	}
 
+	var resolvedAgent *model.Agent
+	if resolvedAgentID != nil {
+		resolvedAgent, err = s.agentRepo.GetByID(*resolvedAgentID)
+		if err != nil {
+			return nil, fmt.Errorf("Agent不存在: %w", err)
+		}
+	}
+
 	// 创建测试任务
 	now := time.Now()
 	task := &model.TestTask{
 		IssueID:   issueID,
 		ProjectID: project.ID,
 		AgentID:   resolvedAgentID,
-		SkillName: s.resolveWorkflowName(workflowName),
+		SkillName: s.resolveTaskWorkflowName(workflowName, resolvedAgent),
 		Status:    model.TaskStatusRunning,
 		StartedAt: &now,
 		CreatedBy: createdBy,
@@ -531,6 +539,35 @@ func (s *GenTestService) resolveWorkflowName(workflowName string) string {
 		return defaultWorkflowName
 	}
 	return strings.TrimSpace(workflowName)
+}
+
+func (s *GenTestService) resolveTaskWorkflowName(workflowName string, agent *model.Agent) string {
+	resolved := strings.TrimSpace(workflowName)
+	if resolved != "" {
+		return resolved
+	}
+	if agent == nil {
+		return defaultWorkflowName
+	}
+
+	activeWorkflows := make([]string, 0, len(agent.Skills))
+	for _, skill := range agent.Skills {
+		name := strings.TrimSpace(skill.Name)
+		if skill.Status != 0 && name != "" {
+			activeWorkflows = append(activeWorkflows, name)
+		}
+	}
+
+	if len(activeWorkflows) == 1 {
+		return activeWorkflows[0]
+	}
+	if len(activeWorkflows) > 1 {
+		s.logger.Warn("Agent绑定了多个启用workflow，未显式指定workflow时回退默认workflow",
+			zap.Uint64("agent_id", agent.ID),
+			zap.Strings("workflow_names", activeWorkflows))
+	}
+
+	return defaultWorkflowName
 }
 
 func (s *GenTestService) loadWorkflow(workflowName string) (*model.Skill, error) {

@@ -211,6 +211,7 @@
         "gitBranch": "Git 分支",
         "gitPullInterval": "Git 拉取频率(分钟)",
         "gitPullIntervalHint": "0 表示关闭定时拉取；最小建议 5 分钟，最大 1440 分钟。",
+        "status": "项目状态",
         "zentaoProject": "禅道项目集",
         "zentaoBranch": "禅道分支",
         "selectZentaoProject": "选择禅道项目集",

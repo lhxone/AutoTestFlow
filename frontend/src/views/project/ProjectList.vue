@@ -105,6 +105,14 @@
                 <div style="color: #999; font-size: 12px; margin-top: 2px">{{ t('project.list.form.gitPullIntervalHint') }}</div>
               </a-form-item>
             </a-col>
+            <a-col :span="12">
+              <a-form-item :label="t('project.list.form.status')">
+                <a-select v-model:value="form.status">
+                  <a-select-option :value="1">{{ t('common.enabled') }}</a-select-option>
+                  <a-select-option :value="0">{{ t('common.disabled') }}</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
           </a-row>
           <a-row :gutter="16">
             <a-col :span="12">
@@ -288,6 +296,7 @@ const form = reactive({
   git_repo_url: '',
   git_branch: 'main',
   git_pull_interval: 0,
+  status: 1,
   zentao_project_id: null as number | null,
   zentao_project_name: '',
   zentao_branch: '',
@@ -362,6 +371,7 @@ function openCreate() {
     git_repo_url: '',
     git_branch: 'main',
     git_pull_interval: 0,
+    status: 1,
     zentao_project_id: null,
     zentao_project_name: '',
     zentao_branch: '',
@@ -383,6 +393,7 @@ function handleEdit(record: Project) {
     git_repo_url: record.git_repo_url,
     git_branch: record.git_branch,
     git_pull_interval: record.git_pull_interval || 0,
+    status: record.status ?? 1,
     zentao_project_id: record.zentao_project_id,
     zentao_project_name: record.zentao_project_name,
     zentao_branch: record.zentao_branch,
