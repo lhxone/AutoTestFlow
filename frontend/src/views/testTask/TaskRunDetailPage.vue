@@ -94,9 +94,9 @@
                   <ul v-if="getFrameworkChecks().length" class="self-test-report__list">
                     <li v-for="(item, idx) in getFrameworkChecks()" :key="`playwright-${idx}`">{{ item }}</li>
                   </ul>
-                  <iframe v-if="playwrightReportHtml" class="report-frame" :srcdoc="playwrightReportHtml" />
                 </template>
-                <a-empty v-else :description="t('taskRun.selfTest.noFrameworkReport')" />
+                <a-empty v-if="!playwrightReport && !playwrightReportHtml" :description="t('taskRun.selfTest.noFrameworkReport')" />
+                <iframe v-if="playwrightReportHtml" class="report-frame" :srcdoc="playwrightReportHtml" />
               </a-card>
             </div>
           </a-tab-pane>
@@ -388,8 +388,8 @@ async function loadPlaywrightHtml(id: number) {
     if (data.content_type?.includes('html') && data.content) {
       playwrightReportHtml.value = data.content
     }
-  } catch {
-    // ignore
+  } catch (e) {
+    console.error('loadPlaywrightHtml failed:', e)
   }
 }
 
