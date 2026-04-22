@@ -394,12 +394,9 @@ async function loadPlaywrightHtml(id: number) {
   }
 }
 
-function injectSandboxScript(html: string, taskId: number): string {
+function injectSandboxScript(html: string, _taskId: number): string {
   const headClose = `<\x2fhead>`
   const scriptTag = `<\x2fscript>`
-  // Playwright 报告的相对资源路径（video、trace 等），注入 base 标签指向后端工作区接口
-  const basePath = `/api/test-tasks/${taskId}/workspace/playwright-report/`
-  const baseTag = `<base href="${basePath}">`
 
   // 拦截 Playwright SPA hash 路由，防止 srcdoc iframe 跳出
   const script = `
@@ -423,11 +420,10 @@ function injectSandboxScript(html: string, taskId: number): string {
   },true);
 })();
 ${scriptTag}`
-  const injected = `${baseTag}${script}`
   if (html.includes(headClose)) {
-    return html.replace(headClose, `${injected}${headClose}`)
+    return html.replace(headClose, `${script}${headClose}`)
   }
-  return injected + html
+  return script + html
 }
 
 function closeEventSource() {

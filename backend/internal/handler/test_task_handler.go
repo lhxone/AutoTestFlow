@@ -2,11 +2,13 @@ package handler
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -348,6 +350,11 @@ func (h *TestTaskHandler) GetSelfTestReport(c *gin.Context) {
 		return
 	}
 
+	// 内嵌报告中的资源引用（视频、图片、trace 等）为 base64 data URI
+	if contentType == "text/html" {
+		content = embedReportAssets(repoDir, content)
+	}
+
 	pkg.OK(c, gin.H{
 		"framework":    framework,
 		"report_path":  normalizedPath,
@@ -420,6 +427,53 @@ func (h *TestTaskHandler) GetWorkspaceFile(c *gin.Context) {
 	contentType := detectReportContentType(cleanTarget, data)
 	c.Header("Cache-Control", "public, max-age=3600")
 	c.Data(http.StatusOK, contentType, data)
+}
+
+// assetMatcher 匹配 HTML 中的相对资源引用（src 和 href 属性）
+var assetMatcher = regexp.MustCompile(`(src|href)=["']((?:data|trace|resources|blob)[^"']*?\.(?:webm|png|jpg|jpeg|gif|svg|json|trace|css))["']`)
+
+// embedReportAssets 将 Playwright 报告中的相对资源路径替换为 base64 data URI。
+func embedReportAssets(repoDir, html string) string {
+	reportDir := filepath.Join(repoDir, filepath.FromSlash("playwright-report"))
+
+	return assetMatcher.ReplaceAllStringFunc(html, func(match string) string {
+		submatches := assetMatcher.FindStringSubmatch(match)
+		if len(submatches) < 3 {
+			return match
+		}
+		attr := submatches[1]
+		relPath := submatches[2]
+
+		// 安全检查：防止路径遍历
+		cleanRel := filepath.ToSlash(filepath.Clean(relPath))
+		if strings.HasPrefix(cleanRel, "..") {
+			return match
+		}
+
+		fullPath := filepath.Join(reportDir, filepath.FromSlash(cleanRel))
+		cleanFull, err := filepath.Abs(fullPath)
+		if err != nil {
+			return match
+		}
+
+		cleanReport, err := filepath.Abs(reportDir)
+		if err != nil {
+			return match
+		}
+		prefix := cleanReport + string(filepath.Separator)
+		if !strings.HasPrefix(cleanFull, prefix) && cleanFull != cleanReport {
+			return match
+		}
+
+		data, err := os.ReadFile(cleanFull)
+		if err != nil {
+			return match
+		}
+
+		mimeType := detectReportContentType(cleanFull, data)
+		encoded := base64.StdEncoding.EncodeToString(data)
+		return fmt.Sprintf(`%s="data:%s;base64,%s"`, attr, mimeType, encoded)
+	})
 }
 
 func extractFrameworkReportPath(report map[string]any) string {
