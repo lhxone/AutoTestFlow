@@ -309,8 +309,8 @@ func (h *TestTaskHandler) GetSelfTestReport(c *gin.Context) {
 	}
 
 	framework := strings.ToLower(strings.TrimSpace(c.Query("framework")))
-	if framework != "playwright" && framework != "midscene" {
-		pkg.Fail(c, pkg.CodeParamError, "framework 仅支持 playwright 或 midscene")
+	if framework != "playwright" {
+		pkg.Fail(c, pkg.CodeParamError, "framework 仅支持 playwright")
 		return
 	}
 
@@ -326,7 +326,7 @@ func (h *TestTaskHandler) GetSelfTestReport(c *gin.Context) {
 		return
 	}
 
-	reportPath := extractFrameworkReportPath(selfTest, framework)
+	reportPath := extractFrameworkReportPath(selfTest)
 	if strings.TrimSpace(reportPath) == "" {
 		pkg.Fail(c, pkg.CodeNotFound, "该框架报告路径不存在")
 		return
@@ -356,17 +356,11 @@ func (h *TestTaskHandler) GetSelfTestReport(c *gin.Context) {
 	})
 }
 
-func extractFrameworkReportPath(report map[string]any, framework string) string {
-	var raw any
-	switch framework {
-	case "playwright":
-		raw = report["playwright"]
-	case "midscene":
-		raw = report["midscene"]
-	default:
+func extractFrameworkReportPath(report map[string]any) string {
+	raw, ok := report["playwright"]
+	if !ok {
 		return ""
 	}
-
 	obj, ok := raw.(map[string]any)
 	if !ok {
 		return ""

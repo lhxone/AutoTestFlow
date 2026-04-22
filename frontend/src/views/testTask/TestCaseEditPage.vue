@@ -47,38 +47,19 @@
           </a-descriptions-item>
         </a-descriptions>
 
-        <a-row :gutter="12">
-          <a-col :span="12">
-            <a-card size="small" :title="t('testCase.detail.playwrightReport')">
-              <template v-if="playwrightReport">
-                <a-tag :color="frameworkTagColor(playwrightReport.passed)">{{ frameworkStatusLabel(playwrightReport.passed) }}</a-tag>
-                <div v-if="playwrightReport.report_path" style="color:#8c8c8c; font-size:12px; margin-top: 6px; word-break: break-all">
-                  {{ playwrightReport.report_path }}
-                </div>
-                <p v-if="playwrightReport.summary" style="margin: 8px 0">{{ playwrightReport.summary }}</p>
-                <ul v-if="frameworkChecks('playwright').length" style="margin: 0; padding-left: 18px">
-                  <li v-for="(item, index) in frameworkChecks('playwright')" :key="`pw-${index}`">{{ item }}</li>
-                </ul>
-              </template>
-              <a-empty v-else :description="t('testCase.detail.selfTestNoFrameworkReport')" />
-            </a-card>
-          </a-col>
-          <a-col :span="12">
-            <a-card size="small" :title="t('testCase.detail.midsceneReport')">
-              <template v-if="midsceneReport">
-                <a-tag :color="frameworkTagColor(midsceneReport.passed)">{{ frameworkStatusLabel(midsceneReport.passed) }}</a-tag>
-                <div v-if="midsceneReport.report_path" style="color:#8c8c8c; font-size:12px; margin-top: 6px; word-break: break-all">
-                  {{ midsceneReport.report_path }}
-                </div>
-                <p v-if="midsceneReport.summary" style="margin: 8px 0">{{ midsceneReport.summary }}</p>
-                <ul v-if="frameworkChecks('midscene').length" style="margin: 0; padding-left: 18px">
-                  <li v-for="(item, index) in frameworkChecks('midscene')" :key="`mid-${index}`">{{ item }}</li>
-                </ul>
-              </template>
-              <a-empty v-else :description="t('testCase.detail.selfTestNoFrameworkReport')" />
-            </a-card>
-          </a-col>
-        </a-row>
+        <a-card size="small" :title="t('testCase.detail.playwrightReport')">
+          <template v-if="playwrightReport">
+            <a-tag :color="frameworkTagColor(playwrightReport.passed)">{{ frameworkStatusLabel(playwrightReport.passed) }}</a-tag>
+            <div v-if="playwrightReport.report_path" style="color:#8c8c8c; font-size:12px; margin-top: 6px; word-break: break-all">
+              {{ playwrightReport.report_path }}
+            </div>
+            <p v-if="playwrightReport.summary" style="margin: 8px 0">{{ playwrightReport.summary }}</p>
+            <ul v-if="frameworkChecks().length" style="margin: 0; padding-left: 18px">
+              <li v-for="(item, index) in frameworkChecks()" :key="`pw-${index}`">{{ item }}</li>
+            </ul>
+          </template>
+          <a-empty v-else :description="t('testCase.detail.selfTestNoFrameworkReport')" />
+        </a-card>
       </a-card>
 
       <a-card :title="t('testCase.detail.caseGroupTitle')" size="small">
@@ -287,8 +268,7 @@ const selfTestChecks = computed<string[]>(() => {
   }
   return selfTestReport.value.checks
 })
-const playwrightReport = computed<SelfTestFrameworkReport | null>(() => frameworkReport('playwright'))
-const midsceneReport = computed<SelfTestFrameworkReport | null>(() => frameworkReport('midscene'))
+const playwrightReport = computed<SelfTestFrameworkReport | null>(() => frameworkReport())
 
 const pageTitle = computed(() => task.value?.issue?.title || t('testCase.detail.title'))
 const stepColumns = computed(() => [
@@ -492,21 +472,20 @@ function scriptEditorLanguage(script: EditableScript) {
   return script.language || 'typescript'
 }
 
-function frameworkReport(key: 'playwright' | 'midscene'): SelfTestFrameworkReport | null {
-  const report = selfTestReport.value?.[key]
+function frameworkReport(): SelfTestFrameworkReport | null {
+  const report = selfTestReport.value?.['playwright']
   if (!report || typeof report !== 'object') return null
   return report as SelfTestFrameworkReport
 }
 
-function frameworkChecks(key: 'playwright' | 'midscene'): string[] {
-  const report = frameworkReport(key)
+function frameworkChecks(): string[] {
+  const report = frameworkReport()
   if (report?.checks && Array.isArray(report.checks) && report.checks.length > 0) {
     return report.checks
   }
 
   const allChecks = selfTestChecks.value
-  const keyword = key === 'playwright' ? /playwright/i : /midscene/i
-  return allChecks.filter((item) => keyword.test(item))
+  return allChecks.filter((item) => /playwright/i.test(item))
 }
 
 function frameworkTagColor(passed: boolean | undefined) {

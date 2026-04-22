@@ -80,64 +80,24 @@
                 <a-empty v-else :description="t('taskRun.selfTest.noChecks')" />
               </a-card>
 
-              <a-row :gutter="12">
-                <a-col :span="12">
-                  <a-card size="small" class="self-test-report__card" :title="t('taskRun.selfTest.playwright')">
-                    <template v-if="playwrightReport">
-                      <div class="self-test-report__meta">
-                        <a-tag :color="getFrameworkTagColor(playwrightReport.passed)">
-                          {{ formatFrameworkStatus(playwrightReport.passed) }}
-                        </a-tag>
-                        <a-button
-                          v-if="playwrightReport.report_path"
-                          type="link"
-                          size="small"
-                          :loading="reportLoading && reportFramework === 'playwright'"
-                          @click="openFrameworkReport('playwright')"
-                        >
-                          {{ t('taskRun.selfTest.viewReport') }}
-                        </a-button>
-                        <span v-if="playwrightReport.report_path" class="self-test-report__path">
-                          {{ playwrightReport.report_path }}
-                        </span>
-                      </div>
-                      <p v-if="playwrightReport.summary" class="self-test-report__summary">{{ playwrightReport.summary }}</p>
-                      <ul v-if="getFrameworkChecks('playwright').length" class="self-test-report__list">
-                        <li v-for="(item, idx) in getFrameworkChecks('playwright')" :key="`playwright-${idx}`">{{ item }}</li>
-                      </ul>
-                    </template>
-                    <a-empty v-else :description="t('taskRun.selfTest.noFrameworkReport')" />
-                  </a-card>
-                </a-col>
-                <a-col :span="12">
-                  <a-card size="small" class="self-test-report__card" :title="t('taskRun.selfTest.midscene')">
-                    <template v-if="midsceneReport">
-                      <div class="self-test-report__meta">
-                        <a-tag :color="getFrameworkTagColor(midsceneReport.passed)">
-                          {{ formatFrameworkStatus(midsceneReport.passed) }}
-                        </a-tag>
-                        <a-button
-                          v-if="midsceneReport.report_path"
-                          type="link"
-                          size="small"
-                          :loading="reportLoading && reportFramework === 'midscene'"
-                          @click="openFrameworkReport('midscene')"
-                        >
-                          {{ t('taskRun.selfTest.viewReport') }}
-                        </a-button>
-                        <span v-if="midsceneReport.report_path" class="self-test-report__path">
-                          {{ midsceneReport.report_path }}
-                        </span>
-                      </div>
-                      <p v-if="midsceneReport.summary" class="self-test-report__summary">{{ midsceneReport.summary }}</p>
-                      <ul v-if="getFrameworkChecks('midscene').length" class="self-test-report__list">
-                        <li v-for="(item, idx) in getFrameworkChecks('midscene')" :key="`midscene-${idx}`">{{ item }}</li>
-                      </ul>
-                    </template>
-                    <a-empty v-else :description="t('taskRun.selfTest.noFrameworkReport')" />
-                  </a-card>
-                </a-col>
-              </a-row>
+              <a-card size="small" class="self-test-report__card" :title="t('taskRun.selfTest.playwright')">
+                <template v-if="playwrightReport">
+                  <div class="self-test-report__meta">
+                    <a-tag :color="getFrameworkTagColor(playwrightReport.passed)">
+                      {{ formatFrameworkStatus(playwrightReport.passed) }}
+                    </a-tag>
+                    <span v-if="playwrightReport.report_path" class="self-test-report__path">
+                      {{ playwrightReport.report_path }}
+                    </span>
+                  </div>
+                  <p v-if="playwrightReport.summary" class="self-test-report__summary">{{ playwrightReport.summary }}</p>
+                  <ul v-if="getFrameworkChecks().length" class="self-test-report__list">
+                    <li v-for="(item, idx) in getFrameworkChecks()" :key="`playwright-${idx}`">{{ item }}</li>
+                  </ul>
+                  <iframe v-if="playwrightReportHtml" class="report-frame" :srcdoc="playwrightReportHtml" />
+                </template>
+                <a-empty v-else :description="t('taskRun.selfTest.noFrameworkReport')" />
+              </a-card>
             </div>
           </a-tab-pane>
         </a-tabs>
@@ -152,22 +112,6 @@
     >
       <pre class="script-preview">{{ viewingScript?.file_content }}</pre>
     </a-modal>
-
-    <a-modal
-      v-model:open="reportModal"
-      :title="reportTitle"
-      width="960px"
-      :footer="null"
-    >
-      <a-spin :spinning="reportLoading">
-        <template v-if="isHtmlReport">
-          <iframe class="report-frame" :srcdoc="reportContent" />
-        </template>
-        <template v-else>
-          <pre class="script-preview">{{ reportContent || t('taskRun.selfTest.noReportContent') }}</pre>
-        </template>
-      </a-spin>
-    </a-modal>
   </div>
 </template>
 
@@ -175,7 +119,6 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import { message } from 'ant-design-vue'
 import {
   createTestTaskEventSource,
   getSelfTestReport,
@@ -212,12 +155,7 @@ const testScripts = ref<TestScriptVO[]>([])
 const resultsVisible = ref(false)
 const scriptModal = ref(false)
 const viewingScript = ref<TestScriptVO | null>(null)
-const reportModal = ref(false)
-const reportLoading = ref(false)
-const reportFramework = ref<'playwright' | 'midscene' | null>(null)
-const reportPath = ref('')
-const reportContent = ref('')
-const reportContentType = ref('text/plain')
+const playwrightReportHtml = ref('')
 const canEditCase = computed(() => userStore.hasPermission('test:intervene'))
 const selfTestReport = computed<SelfTestReport | null>(() => {
   const report = taskInfo.value?.ai_output?.self_test
@@ -230,13 +168,7 @@ const selfTestChecks = computed<string[]>(() => {
   }
   return selfTestReport.value.checks
 })
-const playwrightReport = computed<SelfTestFrameworkReport | null>(() => getFrameworkReport('playwright'))
-const midsceneReport = computed<SelfTestFrameworkReport | null>(() => getFrameworkReport('midscene'))
-const reportTitle = computed(() => {
-  const frameworkLabel = reportFramework.value === 'playwright' ? t('taskRun.selfTest.playwright') : t('taskRun.selfTest.midscene')
-  return reportPath.value ? `${frameworkLabel} - ${reportPath.value}` : frameworkLabel
-})
-const isHtmlReport = computed(() => reportContentType.value.includes('html'))
+const playwrightReport = computed<SelfTestFrameworkReport | null>(() => getFrameworkReport())
 let eventSource: EventSource | null = null
 let taskRefreshTimer: number | null = null
 
@@ -442,6 +374,20 @@ async function loadResults(id: number) {
     testCases.value = caseRes.data.data || []
     testScripts.value = scriptRes.data.data || []
     resultsVisible.value = true
+    await loadPlaywrightHtml(id)
+  } catch {
+    // ignore
+  }
+}
+
+async function loadPlaywrightHtml(id: number) {
+  playwrightReportHtml.value = ''
+  try {
+    const res = await getSelfTestReport(id, 'playwright')
+    const data = res.data.data || {}
+    if (data.content_type?.includes('html') && data.content) {
+      playwrightReportHtml.value = data.content
+    }
   } catch {
     // ignore
   }
@@ -465,21 +411,20 @@ function taskStatusColor(s: string) {
   return map[s] || 'default'
 }
 
-function getFrameworkReport(key: 'playwright' | 'midscene'): SelfTestFrameworkReport | null {
-  const report = selfTestReport.value?.[key]
+function getFrameworkReport(): SelfTestFrameworkReport | null {
+  const report = selfTestReport.value?.['playwright']
   if (!report || typeof report !== 'object') return null
   return report as SelfTestFrameworkReport
 }
 
-function getFrameworkChecks(key: 'playwright' | 'midscene'): string[] {
-  const report = getFrameworkReport(key)
+function getFrameworkChecks(): string[] {
+  const report = getFrameworkReport()
   if (report?.checks && Array.isArray(report.checks) && report.checks.length > 0) {
     return report.checks
   }
 
   const checks = selfTestChecks.value
-  const keyword = key === 'playwright' ? /playwright/i : /midscene/i
-  return checks.filter((item) => keyword.test(item))
+  return checks.filter((item) => /playwright/i.test(item))
 }
 
 function getFrameworkTagColor(passed: boolean | undefined) {
@@ -505,28 +450,6 @@ function goToEditCase(tc: TestCaseVO) {
 function viewScript(script: TestScriptVO) {
   viewingScript.value = script
   scriptModal.value = true
-}
-
-async function openFrameworkReport(framework: 'playwright' | 'midscene') {
-  reportFramework.value = framework
-  reportLoading.value = true
-  reportPath.value = ''
-  reportContent.value = ''
-  reportContentType.value = 'text/plain'
-  reportModal.value = true
-
-  try {
-    const res = await getSelfTestReport(taskId.value, framework)
-    const data = res.data.data || {}
-    reportPath.value = data.report_path || ''
-    reportContent.value = data.content || ''
-    reportContentType.value = data.content_type || 'text/plain'
-  } catch {
-    reportModal.value = false
-    message.error(t('taskRun.selfTest.reportLoadFailed'))
-  } finally {
-    reportLoading.value = false
-  }
 }
 </script>
 

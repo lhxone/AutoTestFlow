@@ -242,6 +242,7 @@ func (r *EinoGenTestRuntime) buildPrompt(
 - 生成的测试脚本必须包含至少一个可执行断言。
 - 必须把实际文件写入仓库目录。
 - 完成后必须调用 SubmitGenTestResult 工具提交结构化结果，而不是只输出自然语言。
+- 自测完成后，将 Playwright 报告路径写入 self_test.playwright.report_path（例如 "playwright-report/index.html"）。
 - SubmitGenTestResult 必须严格使用标准字段名，禁止使用 path、case_name、prerequisites、module、status、expected_result 等别名字段。
 - 若关键信息缺失，可调用 AskUserQuestion；若需要人工许可，可调用 RequestPermission。
 - 必须根据当前运行平台选择命令工具；当前平台: %s；可用命令工具: %s。
@@ -275,7 +276,12 @@ func (r *EinoGenTestRuntime) buildPrompt(
 	"self_test": {
 		"passed": true,
 		"summary": "自测通过",
-		"checks": ["Playwright 用例通过"]
+		"checks": ["Playwright 用例通过"],
+		"playwright": {
+			"passed": true,
+			"report_path": "playwright-report/index.html",
+			"summary": "所有 Playwright 用例通过"
+		}
 	},
 	"summary": "已生成测试用例、脚本和文档"
 }

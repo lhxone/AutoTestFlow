@@ -312,7 +312,6 @@ export interface SelfTestReport {
   summary?: string
   checks?: string[]
   playwright?: SelfTestFrameworkReport
-  midscene?: SelfTestFrameworkReport
   [key: string]: any
 }
 
