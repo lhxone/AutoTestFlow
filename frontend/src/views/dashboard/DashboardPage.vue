@@ -31,12 +31,38 @@
 
     <a-row :gutter="16">
       <a-col :span="12">
-        <a-card :title="t('dashboard.quickActions.title')" class="dashboard-equal-height">
-          <a-space wrap>
-            <a-button type="primary" @click="$router.push('/issues')">{{ t('dashboard.quickActions.issues') }}</a-button>
-            <a-button @click="$router.push('/reviews')">{{ t('dashboard.quickActions.reviews') }}</a-button>
-            <a-button @click="$router.push('/test-tasks')">{{ t('dashboard.quickActions.testTasks') }}</a-button>
-          </a-space>
+        <a-card :title="t('dashboard.kpiMonitor.title')" class="dashboard-equal-height">
+          <template #extra>
+            <a-button type="link" :loading="monitorLoading" @click="fetchMonitorMetrics">
+              <template #icon><ReloadOutlined /></template>
+              {{ t('common.refresh', '刷新') }}
+            </a-button>
+          </template>
+          <a-row :gutter="16" style="margin-bottom: 16px">
+            <a-col :span="8">
+              <a-statistic :title="t('dashboard.kpiMonitor.diskUsage')" :value="monitorData.disk.used_percentage.toFixed(1)" suffix="%" :value-style="{ color: diskUsageColor }" />
+            </a-col>
+            <a-col :span="8">
+              <a-statistic :title="t('dashboard.kpiMonitor.cpuUsage')" :value="monitorData.cpu_percentage.toFixed(1)" suffix="%" :value-style="{ color: cpuUsageColor }" />
+            </a-col>
+            <a-col :span="8">
+              <a-statistic :title="t('dashboard.kpiMonitor.memoryUsage')" :value="monitorData.memory_percentage.toFixed(1)" suffix="%" :value-style="{ color: memoryUsageColor }" />
+            </a-col>
+          </a-row>
+          <a-table
+            :columns="monitorColumns"
+            :data-source="monitorData.workspaces"
+            :loading="monitorLoading"
+            :pagination="false"
+            size="small"
+            row-key="project_id"
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'workspace_size'">
+                {{ formatBytes(record.workspace_size) }}
+              </template>
+            </template>
+          </a-table>
         </a-card>
       </a-col>
       <a-col :span="12">
@@ -100,9 +126,10 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
-import { getDashboardStats, getRecentActivities } from '@/api/dashboard'
-import type { DashboardProjectSyncStatus, DashboardStats } from '@/types'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { ReloadOutlined } from '@ant-design/icons-vue'
+import { getDashboardStats, getRecentActivities, getMonitorMetrics } from '@/api/dashboard'
+import type { DashboardProjectSyncStatus, DashboardStats, MonitorMetrics } from '@/types'
 import { useI18n } from 'vue-i18n'
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
@@ -127,6 +154,42 @@ const stats = reactive<{
   passRate: null,
 })
 
+const monitorLoading = ref(false)
+const monitorData = ref<MonitorMetrics>({
+  disk: { total_bytes: 0, free_bytes: 0, used_percentage: 0 },
+  cpu_percentage: 0,
+  memory_total_bytes: 0,
+  memory_used_bytes: 0,
+  memory_percentage: 0,
+  workspaces: [],
+})
+
+const monitorColumns = [
+  { title: t('dashboard.kpiMonitor.columns.project'), dataIndex: 'project_name', key: 'project_name' },
+  { title: t('dashboard.kpiMonitor.columns.workspaceSize'), dataIndex: 'workspace_size', key: 'workspace_size', width: 140 },
+]
+
+const diskUsageColor = computed(() => {
+  const v = monitorData.value.disk.used_percentage
+  if (v > 90) return '#ff4d4f'
+  if (v > 70) return '#faad14'
+  return '#52c41a'
+})
+
+const cpuUsageColor = computed(() => {
+  const v = monitorData.value.cpu_percentage
+  if (v > 90) return '#ff4d4f'
+  if (v > 70) return '#faad14'
+  return '#52c41a'
+})
+
+const memoryUsageColor = computed(() => {
+  const v = monitorData.value.memory_percentage
+  if (v > 90) return '#ff4d4f'
+  if (v > 70) return '#faad14'
+  return '#52c41a'
+})
+
 interface RecentActivity {
   id: number
   username: string
@@ -139,6 +202,7 @@ interface RecentActivity {
 onMounted(() => {
   fetchStats()
   fetchRecentActivities()
+  fetchMonitorMetrics()
 })
 
 async function fetchStats() {
@@ -207,6 +271,33 @@ function activityColor(action: string) {
 
 function formatTime(timeStr: string) {
   return dayjs(timeStr).fromNow()
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
+}
+
+async function fetchMonitorMetrics() {
+  monitorLoading.value = true
+  try {
+    const res = await getMonitorMetrics()
+    monitorData.value = (res.data.data || {}) as MonitorMetrics
+  } catch {
+    monitorData.value = {
+      disk: { total_bytes: 0, free_bytes: 0, used_percentage: 0 },
+      cpu_percentage: 0,
+      memory_total_bytes: 0,
+      memory_used_bytes: 0,
+      memory_percentage: 0,
+      workspaces: [],
+    }
+  } finally {
+    monitorLoading.value = false
+  }
 }
 </script>
 

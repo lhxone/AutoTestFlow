@@ -7,3 +7,7 @@ export function getDashboardStats() {
 export function getRecentActivities() {
   return request.get('/dashboard/recent-activities')
 }
+
+export function getMonitorMetrics() {
+  return request.get('/dashboard/monitor')
+}

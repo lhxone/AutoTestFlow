@@ -86,6 +86,16 @@
       "reviews": "审核 Review",
       "testTasks": "测试任务"
     },
+    "kpiMonitor": {
+      "title": "系统监控",
+      "diskUsage": "磁盘使用率",
+      "cpuUsage": "CPU 使用率",
+      "memoryUsage": "内存使用率",
+      "columns": {
+        "project": "项目",
+        "workspaceSize": "工作区大小"
+      }
+    },
     "recentActivities": {
       "title": "最近活动",
       "empty": "暂无数据"

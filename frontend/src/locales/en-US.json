@@ -86,6 +86,16 @@
       "reviews": "Review Reviews",
       "testTasks": "Test Tasks"
     },
+    "kpiMonitor": {
+      "title": "System Monitor",
+      "diskUsage": "Disk Usage",
+      "cpuUsage": "CPU Usage",
+      "memoryUsage": "Memory Usage",
+      "columns": {
+        "project": "Project",
+        "workspaceSize": "Workspace Size"
+      }
+    },
     "recentActivities": {
       "title": "Recent Activities",
       "empty": "No data"

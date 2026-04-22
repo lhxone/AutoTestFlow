@@ -441,3 +441,25 @@ export function translateTriggerType(t: Translator, triggerType: string) {
 export function translateWorkflowType(t: Translator, workflowType: string) {
   return workflowType ? t(`status.workflowType.${workflowType}`) : workflowType
 }
+
+// ====== Dashboard KPI Monitor ======
+export interface DiskInfo {
+  total_bytes: number
+  free_bytes: number
+  used_percentage: number
+}
+
+export interface WorkspaceMetrics {
+  project_id: number
+  project_name: string
+  workspace_size: number
+}
+
+export interface MonitorMetrics {
+  disk: DiskInfo
+  cpu_percentage: number
+  memory_total_bytes: number
+  memory_used_bytes: number
+  memory_percentage: number
+  workspaces: WorkspaceMetrics[]
+}

@@ -7,6 +7,7 @@ import (
 	"auto-test-flow/internal/model"
 	"auto-test-flow/internal/pkg"
 	"auto-test-flow/internal/repository"
+	"auto-test-flow/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
@@ -220,4 +221,16 @@ func (h *DashboardHandler) GetRecentActivities(c *gin.Context) {
 	}
 
 	pkg.OK(c, activities)
+}
+
+// GetMonitorKPI returns system monitoring metrics
+// GET /api/dashboard/monitor
+func (h *DashboardHandler) GetMonitorKPI(c *gin.Context) {
+	monitorSvc := service.NewSystemMonitorService()
+	metrics, err := monitorSvc.GetSystemMetrics()
+	if err != nil {
+		pkg.Fail(c, pkg.CodeInternalError, err.Error())
+		return
+	}
+	pkg.OK(c, metrics)
 }
