@@ -328,8 +328,8 @@ func (h *TestTaskHandler) GetSelfTestReport(c *gin.Context) {
 
 	reportPath := extractFrameworkReportPath(selfTest)
 	if strings.TrimSpace(reportPath) == "" {
-		pkg.Fail(c, pkg.CodeNotFound, "该框架报告路径不存在")
-		return
+		// Fallback：旧任务可能没有 report_path，尝试默认路径
+		reportPath = defaultPlaywrightReportPath()
 	}
 
 	repoDir := ""
@@ -367,6 +367,10 @@ func extractFrameworkReportPath(report map[string]any) string {
 	}
 	path, _ := obj["report_path"].(string)
 	return strings.TrimSpace(path)
+}
+
+func defaultPlaywrightReportPath() string {
+	return "playwright-report/index.html"
 }
 
 func normalizeReportRelativePath(path string) string {
