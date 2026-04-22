@@ -120,30 +120,66 @@ func (r *MCPRuntime) Invoke(ctx context.Context, toolName string, input map[stri
 		return "", false
 	}
 
-	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	callCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
 	var (
 		result string
 		err    error
 	)
-	switch binding.Kind {
-	case mcpToolKindCallTool:
-		result, err = r.invokeMCPTool(callCtx, binding, input)
-	case mcpToolKindReadResource:
-		result, err = r.readMCPResource(callCtx, binding, input)
-	case mcpToolKindGetPrompt:
-		result, err = r.getMCPPrompt(callCtx, binding, input)
-	default:
-		err = fmt.Errorf("不支持的 MCP 工具类型: %s", binding.Kind)
+
+	// 对于Chrome MCP工具，增加重试机制
+	maxRetries := 2
+	if strings.Contains(binding.ServerName, "chrome") {
+		maxRetries = 3
 	}
 
-	if err != nil {
+	for retry := 0; retry <= maxRetries; retry++ {
+		if retry > 0 {
+			r.logger.Warn("重试执行MCP工具",
+				zap.String("tool_name", toolName),
+				zap.String("server_name", binding.ServerName),
+				zap.Int("retry", retry),
+				zap.Int("max_retries", maxRetries))
+			// 等待一段时间再重试
+			select {
+			case <-time.After(time.Duration(retry) * 3 * time.Second):
+			case <-ctx.Done():
+				return truncateMCPResult("ERROR: " + ctx.Err().Error()), true
+			}
+		}
+
+		switch binding.Kind {
+		case mcpToolKindCallTool:
+			result, err = r.invokeMCPTool(callCtx, binding, input)
+		case mcpToolKindReadResource:
+			result, err = r.readMCPResource(callCtx, binding, input)
+		case mcpToolKindGetPrompt:
+			result, err = r.getMCPPrompt(callCtx, binding, input)
+		default:
+			err = fmt.Errorf("不支持的 MCP 工具类型: %s", binding.Kind)
+		}
+
+		if err == nil {
+			break
+		}
+
+		// 如果是最后一次重试，返回错误
+		if retry == maxRetries {
+			r.logger.Error("执行 MCP 工具失败",
+				zap.String("tool_name", toolName),
+				zap.String("server_name", binding.ServerName),
+				zap.Int("attempts", retry+1),
+				zap.Error(err))
+			return truncateMCPResult("ERROR: " + err.Error()), true
+		}
+
+		// 记录错误并继续重试
 		r.logger.Warn("执行 MCP 工具失败",
 			zap.String("tool_name", toolName),
 			zap.String("server_name", binding.ServerName),
+			zap.Int("attempt", retry+1),
 			zap.Error(err))
-		return truncateMCPResult("ERROR: " + err.Error()), true
 	}
 
 	r.logger.Info("执行 MCP 工具完成",
@@ -159,13 +195,45 @@ func (r *MCPRuntime) attachServer(ctx context.Context, server model.MCPServer) e
 		Version: "1.0.0",
 	}, nil)
 
-	connectCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	// 增加连接超时时间，特别是对于Chrome MCP需要更长的启动时间
+	connectCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
-	session, err := client.Connect(connectCtx, buildMCPTransport(server), nil)
-	if err != nil {
-		return err
+	// 添加连接重试机制
+	var session *mcp.ClientSession
+	var err error
+	maxRetries := 3
+	for retry := 0; retry < maxRetries; retry++ {
+		if retry > 0 {
+			r.logger.Warn("重试连接MCP Server",
+				zap.String("server_name", server.Name),
+				zap.Int("retry", retry),
+				zap.Int("max_retries", maxRetries))
+			// 等待一段时间再重试
+			select {
+			case <-time.After(time.Duration(retry) * 5 * time.Second):
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+
+		session, err = client.Connect(connectCtx, buildMCPTransport(server), nil)
+		if err == nil {
+			break
+		}
+
+		// 如果是最后一次重试，返回错误
+		if retry == maxRetries-1 {
+			return fmt.Errorf("连接MCP Server失败 (尝试%d次): %w", maxRetries, err)
+		}
+
+		// 记录错误并继续重试
+		r.logger.Warn("连接MCP Server失败",
+			zap.String("server_name", server.Name),
+			zap.Int("attempt", retry+1),
+			zap.Error(err))
 	}
+
 	r.sessions = append(r.sessions, session)
 
 	info := session.InitializeResult()
@@ -217,6 +285,10 @@ func (r *MCPRuntime) attachServer(ctx context.Context, server model.MCPServer) e
 		r.capabilityNotes = append(r.capabilityNotes,
 			fmt.Sprintf("MCP Server %s 可读取资源: %s", serverLabel, strings.Join(resourceHints, ", ")))
 	}
+
+	r.logger.Info("MCP Server连接成功",
+		zap.String("server_name", server.Name),
+		zap.String("server_label", serverLabel))
 
 	return nil
 }

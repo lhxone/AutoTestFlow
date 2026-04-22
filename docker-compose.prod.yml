@@ -26,7 +26,10 @@ services:
   backend:
     image: ${BACKEND_IMAGE:?BACKEND_IMAGE is required}
     container_name: atf-backend
-    shm_size: '512m'
+    shm_size: '2g'
+    tmpfs:
+      - /tmp:rw,size=2g
+      - /dev/shm:rw,size=2g
     environment:
       TZ: Asia/Shanghai
       ATF_DATABASE_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
@@ -41,8 +44,16 @@ services:
       ATF_MAIL_USERNAME: ${ATF_MAIL_USERNAME:-}
       ATF_MAIL_PASSWORD: ${ATF_MAIL_PASSWORD:-}
       ATF_MAIL_FROM: ${ATF_MAIL_FROM:-autotest@example.com}
+      CHROME_ARGS: --no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage --disable-gpu --disable-software-rasterizer --disable-background-networking --disable-default-apps --disable-extensions --disable-sync --disable-translate --metrics-recording-only --no-first-run --safebrowsing-disable-auto-update --disable-features=site-per-process --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding
+      CHROME_USER_DATA_DIR: /tmp/auto-test-flow/chrome-profile
+      CHROME_DISABLE_GPU: "true"
+      CHROME_NO_SANDBOX: "true"
+      CHROME_REMOTE_DEBUGGING_PORT: "9222"
+      CHROME_PATH: /usr/local/bin/chrome
+      CHROME_DEVTOOLS_MCP_USER_DATA_DIR: /tmp/auto-test-flow/chrome-profile
     ports:
       - "${BACKEND_PORT:-8080}:8080"
+      - "9222:9222"
     volumes:
       - ./backend/configs/config.docker.yaml:/app/configs/config.yaml:ro
       - ${ATF_RUNTIME_HOST_DIR:-/data2/auto-test-flow}:/tmp/auto-test-flow
@@ -56,6 +67,25 @@ services:
       retries: 10
       start_period: 20s
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 2G
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Starting Chrome MCP health check..."
+        if command -v chrome-mcp-health-check >/dev/null 2>&1; then
+          chrome-mcp-health-check.sh || echo "Chrome MCP health check failed, but continuing..."
+        else
+          echo "Chrome MCP health check script not found, skipping..."
+        fi
+        echo "Starting backend server..."
+        ./server -config configs/config.yaml
 
   frontend:
     image: ${FRONTEND_IMAGE:?FRONTEND_IMAGE is required}

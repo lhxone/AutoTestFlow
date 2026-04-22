@@ -69,6 +69,14 @@ RUN set -eu; \
       'chrome_path="${CHROME_PATH:-'${chrome_path}'}"' \
       'profile_dir="${CHROME_DEVTOOLS_MCP_USER_DATA_DIR:-/tmp/auto-test-flow/chrome-profile}"' \
       'mkdir -p "${profile_dir}"' \
+      'mkdir -p /tmp/chrome-debug /dev/shm/chrome' \
+      'extra_chrome_args=""' \
+      'if [ "${CHROME_ARGS:-}" != "" ]; then' \
+      '  IFS=" " read -ra extra_args <<< "$CHROME_ARGS"' \
+      '  for arg in "${extra_args[@]}"; do' \
+      '    extra_chrome_args="${extra_chrome_args} --chromeArg=${arg}"' \
+      '  done' \
+      'fi' \
       'exec chrome-devtools-mcp \' \
       '  --headless \' \
       '  --executablePath "${chrome_path}" \' \
@@ -77,6 +85,18 @@ RUN set -eu; \
       '  --chromeArg=--disable-setuid-sandbox \' \
       '  --chromeArg=--disable-dev-shm-usage \' \
       '  --chromeArg=--disable-gpu \' \
+      '  --chromeArg=--disable-software-rasterizer \' \
+      '  --chromeArg=--disable-background-networking \' \
+      '  --chromeArg=--disable-default-apps \' \
+      '  --chromeArg=--disable-extensions \' \
+      '  --chromeArg=--disable-sync \' \
+      '  --chromeArg=--disable-translate \' \
+      '  --chromeArg=--metrics-recording-only \' \
+      '  --chromeArg=--no-first-run \' \
+      '  --chromeArg=--safebrowsing-disable-auto-update \' \
+      '  --chromeArg=--disable-features=site-per-process \' \
+      '  --chromeArg=--remote-debugging-port=9222 \' \
+      '  ${extra_chrome_args} \' \
       '  --no-usage-statistics \' \
       '  "$@"' \
       > /usr/local/bin/chrome-devtools-mcp-docker; \
@@ -84,7 +104,10 @@ RUN set -eu; \
     ln -sf "$chrome_path" /usr/local/bin/chrome
 
 ENV CHROME_PATH=/usr/local/bin/chrome \
-    CHROME_DEVTOOLS_MCP_USER_DATA_DIR=/tmp/auto-test-flow/chrome-profile
+    CHROME_DEVTOOLS_MCP_USER_DATA_DIR=/tmp/auto-test-flow/chrome-profile \
+    CHROME_DISABLE_GPU=true \
+    CHROME_NO_SANDBOX=true \
+    CHROME_REMOTE_DEBUGGING_PORT=9222
 
 RUN bash --version >/dev/null && \
     git --version >/dev/null && \
@@ -95,3 +118,7 @@ RUN bash --version >/dev/null && \
     chrome-devtools-mcp --version >/dev/null && \
     chrome-devtools-mcp-docker --help >/dev/null && \
     npx playwright --version >/dev/null
+
+# 复制Chrome MCP健康检查脚本
+COPY scripts/chrome-mcp-health-check.sh /usr/local/bin/chrome-mcp-health-check.sh
+RUN chmod +x /usr/local/bin/chrome-mcp-health-check.sh
