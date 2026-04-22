@@ -173,3 +173,47 @@ func syncStatusLabel(status string) string {
 		return "未同步"
 	}
 }
+
+type RecentActivity struct {
+	ID        uint64    `json:"id"`
+	Username  string    `json:"username"`
+	Action    string    `json:"action"`
+	ActionLabel string  `json:"action_label"`
+	IP        string    `json:"ip"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func (h *DashboardHandler) GetRecentActivities(c *gin.Context) {
+	var logs []model.OperationLog
+	if err := repository.DB.Model(&model.OperationLog{}).
+		Where("module = ?", "auth").
+		Order("id DESC").
+		Limit(10).
+		Find(&logs).Error; err != nil {
+		pkg.Fail(c, pkg.CodeInternalError, err.Error())
+		return
+	}
+
+	activities := make([]RecentActivity, 0, len(logs))
+	for _, log := range logs {
+		actionLabel := "未知操作"
+		switch log.Action {
+		case "login_success":
+			actionLabel = "登录成功"
+		case "login_failed":
+			actionLabel = "登录失败"
+		case "logout":
+			actionLabel = "退出登录"
+		}
+		activities = append(activities, RecentActivity{
+			ID:          log.ID,
+			Username:    log.Username,
+			Action:      log.Action,
+			ActionLabel: actionLabel,
+			IP:          log.IP,
+			CreatedAt:   log.CreatedAt,
+		})
+	}
+
+	pkg.OK(c, activities)
+}

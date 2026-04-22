@@ -50,6 +50,7 @@ func Setup(logger *zap.Logger) *gin.Engine {
 
 			// 工作台
 			protected.GET("/dashboard/stats", dashboardH.GetStats)
+			protected.GET("/dashboard/recent-activities", dashboardH.GetRecentActivities)
 
 			// 用户管理
 			users := protected.Group("/users")

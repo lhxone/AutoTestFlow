@@ -31,7 +31,7 @@
 
     <a-row :gutter="16">
       <a-col :span="12">
-        <a-card :title="t('dashboard.quickActions.title')">
+        <a-card :title="t('dashboard.quickActions.title')" class="dashboard-equal-height">
           <a-space wrap>
             <a-button type="primary" @click="$router.push('/issues')">{{ t('dashboard.quickActions.issues') }}</a-button>
             <a-button @click="$router.push('/reviews')">{{ t('dashboard.quickActions.reviews') }}</a-button>
@@ -40,8 +40,30 @@
         </a-card>
       </a-col>
       <a-col :span="12">
-        <a-card :title="t('dashboard.recentActivities.title')">
-          <a-empty :description="t('dashboard.recentActivities.empty')" />
+        <a-card :title="t('dashboard.recentActivities.title')" class="dashboard-equal-height">
+          <div v-if="recentActivities.length === 0" style="padding: 12px 0">
+            <a-empty :description="t('dashboard.recentActivities.empty')" />
+          </div>
+          <a-list v-else :data-source="recentActivities" :split="false" class="recent-activity-list">
+            <template #renderItem="{ item }">
+              <a-list-item>
+                <a-list-item-meta>
+                  <template #title>
+                    <a-space>
+                      <a-tag :color="activityColor(item.action)">{{ item.action_label }}</a-tag>
+                      <span>{{ item.username }}</span>
+                    </a-space>
+                  </template>
+                  <template #description>
+                    <a-space>
+                      <span>{{ item.ip }}</span>
+                      <span>{{ formatTime(item.created_at) }}</span>
+                    </a-space>
+                  </template>
+                </a-list-item-meta>
+              </a-list-item>
+            </template>
+          </a-list>
         </a-card>
       </a-col>
     </a-row>
@@ -79,13 +101,20 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { getDashboardStats } from '@/api/dashboard'
+import { getDashboardStats, getRecentActivities } from '@/api/dashboard'
 import type { DashboardProjectSyncStatus, DashboardStats } from '@/types'
 import { useI18n } from 'vue-i18n'
+import dayjs from 'dayjs'
+import relativeTime from 'dayjs/plugin/relativeTime'
+import 'dayjs/locale/zh-cn'
+
+dayjs.extend(relativeTime)
+dayjs.locale('zh-cn')
 
 const { t } = useI18n()
 const loading = ref(false)
 const issueSyncProjects = ref<DashboardProjectSyncStatus[]>([])
+const recentActivities = ref<RecentActivity[]>([])
 const stats = reactive<{
   projects: number | null
   pendingReviews: number | null
@@ -98,7 +127,19 @@ const stats = reactive<{
   passRate: null,
 })
 
-onMounted(fetchStats)
+interface RecentActivity {
+  id: number
+  username: string
+  action: string
+  action_label: string
+  ip: string
+  created_at: string
+}
+
+onMounted(() => {
+  fetchStats()
+  fetchRecentActivities()
+})
 
 async function fetchStats() {
   loading.value = true
@@ -112,6 +153,15 @@ async function fetchStats() {
     issueSyncProjects.value = data.issue_sync_projects || []
   } finally {
     loading.value = false
+  }
+}
+
+async function fetchRecentActivities() {
+  try {
+    const res = await getRecentActivities()
+    recentActivities.value = (res.data.data || []) as RecentActivity[]
+  } catch {
+    recentActivities.value = []
   }
 }
 
@@ -141,4 +191,40 @@ function syncStatusLabel(status: string) {
   }
   return t(keyMap[status] || keyMap.unknown)
 }
+
+function activityColor(action: string) {
+  switch (action) {
+    case 'login_success':
+      return 'success'
+    case 'login_failed':
+      return 'error'
+    case 'logout':
+      return 'default'
+    default:
+      return 'default'
+  }
+}
+
+function formatTime(timeStr: string) {
+  return dayjs(timeStr).fromNow()
+}
 </script>
+
+<style scoped>
+.dashboard-equal-height {
+  height: 100%;
+}
+.dashboard-equal-height :deep(.ant-card-body) {
+  flex: 1;
+}
+.recent-activity-list {
+  max-height: 350px;
+  overflow-y: auto;
+}
+.recent-activity-list :deep(.ant-list-item) {
+  padding: 8px 0;
+}
+.recent-activity-list :deep(.ant-list-item-meta) {
+  align-items: center;
+}
+</style>
