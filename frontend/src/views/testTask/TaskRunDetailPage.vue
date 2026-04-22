@@ -96,7 +96,7 @@
                   </ul>
                 </template>
                 <a-empty v-if="!playwrightReport && !playwrightReportHtml" :description="t('taskRun.selfTest.noFrameworkReport')" />
-                <iframe v-if="playwrightReportHtml" class="report-frame" :srcdoc="playwrightReportHtml" />
+                <iframe v-if="playwrightReportHtml" class="report-frame" :srcdoc="playwrightReportHtml" sandbox="allow-scripts allow-same-origin allow-modals allow-popups allow-forms allow-downloads" />
               </a-card>
             </div>
           </a-tab-pane>
@@ -386,11 +386,48 @@ async function loadPlaywrightHtml(id: number) {
     const res = await getSelfTestReport(id, 'playwright')
     const data = res.data.data || {}
     if (data.content_type?.includes('html') && data.content) {
-      playwrightReportHtml.value = data.content
+      const html = injectSandboxScript(data.content, id)
+      playwrightReportHtml.value = html
     }
   } catch (e) {
     console.error('loadPlaywrightHtml failed:', e)
   }
+}
+
+function injectSandboxScript(html: string, taskId: number): string {
+  const headClose = `<\x2fhead>`
+  const scriptTag = `<\x2fscript>`
+  // Playwright 报告的相对资源路径（video、trace 等），注入 base 标签指向后端工作区接口
+  const basePath = `/api/test-tasks/${taskId}/workspace/playwright-report/`
+  const baseTag = `<base href="${basePath}">`
+
+  // 拦截 Playwright SPA hash 路由，防止 srcdoc iframe 跳出
+  const script = `
+<script>
+(function(){
+  try{
+    var _ps=history.pushState.bind(history);
+    var _rs=history.replaceState.bind(history);
+    history.pushState=function(s,t,u){if(u){var h=parseHash(u);if(h){window.location.hash=h;u='';}_ps(null,t,u);}else{_ps(null,t,'');}};
+    history.replaceState=function(s,t,u){if(u){var h=parseHash(u);if(h){window.location.hash=h;u='';}_rs(null,t,u);}else{_rs(null,t,'');}};
+    function parseHash(u){try{var p=new URL(u,'http://x');return p.hash||p.search?'#'+(p.hash||p.search.slice(1)):null}catch(e){return null}}
+  }catch(e){}
+  document.addEventListener('click',function(e){
+    var a=e.target.closest('a');
+    if(!a)return;
+    var href=a.getAttribute('href');
+    if(href&&href.indexOf('#')===0){
+      e.preventDefault();
+      window.location.hash=href.slice(1);
+    }
+  },true);
+})();
+${scriptTag}`
+  const injected = `${baseTag}${script}`
+  if (html.includes(headClose)) {
+    return html.replace(headClose, `${injected}${headClose}`)
+  }
+  return injected + html
 }
 
 function closeEventSource() {

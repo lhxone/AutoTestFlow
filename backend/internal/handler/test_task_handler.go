@@ -356,6 +356,72 @@ func (h *TestTaskHandler) GetSelfTestReport(c *gin.Context) {
 	})
 }
 
+// GetWorkspaceFile 获取任务工作区文件
+// GET /api/test-tasks/:id/workspace/*filepath
+func (h *TestTaskHandler) GetWorkspaceFile(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		pkg.Fail(c, pkg.CodeParamError, "无效的ID")
+		return
+	}
+
+	task, err := h.testTaskRepo.GetByID(id)
+	if err != nil {
+		pkg.Fail(c, pkg.CodeNotFound, "任务不存在")
+		return
+	}
+
+	var output map[string]any
+	if len(task.AIOutput) == 0 || json.Unmarshal(task.AIOutput, &output) != nil {
+		pkg.Fail(c, pkg.CodeNotFound, "任务无工作区")
+		return
+	}
+
+	repoDir := ""
+	if workspace, ok := output["workspace"].(map[string]any); ok {
+		repoDir, _ = workspace["repo_dir"].(string)
+		repoDir = strings.TrimSpace(repoDir)
+	}
+	if repoDir == "" {
+		repoDir = filepath.Join(config.Global.Git.WorkDir, "cli-runtime", fmt.Sprintf("project_%d", task.ProjectID), fmt.Sprintf("task_%d", task.ID), "repo")
+	}
+
+	cleanRepo, err := filepath.Abs(repoDir)
+	if err != nil {
+		pkg.Fail(c, pkg.CodeInternalError, "解析工作区路径失败")
+		return
+	}
+
+	relativePath := strings.TrimPrefix(c.Param("filepath"), "/")
+	if relativePath == "" {
+		pkg.Fail(c, pkg.CodeParamError, "文件路径不能为空")
+		return
+	}
+
+	targetPath := filepath.Join(cleanRepo, filepath.FromSlash(relativePath))
+	cleanTarget, err := filepath.Abs(targetPath)
+	if err != nil {
+		pkg.Fail(c, pkg.CodeParamError, "解析文件路径失败")
+		return
+	}
+
+	repoPrefix := cleanRepo + string(filepath.Separator)
+	if cleanTarget != cleanRepo && !strings.HasPrefix(cleanTarget, repoPrefix) {
+		pkg.Fail(c, pkg.CodeForbidden, "非法的文件路径")
+		return
+	}
+
+	data, err := os.ReadFile(cleanTarget)
+	if err != nil {
+		pkg.Fail(c, pkg.CodeNotFound, "文件不存在")
+		return
+	}
+
+	contentType := detectReportContentType(cleanTarget, data)
+	c.Header("Cache-Control", "public, max-age=3600")
+	c.Data(http.StatusOK, contentType, data)
+}
+
 func extractFrameworkReportPath(report map[string]any) string {
 	raw, ok := report["playwright"]
 	if !ok {
