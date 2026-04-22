@@ -75,26 +75,30 @@ func (h *DashboardHandler) GetStats(c *gin.Context) {
 		stats.InterventionNeeded = &count
 	}
 
-	if canAccess(roleCode, "test:list") {
+	if canAccess(roleCode, "review:list") {
 		now := time.Now()
 		startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 		endOfDay := startOfDay.Add(24 * time.Hour)
 
-		var aggregate struct {
-			TotalCases  int64
-			PassedCases int64
-		}
-		if err := repository.DB.Model(&model.TestExecution{}).
-			Select("COALESCE(SUM(total_cases), 0) AS total_cases, COALESCE(SUM(passed_cases), 0) AS passed_cases").
+		var todayTotal int64
+		if err := repository.DB.Model(&model.ReviewTask{}).
 			Where("created_at >= ? AND created_at < ?", startOfDay, endOfDay).
-			Scan(&aggregate).Error; err != nil {
+			Count(&todayTotal).Error; err != nil {
+			pkg.Fail(c, pkg.CodeInternalError, err.Error())
+			return
+		}
+
+		var todayApproved int64
+		if err := repository.DB.Model(&model.ReviewTask{}).
+			Where("status = ? AND created_at >= ? AND created_at < ?", model.ReviewStatusApproved, startOfDay, endOfDay).
+			Count(&todayApproved).Error; err != nil {
 			pkg.Fail(c, pkg.CodeInternalError, err.Error())
 			return
 		}
 
 		passRate := 0.0
-		if aggregate.TotalCases > 0 {
-			passRate = float64(aggregate.PassedCases) / float64(aggregate.TotalCases) * 100
+		if todayTotal > 0 {
+			passRate = float64(todayApproved) / float64(todayTotal) * 100
 		}
 		stats.PassRate = &passRate
 	}
