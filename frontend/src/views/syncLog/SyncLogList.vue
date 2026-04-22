@@ -234,6 +234,7 @@ async function fetchSyncLogDetail(logId: number) {
 
 function handleTableChange(pag: any) {
   pagination.current = pag.current
+  pagination.pageSize = pag.pageSize
   fetchData(selectedSyncLog.value?.id)
 }
 

@@ -191,8 +191,8 @@ const router = useRouter()
 
 const list = ref<Issue[]>([])
 const loading = ref(false)
-const query = reactive({ keyword: '', zentao_status: 'resolved', test_status: undefined, project_id: undefined as number | undefined, branch: undefined as string | undefined })
-const pagination = reactive({ current: 1, pageSize: 20, total: 0 })
+const query = reactive({ keyword: '', zentao_status: undefined, test_status: undefined, project_id: undefined as number | undefined, branch: undefined as string | undefined })
+const pagination = reactive({ current: 1, pageSize: 20, total: 0, showTotal: (total: number) => `共 ${total} 条` })
 
 const syncModal = ref(false)
 const syncing = ref(false)
@@ -228,7 +228,7 @@ const columns = computed(() => [
   { title: t('issue.list.columns.testStatus'), key: 'test_status', width: 110 },
   { title: t('issue.list.columns.assignee'), dataIndex: 'assignee', key: 'assignee', width: 80 },
   { title: t('issue.list.columns.reporter'), dataIndex: 'reporter', key: 'reporter', width: 80 },
-  { title: t('issue.list.columns.action'), key: 'action', width: 220, fixed: 'right' as const },
+  { title: t('issue.list.columns.action'), key: 'action', width: 280, fixed: 'right' as const, customHeaderCell: () => ({ style: 'text-align: center' }) },
 ])
 
 onMounted(() => {
@@ -258,6 +258,7 @@ async function fetchData() {
 
 function handleTableChange(pag: any) {
   pagination.current = pag.current
+  pagination.pageSize = pag.pageSize
   fetchData()
 }
 

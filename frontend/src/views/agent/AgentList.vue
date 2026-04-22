@@ -484,6 +484,7 @@ function filterOption(input: string, option: { label?: string; value?: string })
 
 function handleTableChange(pag: any) {
   pagination.current = pag.current
+  pagination.pageSize = pag.pageSize
   fetchData()
 }
 

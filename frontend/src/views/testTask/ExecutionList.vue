@@ -93,6 +93,7 @@ async function fetchData() {
 
 function handleTableChange(pag: any) {
   pagination.current = pag.current
+  pagination.pageSize = pag.pageSize
   fetchData()
 }
 
