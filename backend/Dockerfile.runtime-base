@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=harbor.inspur.local/atf/node:20
+ARG BASE_IMAGE=node:20
 FROM ${BASE_IMAGE}
 
 ARG CHROME_DEVTOOLS_MCP_VERSION=0.21.0
@@ -53,6 +53,8 @@ RUN if command -v apt-get >/dev/null 2>&1; then \
     fi
 
 RUN npm install -g "chrome-devtools-mcp@${CHROME_DEVTOOLS_MCP_VERSION}" --registry="${NPM_REGISTRY}" && \
+    npm install -g playwright --registry="${NPM_REGISTRY}" && \
+    npx playwright install chromium && \
     npm cache clean --force
 
 RUN set -eu; \
@@ -91,4 +93,5 @@ RUN bash --version >/dev/null && \
     wget --version >/dev/null && \
     chrome --version >/dev/null && \
     chrome-devtools-mcp --version >/dev/null && \
-    chrome-devtools-mcp-docker --help >/dev/null
+    chrome-devtools-mcp-docker --help >/dev/null && \
+    npx playwright --version >/dev/null

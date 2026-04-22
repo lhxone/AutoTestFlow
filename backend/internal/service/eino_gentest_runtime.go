@@ -395,8 +395,15 @@ func (r *EinoGenTestRuntime) runAgentLoop(
 			"message": fmt.Sprintf("模型回合 %d", turn),
 		}), nil)
 
-		resp, err := r.callModel(ctx, cfg, history, toolSpecs)
+		resp, err := r.callModelWithConnectionRetry(ctx, cfg, history, toolSpecs, toolCtx.Task.ID, turn)
 		if err != nil {
+			if isModelConnectionError(err) {
+				r.publish(toolCtx.Task.ID, taskEventTypeLog, "cli_output_raw", model.TaskStatusRunning, marshalTaskEventJSON(map[string]any{
+					"type":    "system",
+					"message": fmt.Sprintf("模型回合 %d 连接错误重试 %d 次仍失败，进入下一回合: %v", turn, modelConnectionRetryAttempts, err),
+				}), nil)
+				continue
+			}
 			return nil, err
 		}
 
@@ -470,6 +477,44 @@ func (r *EinoGenTestRuntime) callModel(
 	default:
 		return nil, fmt.Errorf("不支持的模型提供商: %s", cfg.Provider)
 	}
+}
+
+func (r *EinoGenTestRuntime) callModelWithConnectionRetry(
+	ctx context.Context,
+	cfg AgentExecutionConfig,
+	history []runtimeMessage,
+	tools []genTestToolSpec,
+	taskID uint64,
+	turn int,
+) (*runtimeModelResponse, error) {
+	resp, err := r.callModel(ctx, cfg, history, tools)
+	if err == nil {
+		return resp, nil
+	}
+	if !isModelConnectionError(err) {
+		return nil, err
+	}
+
+	lastErr := err
+	for retry := 1; retry <= modelConnectionRetryAttempts; retry++ {
+		r.publish(taskID, taskEventTypeLog, "cli_output_raw", model.TaskStatusRunning, marshalTaskEventJSON(map[string]any{
+			"type":    "system",
+			"message": fmt.Sprintf("模型回合 %d 连接错误，重试中 (%d/%d)，20秒后重试: %v", turn, retry, modelConnectionRetryAttempts, lastErr),
+		}), nil)
+
+		if err := sleepWithContext(ctx, modelConnectionRetryDelay); err != nil {
+			return nil, err
+		}
+		resp, err := r.callModel(ctx, cfg, history, tools)
+		if err == nil {
+			return resp, nil
+		}
+		if !isModelConnectionError(err) {
+			return nil, err
+		}
+		lastErr = err
+	}
+	return nil, lastErr
 }
 
 func (r *EinoGenTestRuntime) callOpenAICompatible(
