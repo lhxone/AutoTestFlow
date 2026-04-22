@@ -26,6 +26,7 @@ services:
   backend:
     image: ${BACKEND_IMAGE:?BACKEND_IMAGE is required}
     container_name: atf-backend
+    shm_size: '512m'
     environment:
       TZ: Asia/Shanghai
       ATF_DATABASE_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
