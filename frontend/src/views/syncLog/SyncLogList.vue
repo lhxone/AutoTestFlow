@@ -17,6 +17,13 @@
           </a-select-option>
         </a-select>
       </a-col>
+      <a-col :span="6">
+        <a-radio-group v-model:value="query.sync_type" button-style="solid" @change="handleQuery">
+          <a-radio-button value="">{{ t('syncLog.type.all') }}</a-radio-button>
+          <a-radio-button value="issue">{{ t('syncLog.type.issue') }}</a-radio-button>
+          <a-radio-button value="testcase">{{ t('syncLog.type.testcase') }}</a-radio-button>
+        </a-radio-group>
+      </a-col>
       <a-col>
         <a-button type="primary" @click="handleQuery">{{ t('common.query') }}</a-button>
       </a-col>
@@ -159,7 +166,7 @@ const syncLogs = ref<ProjectIssueSyncLog[]>([])
 const syncDetails = ref<ProjectIssueSyncDetail[]>([])
 const selectedSyncLog = ref<ProjectIssueSyncLog | null>(null)
 const projects = ref<Project[]>([])
-const query = reactive<{ project_id: number | null }>({ project_id: null })
+const query = reactive<{ project_id: number | null; sync_type: string }>({ project_id: null, sync_type: '' })
 const pagination = reactive({ current: 1, pageSize: 8, total: 0 })
 
 const syncLogColumns = computed(() => [
@@ -203,6 +210,9 @@ async function fetchData(targetLogId?: number) {
     const params: any = { page: pagination.current, page_size: pagination.pageSize }
     if (query.project_id) {
       params.project_id = query.project_id
+    }
+    if (query.sync_type) {
+      params.sync_type = query.sync_type
     }
     const res = await getAllIssueSyncLogs(params)
     const data = res.data.data

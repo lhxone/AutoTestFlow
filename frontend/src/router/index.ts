@@ -69,12 +69,6 @@ const routes: RouteRecordRaw[] = [
         meta: { titleKey: 'testTask.list.title', permission: 'test:list' },
       },
       {
-        path: 'test-cases',
-        name: 'TestCenter',
-        component: () => import('@/views/testTask/TestCenter.vue'),
-        meta: { titleKey: 'layout.menu.testCases', permissionAny: ['test:list', 'review:list'] },
-      },
-      {
         path: 'test-cases/tasks/:id/edit',
         name: 'TestCaseEdit',
         component: () => import('@/views/testTask/TestCaseEditPage.vue'),
@@ -85,6 +79,12 @@ const routes: RouteRecordRaw[] = [
         name: 'TaskRunDetail',
         component: () => import('@/views/testTask/TaskRunDetailPage.vue'),
         meta: { titleKey: 'taskRun.drawerTitle', permission: 'test:list' },
+      },
+      {
+        path: 'zentao-test-cases',
+        name: 'ZentaoTestCaseList',
+        component: () => import('@/views/testCase/ZentaoTestCaseList.vue'),
+        meta: { titleKey: 'layout.menu.zentaoTestCases', permission: 'test:list' },
       },
       {
         path: 'executions',

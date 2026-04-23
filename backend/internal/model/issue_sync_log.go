@@ -13,12 +13,17 @@ const (
 	IssueSyncActionAdded   = "added"
 	IssueSyncActionUpdated = "updated"
 	IssueSyncActionDeleted = "deleted"
+
+	// 同步类型
+	SyncTypeIssue    = "issue"    // Bug同步
+	SyncTypeTestCase = "testcase" // 用例同步
 )
 
 // IssueSyncLog 问题单同步日志
 type IssueSyncLog struct {
 	ID           uint64     `gorm:"primaryKey;autoIncrement" json:"id"`
 	ProjectID    uint64     `gorm:"index;not null" json:"project_id"`
+	SyncType     string     `gorm:"size:16;index;not null;default:'issue'" json:"sync_type"` // 同步类型: issue/testcase
 	Status       string     `gorm:"size:16;index;not null;default:'running'" json:"status"`
 	FullSync     bool       `gorm:"default:false" json:"full_sync"`
 	AddedCount   int        `gorm:"default:0" json:"added_count"`
@@ -44,7 +49,9 @@ type IssueSyncLogDetail struct {
 	ID                uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
 	SyncLogID         uint64    `gorm:"index;not null" json:"sync_log_id"`
 	ProjectID         uint64    `gorm:"index;not null" json:"project_id"`
+	SyncType          string    `gorm:"size:16;index;not null;default:'issue'" json:"sync_type"` // 同步类型
 	IssueID           *uint64   `gorm:"index" json:"issue_id"`
+	TestCaseID        *uint64   `gorm:"index" json:"test_case_id"` // 用例ID
 	ZentaoID          int       `gorm:"index;not null;default:0" json:"zentao_id"`
 	IssueTitle        string    `gorm:"size:512;not null;default:''" json:"issue_title"`
 	Action            string    `gorm:"size:16;index;not null" json:"action"`

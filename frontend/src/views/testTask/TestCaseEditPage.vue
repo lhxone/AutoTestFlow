@@ -168,44 +168,6 @@
         </a-collapse-panel>
       </a-collapse>
 
-      <a-card :title="t('testCase.detail.reviewTitle')" size="small" style="margin-top: 16px" v-if="canReviewList && reviewInfo">
-        <a-descriptions :column="1" bordered size="small" style="margin-bottom: 12px">
-          <a-descriptions-item :label="t('common.status')">
-            <a-tag :color="reviewStatusMap[reviewInfo.status]?.color || 'default'">
-              {{ reviewStatusMap[reviewInfo.status]?.label || reviewInfo.status }}
-            </a-tag>
-          </a-descriptions-item>
-          <a-descriptions-item :label="t('review.detail.comment')">
-            {{ reviewInfo.review_note || '-' }}
-          </a-descriptions-item>
-        </a-descriptions>
-
-        <a-timeline v-if="reviewDetail?.records?.length" style="margin-bottom: 12px">
-          <a-timeline-item
-            v-for="record in reviewDetail.records"
-            :key="record.id"
-            :color="record.action === 'approve' ? 'green' : record.action === 'reject' ? 'red' : 'blue'"
-          >
-            <strong>{{ record.reviewer_name }}</strong> {{ reviewActionLabel(record.action) }}
-            <span style="color: #999; margin-left: 8px">{{ record.created_at }}</span>
-            <p v-if="record.comment" style="margin: 4px 0 0; color: #666">{{ record.comment }}</p>
-          </a-timeline-item>
-        </a-timeline>
-
-        <a-empty v-else :description="t('review.detail.noRecords')" style="margin-bottom: 12px" />
-
-        <a-form layout="vertical" v-if="canReviewApprove && (reviewInfo.status === 'pending' || reviewInfo.status === 'changes_requested')">
-          <a-form-item :label="t('review.detail.comment')">
-            <a-textarea v-model:value="reviewComment" :rows="3" :placeholder="t('review.detail.commentPlaceholder')" />
-          </a-form-item>
-          <a-space>
-            <a-button type="primary" @click="submitReview('approve')" :loading="reviewSubmitting">{{ t('review.detail.approve') }}</a-button>
-            <a-button danger @click="submitReview('reject')" :loading="reviewSubmitting">{{ t('review.detail.reject') }}</a-button>
-            <a-button @click="submitReview('request_changes')" :loading="reviewSubmitting">{{ t('review.detail.requestChanges') }}</a-button>
-            <a-button @click="submitReview('comment')" :loading="reviewSubmitting">{{ t('review.detail.onlyComment') }}</a-button>
-          </a-space>
-        </a-form>
-      </a-card>
     </a-spin>
   </div>
 </template>
@@ -216,10 +178,9 @@ import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
 import CodeEditor from '@/components/CodeEditor.vue'
 import { getTestCases, getTestScripts, getTestTaskById, getSelfTestReport, getWorkspaceFileUrl, updateTestCase, updateTestScript } from '@/api/testTask'
-import { doReview, getReviewDetail, getReviewList } from '@/api/review'
 import { useUserStore } from '@/stores/user'
-import type { ReviewDetail, ReviewTask, SelfTestReport, TestCaseVO, TestScriptVO, TestTask } from '@/types'
-import { getReviewStatusMap, translateCaseSource, translateSelfTestResult, translateTaskStatus, translateTestCaseCategory } from '@/types'
+import type { SelfTestReport, TestCaseVO, TestScriptVO, TestTask } from '@/types'
+import { translateCaseSource, translateSelfTestResult, translateTaskStatus, translateTestCaseCategory } from '@/types'
 import { useI18n } from 'vue-i18n'
 
 type StepRow = {
@@ -245,22 +206,15 @@ const taskId = Number(route.params.id)
 const loading = ref(false)
 const savingCaseId = ref<number | null>(null)
 const savingScriptId = ref<number | null>(null)
-const reviewSubmitting = ref(false)
 const task = ref<TestTask | null>(null)
 const editableCases = ref<EditableCase[]>([])
 const editableScripts = ref<EditableScript[]>([])
 const activeCaseKeys = ref<Array<number | string>>([])
 const activeCasePanelKeys = ref<(number | string)[]>([])
-const reviewInfo = ref<ReviewTask | null>(null)
-const reviewDetail = ref<ReviewDetail | null>(null)
-const reviewComment = ref('')
 const playwrightReportUrl = ref('')
 const playwrightReportLoading = ref(false)
 const playwrightReportFrameKey = ref(0)
 const canIntervene = computed(() => userStore.hasPermission('test:intervene'))
-const canReviewList = computed(() => userStore.hasPermission('review:list'))
-const canReviewApprove = computed(() => userStore.hasPermission('review:approve'))
-const reviewStatusMap = computed(() => getReviewStatusMap(t))
 const selfTestReport = computed<SelfTestReport | null>(() => {
   const report = task.value?.ai_output?.self_test
   if (!report || typeof report !== 'object') return null
@@ -314,7 +268,6 @@ async function fetchDetail() {
     } else {
       editableScripts.value = []
     }
-    await fetchReviewData()
     await loadPlaywrightReport()
   } catch {
     message.error(t('common.requestFailed'))
@@ -338,30 +291,6 @@ async function loadPlaywrightReport() {
   } catch (e) {
     console.error('loadPlaywrightReport failed:', e)
     playwrightReportLoading.value = false
-  }
-}
-
-async function fetchReviewData() {
-  if (!canReviewList.value) {
-    reviewInfo.value = null
-    reviewDetail.value = null
-    return
-  }
-
-  try {
-    const reviewRes = await getReviewList({ task_id: taskId, page: 1, page_size: 1 })
-    const review = reviewRes.data.data?.list?.[0]
-    if (!review?.id) {
-      reviewInfo.value = null
-      reviewDetail.value = null
-      return
-    }
-    reviewInfo.value = review
-    const detailRes = await getReviewDetail(review.id)
-    reviewDetail.value = detailRes.data.data
-  } catch {
-    reviewInfo.value = null
-    reviewDetail.value = null
   }
 }
 
@@ -494,31 +423,6 @@ function scriptEditorLanguage(script: EditableScript) {
   return script.language || 'typescript'
 }
 
-function reviewActionLabel(action: string) {
-  const map: Record<string, string> = {
-    approve: t('review.detail.actions.approve'),
-    reject: t('review.detail.actions.reject'),
-    request_changes: t('review.detail.actions.requestChanges'),
-    comment: t('review.detail.actions.comment'),
-  }
-  return map[action] || action
-}
-
-async function submitReview(action: string) {
-  if (!reviewInfo.value) return
-  reviewSubmitting.value = true
-  try {
-    await doReview(reviewInfo.value.id, { action, comment: reviewComment.value })
-    message.success(action === 'approve' ? t('review.detail.approveSuccess') : t('review.detail.actionSuccess'))
-    reviewComment.value = ''
-    await fetchReviewData()
-    await fetchDetail()
-  } catch {
-    message.error(t('common.operationFailed'))
-  } finally {
-    reviewSubmitting.value = false
-  }
-}
 </script>
 
 <style scoped>

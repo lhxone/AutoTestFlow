@@ -48,6 +48,7 @@
       "reviews": "Review 审核",
       "testTasks": "测试任务",
       "testCases": "Bug回归用例",
+      "zentaoTestCases": "产品用例",
       "executions": "执行记录",
       "users": "用户管理",
       "settings": "系统管理",
@@ -104,6 +105,23 @@
       "title": "项目Bug同步状态",
       "empty": "暂无同步记录",
       "lastSyncCounts": "上次同步Bug数量",
+      "added": "新增",
+      "updated": "更新",
+      "deleted": "删除",
+      "completedAt": "上次完成时间",
+      "startedAt": "开始时间",
+      "errorMessage": "异常信息",
+      "status": {
+        "success": "正常",
+        "failed": "异常",
+        "running": "进行中",
+        "unknown": "未同步"
+      }
+    },
+    "testCaseSync": {
+      "title": "项目用例同步状态",
+      "empty": "暂无同步记录",
+      "lastSyncCounts": "上次同步用例数量",
       "added": "新增",
       "updated": "更新",
       "deleted": "删除",
@@ -201,6 +219,7 @@
       "create": "新增项目",
       "edit": "编辑项目",
       "syncIssues": "同步Bug",
+      "syncTestCases": "同步用例",
       "viewSyncLogs": "采集记录",
       "columns": {
         "id": "ID",
@@ -278,7 +297,8 @@
         "loadBranchesFailed": "获取禅道分支列表失败",
         "syncDisabled": "该项目未绑定禅道项目集，无法同步Bug",
         "syncSuccess": "Bug同步完成，共同步 {count} 条",
-        "syncTriggered": "同步任务已触发，请在采集记录中查看进度"
+        "syncTriggered": "同步任务已触发，请在采集记录中查看进度",
+        "syncTestCasesTriggered": "用例同步任务已触发，请在采集记录中查看进度"
       }
     }
   },
@@ -291,6 +311,11 @@
       "viewDetail": "查看详情",
       "viewing": "查看中",
       "noRecords": "暂无采集记录"
+    },
+    "type": {
+      "all": "全部",
+      "issue": "Bug采集",
+      "testcase": "用例采集"
     },
     "mode": {
       "full": "全量采集",
@@ -594,36 +619,52 @@
       }
     }
   },
-  "testCase": {
+  "zentaoTestCase": {
     "list": {
-      "title": "Bug回归用例",
-      "searchPlaceholder": "搜索Bug标题",
-      "statusPlaceholder": "任务状态",
-      "edit": "修改测试用例",
-      "regenerate": "重新生成",
-      "form": {
+      "title": "产品用例列表",
+      "search": "搜索用例标题",
+      "testStatus": "生成状态",
+      "project": "项目",
+      "type": "用例类型",
+      "sync": "同步禅道",
+      "typeFeature": "功能测试",
+      "typePerformance": "性能测试",
+      "typeConfig": "配置相关",
+      "typeSecurity": "安全相关",
+      "typeInterface": "接口测试",
+      "typeUnit": "单元测试",
+      "typeOther": "其他",
+      "syncModal": {
+        "title": "同步禅道用例",
+        "selectProject": "选择项目",
+        "fullSync": "全量同步"
+      },
+      "detailModal": {
+        "title": "用例详情",
+        "id": "禅道ID",
+        "priority": "优先级",
         "title": "标题",
+        "type": "类型",
+        "status": "状态",
         "precondition": "前置条件",
         "steps": "测试步骤",
         "expected": "预期结果",
-        "changeNote": "修改说明",
-        "changeReasonPlaceholder": "请填写本次修改原因"
+        "testStatus": "生成状态",
+        "openedBy": "创建人"
       },
-      "messages": {
-        "changeNoteRequired": "请填写修改说明",
-        "updateSuccess": "修改成功",
-        "regenerateConfirm": "确定要重新生成测试用例吗？这将覆盖当前Bug的测试用例。",
-        "regenerateSuccess": "已触发重新生成，请稍候查看结果"
+      "action": {
+        "viewDetail": "查看详情",
+        "generateScript": "生成脚本"
       },
-      "columns": {
-        "id": "ID",
-        "issue": "Bug标题",
-        "issueId": "BugID",
-        "taskStatus": "任务状态",
-        "updatedAt": "更新时间",
-        "action": "操作"
+      "status": {
+        "pending": "待生成",
+        "generating": "生成中",
+        "generated": "已生成",
+        "failed": "失败"
       }
-    },
+    }
+  },
+  "testCase": {
     "detail": {
       "title": "Bug回归用例编辑",
       "issueInfo": "Bug信息",
@@ -963,6 +1004,30 @@
       "pass": "通过",
       "fail": "失败",
       "unknown": "未知"
+    },
+    "regression": {
+      "title": "回归审批",
+      "reviewStatus": "审核状态",
+      "reviewComment": "审核意见",
+      "records": "审核记录",
+      "noRecords": "暂无审核记录",
+      "comment": "审核意见",
+      "commentPlaceholder": "填写审核意见...",
+      "confirmSuccess": "确认回归测试成功",
+      "failRegression": "回归测试失败",
+      "reject": "驳回",
+      "approveSuccess": "回归测试已确认成功",
+      "failSuccess": "回归测试失败，问题单已重新激活",
+      "rejectSuccess": "已驳回，测试用例/脚本需重新生成",
+      "actionSuccess": "操作成功",
+      "actionFailed": "操作失败",
+      "execute": "执行审批",
+      "actions": {
+        "approve": "确认回归测试成功",
+        "fail_regression": "回归测试失败",
+        "request_changes": "驳回了回归测试",
+        "comment": "发表了评论"
+      }
     }
   },
   "markdownEditor": {

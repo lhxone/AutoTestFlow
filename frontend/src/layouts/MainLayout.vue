@@ -16,8 +16,8 @@
         <a-menu-item key="/issues" v-if="hasPermission('issue:list')">
           <BugOutlined /><span>{{ t('layout.menu.issues') }}</span>
         </a-menu-item>
-        <a-menu-item key="/test-cases" v-if="showTestCenterMenu">
-          <FileTextOutlined /><span>{{ t('layout.menu.testCases') }}</span>
+        <a-menu-item key="/zentao-test-cases" v-if="hasPermission('test:list')">
+          <CheckSquareOutlined /><span>{{ t('layout.menu.zentaoTestCases') }}</span>
         </a-menu-item>
         <a-menu-item key="/agents" v-if="hasPermission('agent:list')">
           <RobotOutlined /><span>{{ t('layout.menu.agents') }}</span>
@@ -85,7 +85,8 @@ import { setAppLocale } from '@/locales'
 import {
   DashboardOutlined, ProjectOutlined, BugOutlined, RobotOutlined,
   MenuFoldOutlined, MenuUnfoldOutlined, SettingOutlined, GlobalOutlined,
-  AppstoreOutlined, FileTextOutlined, SyncOutlined,
+  AppstoreOutlined, SyncOutlined,
+  CheckSquareOutlined,
 } from '@ant-design/icons-vue'
 
 const router = useRouter()
@@ -112,7 +113,6 @@ const localeOptions = [
 ]
 
 const isAdmin = computed(() => userStore.roles.includes('admin'))
-const showTestCenterMenu = computed(() => hasPermission('test:list') || hasPermission('review:list'))
 const showSystemMenu = computed(() => isAdmin.value || hasPermission('user:list'))
 
 function hasPermission(perm: string) {

@@ -30,10 +30,6 @@ export function updateTestCase(id: number, data: any) {
   return request.put(`/test-cases/${id}`, data)
 }
 
-export function getTestCaseList(params: any) {
-  return request.get('/test-cases', { params })
-}
-
 export function updateTestScript(id: number, data: any) {
   return request.put(`/test-scripts/${id}`, data)
 }
@@ -90,4 +86,9 @@ export function approveInteraction(taskId: number, interactionId: number) {
 
 export function rejectInteraction(taskId: number, interactionId: number, reason: string) {
   return request.post(`/test-tasks/${taskId}/interactions/${interactionId}/reject`, { reason })
+}
+
+// 同步用例
+export function syncTestCases(data: { project_id: number; full_sync?: boolean }) {
+  return request.post('/test-cases/zentao/sync', data)
 }

@@ -122,6 +122,35 @@
         </template>
       </a-list>
     </a-card>
+
+    <a-card :title="t('dashboard.testCaseSync.title')" style="margin-top: 16px" :loading="loading">
+      <a-empty v-if="testCaseSyncProjects.length === 0" :description="t('dashboard.testCaseSync.empty')" />
+      <a-list v-else :data-source="testCaseSyncProjects" item-layout="horizontal">
+        <template #renderItem="{ item }">
+          <a-list-item>
+            <a-list-item-meta>
+              <template #title>
+                <a-space>
+                  <span>{{ item.project_name }}</span>
+                  <a-tag :color="syncStatusColor(item.status)">{{ syncStatusLabel(item.status) }}</a-tag>
+                </a-space>
+              </template>
+              <template #description>
+                <div>
+                  {{ t('dashboard.testCaseSync.lastSyncCounts') }}：
+                  {{ t('dashboard.testCaseSync.added') }}：{{ item.added_count }}，
+                  {{ t('dashboard.testCaseSync.updated') }}：{{ item.updated_count }}，
+                  {{ t('dashboard.testCaseSync.deleted') }}：{{ item.deleted_count }}
+                </div>
+                <div v-if="item.completed_at">{{ t('dashboard.testCaseSync.completedAt') }}：{{ item.completed_at }}</div>
+                <div v-else-if="item.started_at">{{ t('dashboard.testCaseSync.startedAt') }}：{{ item.started_at }}</div>
+                <div v-if="item.error_message" style="color: #ff4d4f">{{ t('dashboard.testCaseSync.errorMessage') }}：{{ item.error_message }}</div>
+              </template>
+            </a-list-item-meta>
+          </a-list-item>
+        </template>
+      </a-list>
+    </a-card>
   </div>
 </template>
 
@@ -141,6 +170,7 @@ dayjs.locale('zh-cn')
 const { t } = useI18n()
 const loading = ref(false)
 const issueSyncProjects = ref<DashboardProjectSyncStatus[]>([])
+const testCaseSyncProjects = ref<DashboardProjectSyncStatus[]>([])
 const recentActivities = ref<RecentActivity[]>([])
 const stats = reactive<{
   projects: number | null
@@ -215,6 +245,7 @@ async function fetchStats() {
     stats.interventionNeeded = data.intervention_needed
     stats.passRate = data.pass_rate == null ? null : Number(data.pass_rate.toFixed(2))
     issueSyncProjects.value = data.issue_sync_projects || []
+    testCaseSyncProjects.value = data.testcase_sync_projects || []
   } finally {
     loading.value = false
   }

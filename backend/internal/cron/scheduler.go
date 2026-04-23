@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"auto-test-flow/internal/config"
-	"auto-test-flow/internal/model"
 	"auto-test-flow/internal/repository"
 	"auto-test-flow/internal/service"
 
@@ -16,20 +15,22 @@ import (
 
 // Scheduler 定时任务调度器
 type Scheduler struct {
-	cron          *cron.Cron
-	logger        *zap.Logger
-	zentaoService *service.ZentaoService
-	gitPullService *service.GitPullService
-	gitPullRunning atomic.Bool
+	cron            *cron.Cron
+	logger          *zap.Logger
+	zentaoService   *service.ZentaoService
+	zentaoTCService *service.ZentaoTestCaseSyncService
+	gitPullService  *service.GitPullService
+	gitPullRunning  atomic.Bool
 }
 
 // NewScheduler 创建调度器
 func NewScheduler(logger *zap.Logger) *Scheduler {
 	return &Scheduler{
-		cron:          cron.New(cron.WithSeconds()),
-		logger:        logger,
-		zentaoService: service.NewZentaoService(logger),
-		gitPullService: service.NewGitPullService(logger),
+		cron:            cron.New(cron.WithSeconds()),
+		logger:          logger,
+		zentaoService:   service.NewZentaoService(logger),
+		zentaoTCService: service.NewZentaoTestCaseSyncService(logger),
+		gitPullService:  service.NewGitPullService(logger),
 	}
 }
 
@@ -54,6 +55,17 @@ func (s *Scheduler) Start() {
 		s.logger.Error("注册禅道同步定时任务失败", zap.Error(err))
 	} else {
 		s.logger.Info("禅道同步定时任务已注册", zap.String("cron", cronExpr))
+	}
+
+	// 1.5 禅道用例定时同步（复用相同的 cron 表达式）
+	_, err = s.cron.AddFunc(cronExpr, func() {
+		s.logger.Info("定时任务: 开始同步禅道用例")
+		s.syncAllTestCases()
+	})
+	if err != nil {
+		s.logger.Error("注册禅道用例同步定时任务失败", zap.Error(err))
+	} else {
+		s.logger.Info("禅道用例同步定时任务已注册", zap.String("cron", cronExpr))
 	}
 
 	// 2. 项目共享仓库定时拉取（每分钟巡检一次，按项目配置频率触发）
@@ -95,10 +107,9 @@ func (s *Scheduler) Stop() {
 	s.logger.Info("定时任务调度器已停止")
 }
 
-// autoTriggerGenTest 自动为"已解决"且"未测试"的问题单触发AI生成
-func (s *Scheduler) autoTriggerGenTest() {
+// syncAllTestCases 同步所有项目的禅道用例
+func (s *Scheduler) syncAllTestCases() {
 	projectRepo := repository.NewProjectRepo()
-	issueRepo := repository.NewIssueRepo()
 
 	projects, err := projectRepo.GetAllActive()
 	if err != nil {
@@ -107,25 +118,19 @@ func (s *Scheduler) autoTriggerGenTest() {
 	}
 
 	for _, p := range projects {
-		// 查找已解决且测试状态为pending的问题单
-		issues, err := issueRepo.GetResolvedPending(p.ID)
-		if err != nil {
-			s.logger.Error("查询问题单失败", zap.Uint64("project_id", p.ID), zap.Error(err))
+		if p.ZentaoProjectID == nil {
 			continue
 		}
-
-		for _, issue := range issues {
-			if issue.TestStatus != model.TestStatusPending {
-				continue
-			}
-			s.logger.Info("自动触发AI生成",
-				zap.Uint64("issue_id", issue.ID),
-				zap.String("title", issue.Title))
-
-			_, err := service.NewGenTestService(s.logger).Execute(issue.ID, nil, nil, "")
-			if err != nil {
-				s.logger.Error("自动生成失败", zap.Uint64("issue_id", issue.ID), zap.Error(err))
-			}
+		result, err := s.zentaoTCService.SyncTestCases(p.ID, false)
+		if err != nil {
+			s.logger.Error("同步用例失败", zap.Uint64("project_id", p.ID), zap.Error(err))
+			continue
 		}
+		s.logger.Info("用例同步完成",
+			zap.String("project", p.Name),
+			zap.Int("synced", result.SyncedCount),
+			zap.Int("added", result.AddedCount),
+			zap.Int("updated", result.UpdatedCount),
+			zap.Int("deleted", result.DeletedCount))
 	}
 }

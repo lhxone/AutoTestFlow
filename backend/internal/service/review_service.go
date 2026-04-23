@@ -15,12 +15,13 @@ import (
 const gitApproveTimeout = 20 * time.Second
 
 type ReviewService struct {
-	reviewRepo    *repository.ReviewRepo
-	testTaskRepo  *repository.TestTaskRepo
-	issueRepo     *repository.IssueRepo
-	gitOpsService *GitOpsService
-	notifyService *NotificationService
-	logger        *zap.Logger
+	reviewRepo      *repository.ReviewRepo
+	testTaskRepo    *repository.TestTaskRepo
+	issueRepo       *repository.IssueRepo
+	gitOpsService   *GitOpsService
+	notifyService   *NotificationService
+	zentaoProxy     *ZentaoProxyService
+	logger          *zap.Logger
 }
 
 func NewReviewService(logger *zap.Logger) *ReviewService {
@@ -30,6 +31,7 @@ func NewReviewService(logger *zap.Logger) *ReviewService {
 		issueRepo:     repository.NewIssueRepo(),
 		gitOpsService: NewGitOpsService(logger),
 		notifyService: NewNotificationService(logger),
+		zentaoProxy:   NewZentaoProxyService(logger),
 		logger:        logger,
 	}
 }
@@ -155,6 +157,13 @@ func (s *ReviewService) DoReview(reviewID, reviewerID uint64, req *dto.ReviewAct
 		_ = s.issueRepo.ForceUpdateTestStatus(rt.IssueID, model.TestStatusReviewApproved)
 		// 记录状态变更日志
 		s.logStatusChange(rt.IssueID, model.TestStatusReviewPending, model.TestStatusReviewApproved, "manual", &reviewerID, "Review审核通过")
+		// 调用禅道 API 关闭 Bug
+		if issue, err := s.issueRepo.GetByID(rt.IssueID); err == nil && issue.ZentaoID > 0 {
+			closeComment := fmt.Sprintf("[AutoTestFlow] 回归测试确认成功，Review#%d 审核通过。%s", rt.ID, req.Comment)
+			if err := s.zentaoProxy.CloseBug(issue.ZentaoID, closeComment); err != nil {
+				s.logger.Warn("调用禅道关闭Bug API失败", zap.Error(err), zap.Uint64("issueID", rt.IssueID))
+			}
+		}
 
 	case "reject":
 		rt.Status = model.ReviewStatusRejected
@@ -165,6 +174,22 @@ func (s *ReviewService) DoReview(reviewID, reviewerID uint64, req *dto.ReviewAct
 	case "request_changes":
 		rt.Status = model.ReviewStatusChangesRequested
 		gitSummary = "要求修改，未推送"
+
+	case "fail_regression":
+		if err := s.pushReviewedContentWithTimeout(rt); err != nil {
+			return fmt.Errorf("Git推送失败，审核未完成: %w", err)
+		}
+		gitSummary = "已推送到Git仓库"
+		rt.Status = model.ReviewStatusRejected
+		_ = s.issueRepo.ForceUpdateTestStatus(rt.IssueID, model.TestStatusReviewRejected)
+		s.logStatusChange(rt.IssueID, model.TestStatusReviewPending, model.TestStatusReviewRejected, "manual", &reviewerID, "回归测试失败，问题单重新激活")
+		// 调用禅道 API 重新激活 Bug
+		if issue, err := s.issueRepo.GetByID(rt.IssueID); err == nil && issue.ZentaoID > 0 {
+			activateComment := fmt.Sprintf("[AutoTestFlow] 回归测试失败，Review#%d 确认失败。%s", rt.ID, req.Comment)
+			if err := s.zentaoProxy.ActivateBug(issue.ZentaoID, activateComment); err != nil {
+				s.logger.Warn("调用禅道激活Bug API失败", zap.Error(err), zap.Uint64("issueID", rt.IssueID))
+			}
+		}
 
 	case "comment":
 		// 仅评论，不改变状态
@@ -185,7 +210,7 @@ func (s *ReviewService) DoReview(reviewID, reviewerID uint64, req *dto.ReviewAct
 		return err
 	}
 
-	if req.Action == "approve" || req.Action == "reject" {
+	if req.Action == "approve" || req.Action == "reject" || req.Action == "fail_regression" {
 		s.notifyService.SendReviewResult(rt, req.Action, gitSummary)
 	}
 

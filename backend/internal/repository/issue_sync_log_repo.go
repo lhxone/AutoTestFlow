@@ -59,8 +59,46 @@ func (r *IssueSyncLogRepo) GetLatestByProjectIDs(projectIDs []uint64) ([]model.I
 	return logs, err
 }
 
+// GetLatestByProjectIDsAndType 获取指定类型的最新同步日志
+func (r *IssueSyncLogRepo) GetLatestByProjectIDsAndType(projectIDs []uint64, syncType string) ([]model.IssueSyncLog, error) {
+	if len(projectIDs) == 0 {
+		return []model.IssueSyncLog{}, nil
+	}
+
+	var logs []model.IssueSyncLog
+	err := r.db.Raw(`
+		SELECT l.*
+		FROM issue_sync_log l
+		INNER JOIN (
+			SELECT project_id, MAX(id) AS max_id
+			FROM issue_sync_log
+			WHERE project_id IN ? AND sync_type = ?
+			GROUP BY project_id
+		) latest ON latest.max_id = l.id
+		ORDER BY l.id DESC
+	`, projectIDs, syncType).Scan(&logs).Error
+	return logs, err
+}
+
 func (r *IssueSyncLogRepo) ListByProject(projectID uint64, offset, limit int) ([]model.IssueSyncLog, int64, error) {
 	query := r.db.Model(&model.IssueSyncLog{}).Where("project_id = ?", projectID)
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var logs []model.IssueSyncLog
+	if err := query.Order("id DESC").Offset(offset).Limit(limit).Find(&logs).Error; err != nil {
+		return nil, 0, err
+	}
+
+	return logs, total, nil
+}
+
+// ListByProjectAndType 按项目和类型获取同步日志
+func (r *IssueSyncLogRepo) ListByProjectAndType(projectID uint64, syncType string, offset, limit int) ([]model.IssueSyncLog, int64, error) {
+	query := r.db.Model(&model.IssueSyncLog{}).Where("project_id = ? AND sync_type = ?", projectID, syncType)
 
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -106,11 +144,14 @@ func (r *IssueSyncLogRepo) ListDetailsByLogIDPaginated(logID uint64, offset, lim
 	return details, total, nil
 }
 
-// ListAll 获取所有项目的采集记录（支持项目ID筛选）
-func (r *IssueSyncLogRepo) ListAll(projectID *uint64, offset, limit int) ([]model.IssueSyncLog, int64, error) {
+// ListAll 获取所有项目的采集记录（支持项目ID和类型筛选）
+func (r *IssueSyncLogRepo) ListAll(projectID *uint64, syncType *string, offset, limit int) ([]model.IssueSyncLog, int64, error) {
 	query := r.db.Model(&model.IssueSyncLog{})
 	if projectID != nil {
 		query = query.Where("project_id = ?", *projectID)
+	}
+	if syncType != nil && *syncType != "" {
+		query = query.Where("sync_type = ?", *syncType)
 	}
 
 	var total int64

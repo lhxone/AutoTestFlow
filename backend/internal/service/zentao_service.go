@@ -187,7 +187,7 @@ func (s *ZentaoService) syncFromZentao(project *model.Project, fullSync bool, ba
 		// 增量：只获取最近24小时更新的
 		since := time.Now().Add(-24 * time.Hour).Format("2006-01-02")
 		url := fmt.Sprintf("%s/api.php/v1/products/%d/bugs?limit=500&lastEditedDate>%s", base, productID, since)
-		body, err := s.doZentaoGet(url, token)
+		body, err := s.DoZentaoGet(url, token)
 		if err != nil {
 			return issueSyncResult{}, fmt.Errorf("请求禅道API失败: %w", err)
 		}
@@ -195,7 +195,7 @@ func (s *ZentaoService) syncFromZentao(project *model.Project, fullSync bool, ba
 	}
 
 	url := fmt.Sprintf("%s/api.php/v1/products/%d/bugs?limit=500", base, productID)
-	body, err := s.doZentaoGet(url, token)
+	body, err := s.DoZentaoGet(url, token)
 	if err != nil {
 		return issueSyncResult{}, fmt.Errorf("请求禅道API失败: %w", err)
 	}
@@ -220,8 +220,8 @@ func (s *ZentaoService) getZentaoConnection() (string, string, error) {
 	return baseURL, token, nil
 }
 
-// doZentaoGet 发起禅道 GET 请求，自动尝试 /zentao/ 和无前缀两种路径
-func (s *ZentaoService) doZentaoGet(urlWithPrefix, token string) ([]byte, error) {
+// DoZentaoGet 发起禅道 GET 请求，自动尝试 /zentao/ 和无前缀两种路径（导出供其他服务使用）
+func (s *ZentaoService) DoZentaoGet(urlWithPrefix, token string) ([]byte, error) {
 	type attempt struct {
 		url   string
 		token string
@@ -294,7 +294,7 @@ type zentaoProductDetail struct {
 }
 
 func (s *ZentaoService) getProductDetail(baseURL, token string, productID int) (*zentaoProductDetail, error) {
-	body, err := s.doZentaoGet(fmt.Sprintf("%s/api.php/v1/products/%d", strings.TrimRight(baseURL, "/"), productID), token)
+	body, err := s.DoZentaoGet(fmt.Sprintf("%s/api.php/v1/products/%d", strings.TrimRight(baseURL, "/"), productID), token)
 	if err != nil {
 		return nil, err
 	}

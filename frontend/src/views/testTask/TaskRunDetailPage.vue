@@ -17,102 +17,154 @@
 
       <template v-if="resultsVisible">
         <a-divider style="margin: 16px 0 8px" />
-        <a-tabs size="small">
-          <a-tab-pane key="cases" :tab="t('taskRun.tabs.testCases')">
-            <a-table
-              :dataSource="testCases"
-              :columns="caseColumns"
-              rowKey="id"
-              size="small"
-              :pagination="false"
-              :scroll="{ y: 260 }"
-            >
-              <template #bodyCell="{ column, record }">
-                <template v-if="column.key === 'category'">
-                  {{ translateTestCaseCategory(t, record.category) }}
-                </template>
-                <template v-if="column.key === 'self_test_result'">
-                  <a-tag :color="record.self_test_result === 'pass' ? 'green' : 'orange'">
-                    {{ translateSelfTestResult(t, record.self_test_result) }}
-                  </a-tag>
-                </template>
-                <template v-if="column.key === 'action'">
-                  <a-button type="link" size="small" @click="goToEditCase(record)" v-if="canEditCase">{{ t('common.edit') }}</a-button>
-                </template>
-              </template>
-            </a-table>
-          </a-tab-pane>
-          <a-tab-pane key="scripts" :tab="t('taskRun.tabs.testScripts')">
-            <a-table
-              :dataSource="testScripts"
-              :columns="scriptColumns"
-              rowKey="id"
-              size="small"
-              :pagination="false"
-              :scroll="{ y: 260 }"
-            >
-              <template #bodyCell="{ column, record }">
-                <template v-if="column.key === 'content'">
-                  <a-button type="link" size="small" @click="viewScript(record)">{{ t('taskRun.viewScript') }}</a-button>
-                </template>
-              </template>
-            </a-table>
-          </a-tab-pane>
-          <a-tab-pane key="self-test" :tab="t('taskRun.tabs.selfTest')">
-            <div class="self-test-report">
-              <a-alert
-                v-if="selfTestReport"
-                :type="selfTestReport.passed === false ? 'error' : 'success'"
-                :message="selfTestReport.summary || t('taskRun.selfTest.noSummary')"
-                show-icon
-              />
-              <a-alert
-                v-else
-                type="info"
-                :message="taskInfo?.status === 'running' ? '任务运行中，自测报告将在任务完成后生成' : t('taskRun.selfTest.noReport')"
-                show-icon
-              />
 
-              <a-card size="small" class="self-test-report__card" :title="t('taskRun.selfTest.generalChecks')">
-                <ul v-if="selfTestChecks.length" class="self-test-report__list">
-                  <li v-for="(item, idx) in selfTestChecks" :key="`general-${idx}`">{{ item }}</li>
-                </ul>
-                <a-empty v-else :description="t('taskRun.selfTest.noChecks')" />
-              </a-card>
+        <!-- 回归用例 -->
+        <a-collapse :defaultActiveKey="activeCaseKeys" style="margin-bottom: 16px">
+          <a-collapse-panel
+            v-for="editableCase in editableCases"
+            :key="editableCase.id"
+            :header="`[${translateTestCaseCategory(t, editableCase.category)}] ${editableCase.title}`"
+          >
+            <a-descriptions :column="1" size="small" bordered style="margin-bottom: 12px">
+              <a-descriptions-item :label="t('testCase.detail.precondition')">{{ editableCase.precondition || '-' }}</a-descriptions-item>
+              <a-descriptions-item :label="t('testCase.detail.steps')">
+                <a-table
+                  :dataSource="editableCase.stepRows"
+                  :columns="stepColumns"
+                  :pagination="false"
+                  size="small"
+                  rowKey="key"
+                >
+                  <template #bodyCell="{ column, record }">
+                    <template v-if="column.key === 'step'">
+                      <a-textarea v-model:value="record.step" :rows="2" :disabled="!canIntervene" />
+                    </template>
+                    <template v-if="column.key === 'expected'">
+                      <a-textarea v-model:value="record.expected" :rows="2" :disabled="!canIntervene" />
+                    </template>
+                    <template v-if="column.key === 'action'">
+                      <a-button type="link" danger size="small" @click="removeStepRow(editableCase.id, record.key)" :disabled="!canIntervene">
+                        {{ t('common.delete') }}
+                      </a-button>
+                    </template>
+                  </template>
+                </a-table>
+                <a-button type="dashed" block style="margin-top: 12px" @click="appendStepRow(editableCase.id)" :disabled="!canIntervene">
+                  {{ t('testCase.detail.addStep') }}
+                </a-button>
+              </a-descriptions-item>
+              <a-descriptions-item :label="t('review.detail.selfTestResult')">
+                <a-tag :color="editableCase.self_test_result === 'pass' ? 'green' : editableCase.self_test_result === 'fail' ? 'red' : 'default'">
+                  {{ translateSelfTestResult(t, editableCase.self_test_result) }}
+                </a-tag>
+              </a-descriptions-item>
+              <a-descriptions-item :label="t('review.detail.source')">
+                <a-tag :color="editableCase.source === 'ai' ? 'blue' : 'orange'">
+                  {{ translateCaseSource(t, editableCase.source) }}
+                </a-tag>
+              </a-descriptions-item>
+            </a-descriptions>
 
-              <a-card size="small" class="self-test-report__card" :title="t('taskRun.selfTest.playwright')">
-                <template v-if="playwrightReport">
-                  <div class="self-test-report__meta">
-                    <a-tag :color="getFrameworkTagColor(playwrightReport.passed)">
-                      {{ formatFrameworkStatus(playwrightReport.passed) }}
-                    </a-tag>
-                    <span v-if="playwrightReport.report_path" class="self-test-report__path">
-                      {{ playwrightReport.report_path }}
-                    </span>
-                  </div>
-                  <p v-if="playwrightReport.summary" class="self-test-report__summary">{{ playwrightReport.summary }}</p>
-                  <ul v-if="getFrameworkChecks().length" class="self-test-report__list">
-                    <li v-for="(item, idx) in getFrameworkChecks()" :key="`playwright-${idx}`">{{ item }}</li>
-                  </ul>
-                </template>
-                <div v-if="playwrightReportLoading && !playwrightReportUrl" class="report-loading">
-                  <a-spin :tip="t('common.loading')" />
-                </div>
-                <a-empty v-else-if="!playwrightReport && !playwrightReportUrl" :description="taskInfo?.status === 'running' ? '任务运行中，报告将在任务完成后生成' : t('taskRun.selfTest.noFrameworkReport')" />
-                <a-spin v-else :spinning="playwrightReportLoading" :tip="t('common.loading')" wrapperClassName="report-spin">
-                  <iframe
-                    v-if="playwrightReportUrl"
-                    :key="playwrightReportFrameKey"
-                    class="report-frame"
-                    :src="playwrightReportUrl"
-                    sandbox="allow-scripts allow-same-origin allow-modals allow-popups allow-forms allow-downloads"
-                    @load="playwrightReportLoading = false"
+            <a-form-item :label="t('testCase.detail.changeNote')" required v-if="canIntervene">
+              <a-input
+                v-model:value="editableCase.changeNote"
+                :placeholder="t('testCase.detail.changeNotePlaceholder')"
+              />
+            </a-form-item>
+
+            <a-space v-if="canIntervene">
+              <a-button type="primary" :loading="savingCaseId === editableCase.id" @click="saveCase(editableCase)">
+                {{ t('common.save') }}
+              </a-button>
+            </a-space>
+          </a-collapse-panel>
+        </a-collapse>
+        <a-empty v-if="!editableCases.length" :description="t('review.detail.noTestCases')" style="margin-bottom: 16px" />
+
+        <!-- 测试脚本 -->
+        <a-collapse :defaultActiveKey="['scripts']" style="margin-bottom: 16px">
+          <a-collapse-panel key="scripts" :header="t('taskRun.tabs.testScripts')">
+            <template v-if="editableScripts.length">
+              <a-form v-for="editableScript in editableScripts" :key="editableScript.id" layout="vertical" style="margin-bottom: 16px">
+                <a-form-item :label="t('testCase.detail.scriptContent')">
+                  <CodeEditor
+                    v-model="editableScript.file_content"
+                    :language="scriptEditorLanguage(editableScript)"
+                    :height="380"
+                    :readOnly="!canIntervene"
                   />
-                </a-spin>
-              </a-card>
+                </a-form-item>
+                <a-form-item :label="t('testCase.detail.changeNote')" required v-if="canIntervene">
+                  <a-input
+                    v-model:value="editableScript.changeNote"
+                    :placeholder="t('testCase.detail.changeNotePlaceholder')"
+                  />
+                </a-form-item>
+                <a-button type="primary" :loading="savingScriptId === editableScript.id" @click="saveScript(editableScript)" v-if="canIntervene">
+                  {{ t('common.save') }}
+                </a-button>
+              </a-form>
+            </template>
+            <a-empty v-else :description="t('review.detail.noTestScripts')" />
+          </a-collapse-panel>
+        </a-collapse>
+
+        <!-- Playwright 报告 -->
+        <a-collapse :defaultActiveKey="['playwright']" style="margin-bottom: 16px">
+          <a-collapse-panel key="playwright" :header="t('taskRun.selfTest.playwright')">
+            <div v-if="playwrightReportUrl" class="report-container">
+              <iframe
+                :key="playwrightReportFrameKey"
+                class="playwright-report-frame"
+                :src="playwrightReportUrl"
+                sandbox="allow-scripts allow-same-origin allow-modals allow-popups allow-forms allow-downloads"
+                @load="playwrightReportLoading = false"
+              />
             </div>
-          </a-tab-pane>
-        </a-tabs>
+            <div v-else-if="playwrightReportLoading" class="report-loading">
+              <a-spin :tip="t('common.loading')" />
+            </div>
+            <a-empty v-else :description="t('taskRun.selfTest.noReportContent')" />
+          </a-collapse-panel>
+        </a-collapse>
+
+        <!-- 回归审批 -->
+        <a-card :title="t('taskRun.regression.title')" size="small" v-if="canReviewList && reviewInfo">
+          <a-descriptions :column="1" bordered size="small" style="margin-bottom: 12px">
+            <a-descriptions-item :label="t('taskRun.regression.reviewStatus')">
+              <a-tag :color="reviewStatusMap[reviewInfo.status]?.color || 'default'">
+                {{ reviewStatusMap[reviewInfo.status]?.label || reviewInfo.status }}
+              </a-tag>
+            </a-descriptions-item>
+            <a-descriptions-item :label="t('taskRun.regression.reviewComment')">
+              {{ reviewInfo.review_note || '-' }}
+            </a-descriptions-item>
+          </a-descriptions>
+
+          <a-timeline v-if="reviewDetail?.records?.length" style="margin-bottom: 12px">
+            <a-timeline-item
+              v-for="record in reviewDetail.records"
+              :key="record.id"
+              :color="record.action === 'approve' || record.action === 'fail_regression' ? 'green' : record.action === 'reject' ? 'red' : 'blue'"
+            >
+              <strong>{{ record.reviewer_name }}</strong> {{ regressionActionLabel(record.action) }}
+              <span style="color: #999; margin-left: 8px">{{ record.created_at }}</span>
+              <p v-if="record.comment" style="margin: 4px 0 0; color: #666">{{ record.comment }}</p>
+            </a-timeline-item>
+          </a-timeline>
+          <a-empty v-else :description="t('taskRun.regression.noRecords')" style="margin-bottom: 12px" />
+
+          <a-form layout="vertical" v-if="canReviewApprove && (reviewInfo.status === 'pending' || reviewInfo.status === 'changes_requested')">
+            <a-form-item :label="t('taskRun.regression.comment')">
+              <a-textarea v-model:value="regressionComment" :rows="3" :placeholder="t('taskRun.regression.commentPlaceholder')" />
+            </a-form-item>
+            <a-space>
+              <a-button type="primary" @click="submitRegression('approve')" :loading="regressionSubmitting">{{ t('taskRun.regression.confirmSuccess') }}</a-button>
+              <a-button danger @click="submitRegression('fail_regression')" :loading="regressionSubmitting">{{ t('taskRun.regression.failRegression') }}</a-button>
+              <a-button @click="submitRegression('request_changes')" :loading="regressionSubmitting">{{ t('taskRun.regression.reject') }}</a-button>
+            </a-space>
+          </a-form>
+        </a-card>
       </template>
     </template>
 
@@ -131,6 +183,8 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
+import { message } from 'ant-design-vue'
+import CodeEditor from '@/components/CodeEditor.vue'
 import {
   createTestTaskEventSource,
   getSelfTestReport,
@@ -139,14 +193,32 @@ import {
   getTestScripts,
   getTestTaskById,
   getWorkspaceFileUrl,
+  updateTestCase,
+  updateTestScript,
 } from '@/api/testTask'
-import type { SelfTestFrameworkReport, SelfTestReport, TestCaseVO, TestScriptVO, TestTask, TestTaskEvent } from '@/types'
-import { translateSelfTestResult, translateTaskStatus, translateTestCaseCategory } from '@/types'
+import { doReview, getReviewDetail, getReviewList } from '@/api/review'
+import type { ReviewDetail, ReviewTask, SelfTestFrameworkReport, SelfTestReport, TestCaseVO, TestScriptVO, TestTask, TestTaskEvent } from '@/types'
+import { translateSelfTestResult, translateTaskStatus, translateTestCaseCategory, translateCaseSource, getReviewStatusMap } from '@/types'
 import EinoWorkflowPanel from '@/components/EinoWorkflowPanel.vue'
 import { useUserStore } from '@/stores/user'
 
 const EVENT_LOG_LIMIT = 120
 const TASK_REFRESH_DEBOUNCE_MS = 300
+
+type StepRow = {
+  key: string
+  step: string
+  expected: string
+}
+
+type EditableCase = TestCaseVO & {
+  stepRows: StepRow[]
+  changeNote: string
+}
+
+type EditableScript = TestScriptVO & {
+  changeNote: string
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -163,15 +235,16 @@ const initializing = ref(true)
 const taskEvents = ref<TestTaskEvent[]>([])
 const connStatus = ref<'idle' | 'connecting' | 'connected' | 'closed' | 'error'>('idle')
 const taskInfo = ref<TestTask | null>(null)
-const testCases = ref<TestCaseVO[]>([])
-const testScripts = ref<TestScriptVO[]>([])
+const editableCases = ref<EditableCase[]>([])
+const editableScripts = ref<EditableScript[]>([])
+const activeCaseKeys = ref<(number | string)[]>([])
 const resultsVisible = ref(false)
 const scriptModal = ref(false)
 const viewingScript = ref<TestScriptVO | null>(null)
 const playwrightReportUrl = ref('')
 const playwrightReportLoading = ref(false)
 const playwrightReportFrameKey = ref(0)
-const canEditCase = computed(() => userStore.hasPermission('test:intervene'))
+const playwrightReport = computed<SelfTestFrameworkReport | null>(() => getFrameworkReport())
 const selfTestReport = computed<SelfTestReport | null>(() => {
   const report = taskInfo.value?.ai_output?.self_test
   if (!report || typeof report !== 'object') return null
@@ -183,7 +256,20 @@ const selfTestChecks = computed<string[]>(() => {
   }
   return selfTestReport.value.checks
 })
-const playwrightReport = computed<SelfTestFrameworkReport | null>(() => getFrameworkReport())
+
+// Review / Regression
+const reviewInfo = ref<ReviewTask | null>(null)
+const reviewDetail = ref<ReviewDetail | null>(null)
+const regressionComment = ref('')
+const regressionSubmitting = ref(false)
+const reviewStatusMap = computed(() => getReviewStatusMap(t))
+const canIntervene = computed(() => userStore.hasPermission('test:intervene'))
+const canReviewList = computed(() => userStore.hasPermission('review:list'))
+const canReviewApprove = computed(() => userStore.hasPermission('review:approve'))
+
+const savingCaseId = ref<number | null>(null)
+const savingScriptId = ref<number | null>(null)
+
 let eventSource: EventSource | null = null
 let taskRefreshTimer: number | null = null
 
@@ -205,17 +291,10 @@ const connTagColor = computed(() => {
   return map[connStatus.value] || 'default'
 })
 
-const caseColumns = computed(() => [
-  { title: t('testTask.list.caseColumns.title'), dataIndex: 'title', key: 'title', ellipsis: true },
-  { title: t('testTask.list.caseColumns.category'), dataIndex: 'category', key: 'category', width: 100 },
-  { title: t('testTask.list.caseColumns.selfTest'), key: 'self_test_result', width: 80 },
-  { title: t('testTask.list.caseColumns.action'), key: 'action', width: 70 },
-])
-
-const scriptColumns = computed(() => [
-  { title: t('taskRun.scriptName'), dataIndex: 'file_path', key: 'file_path', ellipsis: true },
-  { title: t('taskRun.scriptLang'), dataIndex: 'language', key: 'language', width: 90 },
-  { title: t('common.action'), key: 'content', width: 70 },
+const stepColumns = computed(() => [
+  { title: t('testCase.detail.columns.step'), key: 'step' },
+  { title: t('testCase.detail.columns.expected'), key: 'expected' },
+  { title: t('common.action'), key: 'action', width: 90 },
 ])
 
 onMounted(() => {
@@ -237,8 +316,8 @@ function resetState() {
   taskEvents.value = []
   connStatus.value = 'connecting'
   taskInfo.value = null
-  testCases.value = []
-  testScripts.value = []
+  editableCases.value = []
+  editableScripts.value = []
   resultsVisible.value = false
   closeEventSource()
 }
@@ -386,10 +465,19 @@ async function loadResults(id: number) {
       getTestCases(id),
       getTestScripts(id),
     ])
-    testCases.value = caseRes.data.data || []
-    testScripts.value = scriptRes.data.data || []
+    editableCases.value = (caseRes.data.data || []).map((item: TestCaseVO) => ({
+      ...item,
+      stepRows: parseStepRows(item.steps, item.expected),
+      changeNote: '',
+    }))
+    editableScripts.value = (scriptRes.data.data || []).map((item: TestScriptVO) => ({
+      ...item,
+      changeNote: '',
+    }))
+    activeCaseKeys.value = editableCases.value.map(c => c.id)
     resultsVisible.value = true
     await loadPlaywrightHtml(id)
+    await fetchReviewData()
   } catch {
     // ignore
   }
@@ -410,6 +498,30 @@ async function loadPlaywrightHtml(id: number) {
   } catch (e) {
     console.error('loadPlaywrightHtml failed:', e)
     playwrightReportLoading.value = false
+  }
+}
+
+async function fetchReviewData() {
+  if (!canReviewList.value) {
+    reviewInfo.value = null
+    reviewDetail.value = null
+    return
+  }
+
+  try {
+    const reviewRes = await getReviewList({ task_id: taskId.value, page: 1, page_size: 1 })
+    const review = reviewRes.data.data?.list?.[0]
+    if (!review?.id) {
+      reviewInfo.value = null
+      reviewDetail.value = null
+      return
+    }
+    reviewInfo.value = review
+    const detailRes = await getReviewDetail(review.id)
+    reviewDetail.value = detailRes.data.data
+  } catch {
+    reviewInfo.value = null
+    reviewDetail.value = null
   }
 }
 
@@ -459,17 +571,164 @@ function formatFrameworkStatus(passed: boolean | undefined) {
   return t('taskRun.selfTest.unknown')
 }
 
-function goToEditCase(tc: TestCaseVO) {
-  router.push({
-    name: 'TestCaseEdit',
-    params: { id: String(taskId.value) },
-    query: { caseId: String(tc.id) },
+function parseStepRows(steps: string, expected: string) {
+  const stepLines = normalizeLines(steps)
+  const expectedLines = normalizeLines(expected)
+  const maxLength = Math.max(stepLines.length, expectedLines.length, 1)
+  const rows: StepRow[] = []
+  for (let index = 0; index < maxLength; index += 1) {
+    rows.push({
+      key: `row-${index}-${Date.now()}`,
+      step: stepLines[index] || '',
+      expected: expectedLines[index] || '',
+    })
+  }
+  return rows
+}
+
+function normalizeLines(value: string) {
+  return (value || '')
+    .split('\n')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0)
+}
+
+function appendStepRow(caseId: number) {
+  const currentCase = editableCases.value.find((item) => item.id === caseId)
+  if (!currentCase) return
+  currentCase.stepRows.push({
+    key: `row-${caseId}-${currentCase.stepRows.length}-${Date.now()}`,
+    step: '',
+    expected: '',
   })
 }
 
-function viewScript(script: TestScriptVO) {
-  viewingScript.value = script
-  scriptModal.value = true
+function removeStepRow(caseId: number, rowKey: string) {
+  const currentCase = editableCases.value.find((item) => item.id === caseId)
+  if (!currentCase) return
+  currentCase.stepRows = currentCase.stepRows.filter((item) => item.key !== rowKey)
+  if (!currentCase.stepRows.length) {
+    appendStepRow(caseId)
+  }
+}
+
+async function saveCase(editableCase: EditableCase) {
+  if (!editableCase.changeNote.trim()) {
+    message.warning(t('testCase.detail.changeNoteRequired'))
+    return
+  }
+
+  const filteredRows = editableCase.stepRows.filter((item) => item.step.trim() || item.expected.trim())
+  if (!filteredRows.length) {
+    message.warning(t('testCase.detail.stepRequired'))
+    return
+  }
+
+  savingCaseId.value = editableCase.id
+  try {
+    await updateTestCase(editableCase.id, {
+      title: editableCase.title,
+      precondition: editableCase.precondition,
+      steps: filteredRows.map((item) => item.step.trim()).join('\n'),
+      expected: filteredRows.map((item) => item.expected.trim()).join('\n'),
+      change_note: editableCase.changeNote,
+    })
+    message.success(t('testCase.detail.saveSuccess'))
+    editableCase.changeNote = ''
+    await fetchDetail()
+  } finally {
+    savingCaseId.value = null
+  }
+}
+
+async function saveScript(editableScript: EditableScript) {
+  if (!editableScript.changeNote.trim()) {
+    message.warning(t('testCase.detail.changeNoteRequired'))
+    return
+  }
+
+  savingScriptId.value = editableScript.id
+  try {
+    await updateTestScript(editableScript.id, {
+      file_content: editableScript.file_content,
+      change_note: editableScript.changeNote,
+    })
+    message.success(t('testCase.detail.saveSuccess'))
+    editableScript.changeNote = ''
+    await fetchDetail()
+  } finally {
+    savingScriptId.value = null
+  }
+}
+
+function scriptEditorLanguage(script: EditableScript) {
+  const filePath = script.file_path.toLowerCase()
+  if (filePath.endsWith('.spec.ts') || filePath.endsWith('.ts')) {
+    return 'typescript'
+  }
+  if (filePath.endsWith('.js')) {
+    return 'javascript'
+  }
+  if (filePath.endsWith('.py')) {
+    return 'python'
+  }
+  return script.language || 'typescript'
+}
+
+function regressionActionLabel(action: string) {
+  const map: Record<string, string> = {
+    approve: t('taskRun.regression.actions.approve'),
+    fail_regression: t('taskRun.regression.actions.fail_regression'),
+    request_changes: t('taskRun.regression.actions.request_changes'),
+    comment: t('taskRun.regression.actions.comment'),
+  }
+  return map[action] || action
+}
+
+async function submitRegression(action: string) {
+  if (!reviewInfo.value) return
+  regressionSubmitting.value = true
+  try {
+    await doReview(reviewInfo.value.id, { action, comment: regressionComment.value })
+    const msgMap: Record<string, string> = {
+      approve: t('taskRun.regression.approveSuccess'),
+      fail_regression: t('taskRun.regression.failSuccess'),
+      request_changes: t('taskRun.regression.rejectSuccess'),
+    }
+    message.success(msgMap[action] || t('taskRun.regression.actionSuccess'))
+    regressionComment.value = ''
+    await fetchReviewData()
+    await fetchDetail()
+  } catch {
+    message.error(t('taskRun.regression.actionFailed'))
+  } finally {
+    regressionSubmitting.value = false
+  }
+}
+
+async function fetchDetail() {
+  try {
+    const [caseRes, scriptRes] = await Promise.allSettled([
+      getTestCases(taskId.value),
+      getTestScripts(taskId.value),
+    ])
+    if (caseRes.status === 'fulfilled') {
+      editableCases.value = (caseRes.value.data.data || []).map((item: TestCaseVO) => ({
+        ...item,
+        stepRows: parseStepRows(item.steps, item.expected),
+        changeNote: '',
+      }))
+    }
+    if (scriptRes.status === 'fulfilled') {
+      editableScripts.value = (scriptRes.value.data.data || []).map((item: TestScriptVO) => ({
+        ...item,
+        changeNote: '',
+      }))
+    }
+    await fetchReviewData()
+  } catch {
+    // ignore
+  }
 }
 </script>
 
@@ -504,12 +763,16 @@ function viewScript(script: TestScriptVO) {
   word-break: break-all;
 }
 
-.report-frame {
+.playwright-report-frame {
   width: 100%;
   height: 70vh;
   border: 1px solid #f0f0f0;
   border-radius: 6px;
   background: #fff;
+}
+
+.report-container {
+  width: 100%;
 }
 
 .report-loading {
@@ -520,50 +783,5 @@ function viewScript(script: TestScriptVO) {
   border: 1px solid #f0f0f0;
   border-radius: 6px;
   background: #fff;
-}
-
-.report-spin :deep(.ant-spin-container) {
-  min-height: 70vh;
-}
-
-.self-test-report {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.self-test-report__card {
-  margin-top: 0;
-}
-
-.self-test-report__list {
-  margin: 0;
-  padding-left: 18px;
-}
-
-.self-test-report__summary {
-  margin: 8px 0;
-  color: #595959;
-}
-
-.self-test-report__meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.self-test-report__path {
-  color: #8c8c8c;
-  font-size: 12px;
-  word-break: break-all;
-}
-
-@media (max-width: 960px) {
-  .self-test-report :deep(.ant-col) {
-    width: 100%;
-    max-width: 100%;
-    flex: 0 0 100%;
-  }
 }
 </style>

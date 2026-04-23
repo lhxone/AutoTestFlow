@@ -15,11 +15,12 @@ import (
 type DashboardHandler struct{}
 
 type DashboardStats struct {
-	Projects           *int64                       `json:"projects"`
-	PendingReviews     *int64                       `json:"pending_reviews"`
-	InterventionNeeded *int64                       `json:"intervention_needed"`
-	PassRate           *float64                     `json:"pass_rate"`
-	IssueSyncProjects  []DashboardProjectSyncStatus `json:"issue_sync_projects,omitempty"`
+	Projects            *int64                       `json:"projects"`
+	PendingReviews      *int64                       `json:"pending_reviews"`
+	InterventionNeeded  *int64                       `json:"intervention_needed"`
+	PassRate            *float64                     `json:"pass_rate"`
+	IssueSyncProjects   []DashboardProjectSyncStatus `json:"issue_sync_projects,omitempty"`
+	TestCaseSyncProjects []DashboardProjectSyncStatus `json:"testcase_sync_projects,omitempty"`
 }
 
 type DashboardProjectSyncStatus struct {
@@ -152,6 +153,45 @@ func (h *DashboardHandler) GetStats(c *gin.Context) {
 			}
 
 			stats.IssueSyncProjects = append(stats.IssueSyncProjects, item)
+		}
+
+		// 用例同步状态
+		latestTestCaseLogs, err := repository.NewIssueSyncLogRepo().GetLatestByProjectIDsAndType(projectIDs, model.SyncTypeTestCase)
+		if err != nil {
+			pkg.Fail(c, pkg.CodeInternalError, err.Error())
+			return
+		}
+
+		testCaseLogMap := make(map[uint64]model.IssueSyncLog, len(latestTestCaseLogs))
+		for _, log := range latestTestCaseLogs {
+			testCaseLogMap[log.ProjectID] = log
+		}
+
+		stats.TestCaseSyncProjects = make([]DashboardProjectSyncStatus, 0, len(projects))
+		for _, project := range projects {
+			item := DashboardProjectSyncStatus{
+				ProjectID:   project.ID,
+				ProjectName: project.Name,
+				Status:      "unknown",
+				StatusLabel: "未同步",
+			}
+
+			if log, ok := testCaseLogMap[project.ID]; ok {
+				item.Status = log.Status
+				item.StatusLabel = syncStatusLabel(log.Status)
+				item.AddedCount = log.AddedCount
+				item.UpdatedCount = log.UpdatedCount
+				item.DeletedCount = log.DeletedCount
+				item.ErrorMessage = log.ErrorMessage
+				startedAt := log.StartedAt.Format("2006-01-02 15:04:05")
+				item.StartedAt = &startedAt
+				if log.CompletedAt != nil {
+					completedAt := log.CompletedAt.Format("2006-01-02 15:04:05")
+					item.CompletedAt = &completedAt
+				}
+			}
+
+			stats.TestCaseSyncProjects = append(stats.TestCaseSyncProjects, item)
 		}
 	}
 

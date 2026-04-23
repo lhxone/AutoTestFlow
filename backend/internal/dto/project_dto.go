@@ -47,8 +47,9 @@ type ProjectListQuery struct {
 
 // ProjectIssueSyncLogQuery 项目问题单同步日志查询
 type ProjectIssueSyncLogQuery struct {
-	Page     int `form:"page" binding:"omitempty,min=1"`
-	PageSize int `form:"page_size" binding:"omitempty,min=1,max=100"`
+	Page     int    `form:"page" binding:"omitempty,min=1"`
+	PageSize int    `form:"page_size" binding:"omitempty,min=1,max=100"`
+	SyncType string `form:"sync_type"` // 筛选同步类型: issue/testcase
 }
 
 // IssueSyncLogListQuery 全局采集记录查询
@@ -56,6 +57,7 @@ type IssueSyncLogListQuery struct {
 	Page      int     `form:"page" binding:"omitempty,min=1"`
 	PageSize  int     `form:"page_size" binding:"omitempty,min=1,max=100"`
 	ProjectID *uint64 `form:"project_id"`
+	SyncType  string  `form:"sync_type"` // 筛选同步类型: issue/testcase
 }
 
 // IssueSyncLogDetailQuery 采集详情查询

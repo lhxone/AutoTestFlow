@@ -36,6 +36,15 @@
             >
               {{ t('project.list.syncIssues') }}
             </a-button>
+            <a-button
+              type="link"
+              size="small"
+              :loading="syncingTestCaseProjectId === record.id"
+              :disabled="!record.zentao_project_id"
+              @click="handleSyncTestCases(record)"
+            >
+              {{ t('project.list.syncTestCases') }}
+            </a-button>
             <a-button type="link" size="small" @click="showProjectSyncLogs(record)">
               {{ t('project.list.viewSyncLogs') }}
             </a-button>
@@ -148,6 +157,11 @@
     <template v-else>
       <a-page-header :title="t('syncLog.list.title') + ' - ' + currentProject?.name" @back="closeSyncLogs">
         <template #extra>
+          <a-radio-group v-model:value="syncTypeFilter" button-style="solid" @change="onSyncTypeChange" style="margin-right: 16px">
+            <a-radio-button value="">{{ t('syncLog.type.all') }}</a-radio-button>
+            <a-radio-button value="issue">{{ t('syncLog.type.issue') }}</a-radio-button>
+            <a-radio-button value="testcase">{{ t('syncLog.type.testcase') }}</a-radio-button>
+          </a-radio-group>
           <a-button @click="closeSyncLogs">{{ t('common.back') }}</a-button>
         </template>
       </a-page-header>
@@ -266,6 +280,7 @@ import {
   getProjectIssueSyncLogDetail,
 } from '@/api/project'
 import { syncIssues } from '@/api/issue'
+import { syncTestCases } from '@/api/testTask'
 import { getZentaoProducts, getZentaoBranches } from '@/api/zentao'
 import type { Project, ProjectIssueSyncLog, ProjectIssueSyncDetail } from '@/types'
 import { useI18n } from 'vue-i18n'
@@ -276,6 +291,7 @@ const loading = ref(false)
 const showModal = ref(false)
 const submitting = ref(false)
 const syncingProjectId = ref<number | null>(null)
+const syncingTestCaseProjectId = ref<number | null>(null)
 const editing = ref<Project | null>(null)
 const query = reactive({ keyword: '' })
 const pagination = reactive({ current: 1, pageSize: 20, total: 0 })
@@ -312,6 +328,7 @@ const syncDetails = ref<ProjectIssueSyncDetail[]>([])
 const selectedSyncLog = ref<ProjectIssueSyncLog | null>(null)
 const syncPagination = reactive({ current: 1, pageSize: 10, total: 0 })
 const detailPagination = reactive({ current: 1, pageSize: 20, total: 0 })
+const syncTypeFilter = ref('')
 
 const columns = computed(() => [
   { title: t('common.id'), dataIndex: 'id', key: 'id', width: 60 },
@@ -497,6 +514,25 @@ async function handleSyncIssues(record: Project) {
   }
 }
 
+async function handleSyncTestCases(record: Project) {
+  if (!record.zentao_project_id) {
+    message.warning(t('project.list.messages.syncDisabled'))
+    return
+  }
+
+  syncingTestCaseProjectId.value = record.id
+  try {
+    await syncTestCases({ project_id: record.id, full_sync: false })
+    message.success(t('project.list.messages.syncTestCasesTriggered'))
+    // 刷新采集记录列表
+    if (showSyncLogs.value && currentProject.value?.id === record.id) {
+      fetchSyncLogs()
+    }
+  } finally {
+    syncingTestCaseProjectId.value = null
+  }
+}
+
 // 显示项目的采集记录
 function showProjectSyncLogs(record: Project) {
   currentProject.value = record
@@ -514,6 +550,7 @@ function closeSyncLogs() {
   syncLogs.value = []
   syncDetails.value = []
   selectedSyncLog.value = null
+  syncTypeFilter.value = ''
 }
 
 // 获取采集记录列表
@@ -521,16 +558,28 @@ async function fetchSyncLogs() {
   if (!currentProject.value) return
   syncLoading.value = true
   try {
-    const res = await getProjectIssueSyncLogs(currentProject.value.id, {
+    const params: any = {
       page: syncPagination.current,
       page_size: syncPagination.pageSize,
-    })
+    }
+    if (syncTypeFilter.value) {
+      params.sync_type = syncTypeFilter.value
+    }
+    const res = await getProjectIssueSyncLogs(currentProject.value.id, params)
     const data = res.data.data
     syncLogs.value = data.list || []
     syncPagination.total = data.total || 0
   } finally {
     syncLoading.value = false
   }
+}
+
+// 同步类型筛选变化
+function onSyncTypeChange() {
+  syncPagination.current = 1
+  selectedSyncLog.value = null
+  syncDetails.value = []
+  fetchSyncLogs()
 }
 
 // 选择采集记录查看详情

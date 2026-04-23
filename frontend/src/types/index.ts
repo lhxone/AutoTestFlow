@@ -23,6 +23,7 @@ export interface DashboardStats {
   intervention_needed: number | null
   pass_rate: number | null
   issue_sync_projects?: DashboardProjectSyncStatus[]
+  testcase_sync_projects?: DashboardProjectSyncStatus[]
 }
 
 export interface DashboardProjectSyncStatus {
@@ -126,6 +127,7 @@ export interface Project {
 export interface ProjectIssueSyncLog {
   id: number
   project_id: number
+  sync_type: string // 'issue' | 'testcase'
   status: string
   full_sync: boolean
   added_count: number
@@ -147,7 +149,9 @@ export interface ProjectIssueSyncDetail {
   id: number
   sync_log_id: number
   project_id: number
+  sync_type: string // 'issue' | 'testcase'
   issue_id: number | null
+  test_case_id: number | null
   zentao_id: number
   issue_title: string
   action: string

@@ -48,6 +48,7 @@
       "reviews": "Reviews",
       "testTasks": "Test Tasks",
       "testCases": "Bug Regression",
+      "zentaoTestCases": "Product Cases",
       "executions": "Executions",
       "users": "Users",
       "settings": "System Management",
@@ -104,6 +105,23 @@
       "title": "Project Bug Sync Status",
       "empty": "No sync records",
       "lastSyncCounts": "Last sync issue counts",
+      "added": "Added",
+      "updated": "Updated",
+      "deleted": "Deleted",
+      "completedAt": "Last completed at",
+      "startedAt": "Started at",
+      "errorMessage": "Error",
+      "status": {
+        "success": "Healthy",
+        "failed": "Error",
+        "running": "Running",
+        "unknown": "Not synced"
+      }
+    },
+    "testCaseSync": {
+      "title": "Project Test Case Sync Status",
+      "empty": "No sync records",
+      "lastSyncCounts": "Last sync test case counts",
       "added": "Added",
       "updated": "Updated",
       "deleted": "Deleted",
@@ -201,6 +219,7 @@
       "create": "Create Project",
       "edit": "Edit Project",
       "syncIssues": "Sync Bugs",
+      "syncTestCases": "Sync Test Cases",
       "viewSyncLogs": "Sync History",
       "columns": {
         "id": "ID",
@@ -278,7 +297,8 @@
         "loadBranchesFailed": "Failed to load Zentao branches",
         "syncDisabled": "This project is not bound to a Zentao project and cannot sync issues.",
         "syncSuccess": "Bug sync completed. {count} bugs synced.",
-        "syncTriggered": "Sync task triggered. Check sync history for progress."
+        "syncTriggered": "Sync task triggered. Check sync history for progress.",
+        "syncTestCasesTriggered": "Test case sync task triggered. Check sync history for progress."
       }
     }
   },
@@ -291,6 +311,11 @@
       "viewDetail": "View Details",
       "viewing": "Viewing",
       "noRecords": "No sync records"
+    },
+    "type": {
+      "all": "All",
+      "issue": "Bug Sync",
+      "testcase": "Test Case Sync"
     },
     "mode": {
       "full": "Full Sync",
@@ -594,36 +619,52 @@
       }
     }
   },
-  "testCase": {
+  "zentaoTestCase": {
     "list": {
-      "title": "Bug Regression Cases",
-      "searchPlaceholder": "Search issue title",
-      "statusPlaceholder": "Task status",
-      "edit": "Edit Test Case",
-      "regenerate": "Regenerate",
-      "form": {
+      "title": "Product Cases",
+      "search": "Search case title",
+      "testStatus": "Status",
+      "project": "Project",
+      "type": "Type",
+      "sync": "Sync from Zentao",
+      "typeFeature": "Feature",
+      "typePerformance": "Performance",
+      "typeConfig": "Config",
+      "typeSecurity": "Security",
+      "typeInterface": "Interface",
+      "typeUnit": "Unit",
+      "typeOther": "Other",
+      "syncModal": {
+        "title": "Sync Zentao Cases",
+        "selectProject": "Select Project",
+        "fullSync": "Full Sync"
+      },
+      "detailModal": {
+        "title": "Case Detail",
+        "id": "Zentao ID",
+        "priority": "Priority",
         "title": "Title",
+        "type": "Type",
+        "status": "Status",
         "precondition": "Precondition",
-        "steps": "Test Steps",
-        "expected": "Expected Result",
-        "changeNote": "Change Note",
-        "changeReasonPlaceholder": "Please describe the reason for this change"
+        "steps": "Steps",
+        "expected": "Expected",
+        "testStatus": "Status",
+        "openedBy": "Created By"
       },
-      "messages": {
-        "changeNoteRequired": "Please enter a change note",
-        "updateSuccess": "Updated successfully",
-        "regenerateConfirm": "Are you sure you want to regenerate test cases? This will overwrite the existing test cases for this issue.",
-        "regenerateSuccess": "Regeneration triggered, please check results shortly"
+      "action": {
+        "viewDetail": "Detail",
+        "generateScript": "Generate Script"
       },
-      "columns": {
-        "id": "ID",
-        "issue": "Bug Title",
-        "issueId": "Bug ID",
-        "taskStatus": "Task Status",
-        "updatedAt": "Updated At",
-        "action": "Action"
+      "status": {
+        "pending": "Pending",
+        "generating": "Generating",
+        "generated": "Generated",
+        "failed": "Failed"
       }
-    },
+    }
+  },
+  "testCase": {
     "detail": {
       "title": "Edit Bug Regression Cases",
       "issueInfo": "Bug Information",
@@ -963,6 +1004,30 @@
       "pass": "Passed",
       "fail": "Failed",
       "unknown": "Unknown"
+    },
+    "regression": {
+      "title": "Regression Approval",
+      "reviewStatus": "Review Status",
+      "reviewComment": "Review Comment",
+      "records": "Review Records",
+      "noRecords": "No review records",
+      "comment": "Review Comment",
+      "commentPlaceholder": "Enter your review comment...",
+      "confirmSuccess": "Confirm Regression Success",
+      "failRegression": "Regression Failed",
+      "reject": "Reject",
+      "approveSuccess": "Regression confirmed successful",
+      "failSuccess": "Regression failed, issue reactivated",
+      "rejectSuccess": "Rejected, test case/script needs regeneration",
+      "actionSuccess": "Operation succeeded",
+      "actionFailed": "Operation failed",
+      "execute": "Execute Approval",
+      "actions": {
+        "approve": "Confirmed regression success",
+        "fail_regression": "Regression failed",
+        "request_changes": "Rejected regression",
+        "comment": "Left a comment"
+      }
     }
   },
   "markdownEditor": {

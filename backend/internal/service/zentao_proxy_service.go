@@ -352,3 +352,115 @@ func truncate(s string, maxLen int) string {
 	}
 	return s[:maxLen] + "..."
 }
+
+// zentaoPost 发起禅道 POST 请求（自动获取 Token 和 BaseURL）
+func (s *ZentaoProxyService) zentaoPost(path string, body map[string]string) ([]byte, error) {
+	baseURL := s.settingRepo.GetValue("zentao", "base_url")
+	if baseURL == "" {
+		return nil, fmt.Errorf("禅道未配置，请先在「系统设置 → 禅道管理」中配置")
+	}
+
+	token, err := s.settingSvc.GetZentaoToken()
+	if err != nil {
+		return nil, fmt.Errorf("获取禅道Token失败: %w", err)
+	}
+
+	base := strings.TrimRight(baseURL, "/")
+
+	// 尝试两种前缀
+	prefixes := []string{path}
+	if strings.HasPrefix(path, "/zentao/") {
+		prefixes = append(prefixes, strings.TrimPrefix(path, "/zentao"))
+	}
+
+	jsonBody, _ := json.Marshal(body)
+
+	var lastBody []byte
+	var lastErr error
+
+	for _, p := range prefixes {
+		url := base + p
+		req, err := http.NewRequest("POST", url, strings.NewReader(string(jsonBody)))
+		if err != nil {
+			continue
+		}
+		req.Header.Set("Token", token)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		respBody, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if resp.StatusCode == http.StatusNotFound {
+			lastErr = fmt.Errorf("404")
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			lastErr = fmt.Errorf("禅道API返回错误 %d: %s", resp.StatusCode, truncate(string(respBody), 200))
+			continue
+		}
+
+		if len(respBody) > 0 {
+			return respBody, nil
+		}
+		lastBody = respBody
+	}
+
+	if lastBody != nil || lastErr == nil {
+		return []byte("{}"), nil
+	}
+	return nil, fmt.Errorf("请求禅道API失败: %w", lastErr)
+}
+
+// CloseBug 调用禅道 API 关闭 Bug
+// 禅道关闭 Bug 通常需要 resolution 和 comment 字段
+func (s *ZentaoProxyService) CloseBug(zentaoBugID int, comment string) error {
+	// 禅道 v18+ REST API: POST /api.php/v1/bugs/{id}/close
+	path := fmt.Sprintf("/zentao/api.php/v1/bugs/%d/close", zentaoBugID)
+	respBody, err := s.zentaoPost(path, map[string]string{
+		"resolution": "fixed",
+		"comment":    comment,
+	})
+	if err != nil {
+		return fmt.Errorf("调用禅道关闭Bug API失败: %w", err)
+	}
+
+	// 检查禅道返回是否有 error
+	var zenResp map[string]interface{}
+	if err := json.Unmarshal(respBody, &zenResp); err == nil {
+		if errMsg, ok := zenResp["error"]; ok && errMsg != nil {
+			return fmt.Errorf("禅道返回错误: %v", errMsg)
+		}
+	}
+
+	s.logger.Info("禅道Bug已关闭", zap.Int("zentaoBugID", zentaoBugID))
+	return nil
+}
+
+// ActivateBug 调用禅道 API 重新激活 Bug
+// 禅道激活 Bug: POST /api.php/v1/bugs/{id}/activate
+func (s *ZentaoProxyService) ActivateBug(zentaoBugID int, comment string) error {
+	path := fmt.Sprintf("/zentao/api.php/v1/bugs/%d/activate", zentaoBugID)
+	respBody, err := s.zentaoPost(path, map[string]string{
+		"comment": comment,
+	})
+	if err != nil {
+		return fmt.Errorf("调用禅道激活Bug API失败: %w", err)
+	}
+
+	var zenResp map[string]interface{}
+	if err := json.Unmarshal(respBody, &zenResp); err == nil {
+		if errMsg, ok := zenResp["error"]; ok && errMsg != nil {
+			return fmt.Errorf("禅道返回错误: %v", errMsg)
+		}
+	}
+
+	s.logger.Info("禅道Bug已重新激活", zap.Int("zentaoBugID", zentaoBugID))
+	return nil
+}

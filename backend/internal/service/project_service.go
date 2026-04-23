@@ -132,6 +132,11 @@ func (s *ProjectService) ListIssueSyncLogs(projectID uint64, req *dto.ProjectIss
 	}
 
 	offset := (req.Page - 1) * req.PageSize
+
+	// 支持按 syncType 筛选
+	if req.SyncType != "" {
+		return s.syncLogRepo.ListByProjectAndType(projectID, req.SyncType, offset, req.PageSize)
+	}
 	return s.syncLogRepo.ListByProject(projectID, offset, req.PageSize)
 }
 
@@ -190,7 +195,13 @@ func (s *ProjectService) ListAllIssueSyncLogs(req *dto.IssueSyncLogListQuery) ([
 	}
 
 	offset := (req.Page - 1) * req.PageSize
-	return s.syncLogRepo.ListAll(req.ProjectID, offset, req.PageSize)
+
+	// 支持 syncType 筛选
+	var syncType *string
+	if req.SyncType != "" {
+		syncType = &req.SyncType
+	}
+	return s.syncLogRepo.ListAll(req.ProjectID, syncType, offset, req.PageSize)
 }
 
 // GetIssueSyncLogDetailByID 根据日志ID获取详情（不限项目）

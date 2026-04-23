@@ -29,6 +29,7 @@ func Setup(logger *zap.Logger) *gin.Engine {
 	settingH := handler.NewSettingHandler(logger)
 	zentaoProxyH := handler.NewZentaoProxyHandler(logger)
 	cliInteractionH := handler.NewCLIInteractionHandler(nil)
+	zentaoTestCaseH := handler.NewZentaoTestCaseHandler(logger)
 
 	api := r.Group("/api")
 	{
@@ -201,6 +202,15 @@ func Setup(logger *zap.Logger) *gin.Engine {
 			{
 				zentao.GET("/products", zentaoProxyH.GetProducts)
 				zentao.GET("/products/:id/branches", zentaoProxyH.GetBranches)
+			}
+
+			// 禅道用例管理
+			zentaoTestCases := protected.Group("/test-cases/zentao")
+			{
+				zentaoTestCases.GET("", middleware.RequirePermission("test:list"), zentaoTestCaseH.List)
+				zentaoTestCases.GET("/:id", middleware.RequirePermission("test:list"), zentaoTestCaseH.GetByID)
+				zentaoTestCases.POST("/sync", middleware.RequirePermission("test:create"), zentaoTestCaseH.Sync)
+				zentaoTestCases.POST("/generate", middleware.RequirePermission("test:execute"), zentaoTestCaseH.GenerateScript)
 			}
 		}
 	}
