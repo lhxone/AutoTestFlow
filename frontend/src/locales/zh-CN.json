@@ -42,12 +42,12 @@
     "menu": {
       "dashboard": "工作台",
       "projects": "项目管理",
-      "issues": "问题单",
+      "issues": "Bug",
       "agents": "Agent 管理",
       "workflows": "Workflow 管理",
       "reviews": "Review 审核",
       "testTasks": "测试任务",
-      "testCases": "测试用例管理",
+      "testCases": "Bug回归用例",
       "executions": "执行记录",
       "users": "用户管理",
       "settings": "系统管理",
@@ -82,7 +82,7 @@
     },
     "quickActions": {
       "title": "快捷操作",
-      "issues": "查看问题单",
+      "issues": "查看Bug",
       "reviews": "审核 Review",
       "testTasks": "测试任务"
     },
@@ -101,9 +101,9 @@
       "empty": "暂无数据"
     },
     "issueSync": {
-      "title": "项目问题单同步状态",
+      "title": "项目Bug同步状态",
       "empty": "暂无同步记录",
-      "lastSyncCounts": "上次同步问题单数量",
+      "lastSyncCounts": "上次同步Bug数量",
       "added": "新增",
       "updated": "更新",
       "deleted": "删除",
@@ -120,7 +120,7 @@
   },
   "issue": {
     "list": {
-      "title": "问题单列表",
+      "title": "Bug列表",
       "search": "搜索标题",
       "zentaoStatus": "禅道状态",
       "testStatus": "测试状态",
@@ -128,7 +128,7 @@
       "branch": "分支",
       "sync": "同步禅道",
       "syncModal": {
-        "title": "同步禅道问题单",
+        "title": "同步禅道Bug",
         "selectProject": "选择项目",
         "fullSync": "全量同步"
       },
@@ -157,7 +157,7 @@
         "viewTask": "查看运行"
       },
       "detailModal": {
-        "title": "问题单详情",
+        "title": "Bug详情",
         "openInZentao": "跳转到禅道",
         "assignee": "负责人",
         "reporter": "提出人",
@@ -171,8 +171,8 @@
         "branchLoadFailed": "获取项目分支失败",
         "selectProjectWarning": "请选择项目",
         "syncTriggered": "同步任务已触发，请稍后刷新查看结果",
-        "noTaskFound": "该问题单暂无生成任务",
-        "loadDetailFailed": "加载问题单详情失败",
+        "noTaskFound": "该Bug暂无生成任务",
+        "loadDetailFailed": "加载Bug详情失败",
         "zentaoUrlUnavailable": "未配置禅道地址或无法生成跳转链接"
       },
       "status": {
@@ -200,7 +200,7 @@
       "searchPlaceholder": "搜索项目名称",
       "create": "新增项目",
       "edit": "编辑项目",
-      "syncIssues": "同步问题单",
+      "syncIssues": "同步Bug",
       "viewSyncLogs": "采集记录",
       "columns": {
         "id": "ID",
@@ -230,8 +230,8 @@
         "zentaoBranchHint": "请先选择禅道项目集"
       },
       "syncHistory": {
-        "title": "{name} 的问题单采集记录",
-        "defaultTitle": "问题单采集记录",
+        "title": "{name} 的Bug采集记录",
+        "defaultTitle": "Bug采集记录",
         "logListTitle": "采集记录",
         "detailTitle": "采集详情",
         "viewDetail": "查看详情",
@@ -264,20 +264,20 @@
         "detail": {
           "action": "变更类型",
           "zentaoId": "禅道ID",
-          "issueTitle": "问题单标题",
+          "issueTitle": "Bug标题",
           "changedFields": "变更详情",
           "oldValue": "变更前",
           "newValue": "变更后",
-          "addedHint": "本次采集新增了该问题单",
-          "deletedHint": "本次采集删除了本地问题单记录",
+          "addedHint": "本次采集新增了该Bug",
+          "deletedHint": "本次采集删除了本地Bug记录",
           "emptyValue": "空"
         }
       },
       "messages": {
         "loadProductsFailed": "获取禅道产品列表失败，请检查禅道配置",
         "loadBranchesFailed": "获取禅道分支列表失败",
-        "syncDisabled": "该项目未绑定禅道项目集，无法同步问题单",
-        "syncSuccess": "问题单同步完成，共同步 {count} 条",
+        "syncDisabled": "该项目未绑定禅道项目集，无法同步Bug",
+        "syncSuccess": "Bug同步完成，共同步 {count} 条",
         "syncTriggered": "同步任务已触发，请在采集记录中查看进度"
       }
     }
@@ -320,12 +320,12 @@
     "detail": {
       "action": "变更类型",
       "zentaoId": "禅道ID",
-      "issueTitle": "问题单标题",
+      "issueTitle": "Bug标题",
       "changedFields": "变更详情",
       "oldValue": "变更前",
       "newValue": "变更后",
-      "addedHint": "本次采集新增了该问题单",
-      "deletedHint": "本次采集删除了本地问题单记录",
+      "addedHint": "本次采集新增了该Bug",
+      "deletedHint": "本次采集删除了本地Bug记录",
       "emptyValue": "空"
     },
     "viewDetail": "查看详情",
@@ -491,7 +491,7 @@
       "columns": {
         "id": "ID",
         "title": "标题",
-        "issue": "关联问题单",
+        "issue": "关联Bug",
         "status": "状态",
         "reviewer": "审核人",
         "createdAt": "创建时间",
@@ -500,7 +500,7 @@
     },
     "detail": {
       "title": "Review 详情",
-      "issue": "关联问题单",
+      "issue": "关联Bug",
       "testCases": "测试用例",
       "precondition": "前置条件",
       "steps": "测试步骤",
@@ -541,7 +541,7 @@
       "statusPlaceholder": "任务状态",
       "columns": {
         "id": "ID",
-        "issue": "关联问题单",
+        "issue": "关联Bug",
         "workflow": "Workflow",
         "status": "状态",
         "retryCount": "重试",
@@ -596,8 +596,8 @@
   },
   "testCase": {
     "list": {
-      "title": "测试用例管理",
-      "searchPlaceholder": "搜索问题单标题",
+      "title": "Bug回归用例",
+      "searchPlaceholder": "搜索Bug标题",
       "statusPlaceholder": "任务状态",
       "edit": "修改测试用例",
       "regenerate": "重新生成",
@@ -612,25 +612,25 @@
       "messages": {
         "changeNoteRequired": "请填写修改说明",
         "updateSuccess": "修改成功",
-        "regenerateConfirm": "确定要重新生成测试用例吗？这将覆盖当前问题单的测试用例。",
+        "regenerateConfirm": "确定要重新生成测试用例吗？这将覆盖当前Bug的测试用例。",
         "regenerateSuccess": "已触发重新生成，请稍候查看结果"
       },
       "columns": {
         "id": "ID",
-        "issue": "问题单标题",
-        "issueId": "问题单ID",
+        "issue": "Bug标题",
+        "issueId": "BugID",
         "taskStatus": "任务状态",
         "updatedAt": "更新时间",
         "action": "操作"
       }
     },
     "detail": {
-      "title": "测试用例编辑",
-      "issueInfo": "问题单信息",
+      "title": "Bug回归用例编辑",
+      "issueInfo": "Bug信息",
       "reviewTitle": "审核处理",
       "taskId": "任务ID",
-      "issueTitle": "问题单标题",
-      "issueId": "问题单ID",
+      "issueTitle": "Bug标题",
+      "issueId": "BugID",
       "selfTestReportTitle": "自我测试报告",
       "selfTestNoReport": "暂无自我测试报告",
       "selfTestNoSummary": "未提供自测结论",
@@ -640,7 +640,7 @@
       "selfTestPass": "通过",
       "selfTestFail": "失败",
       "selfTestUnknown": "未知",
-      "caseGroupTitle": "测试用例",
+      "caseGroupTitle": "回归用例",
       "scriptGroupTitle": "测试脚本",
       "scriptContent": "脚本内容",
       "caseTitle": "用例标题",
@@ -651,7 +651,7 @@
       "changeNotePlaceholder": "请填写本次修改原因",
       "changeNoteRequired": "请填写修改说明",
       "stepRequired": "请至少保留一条测试步骤",
-      "saveSuccess": "测试用例保存成功",
+      "saveSuccess": "回归用例保存成功",
       "columns": {
         "step": "测试步骤",
         "expected": "预期结果"
@@ -906,7 +906,7 @@
         "finalizeTask": "更新任务状态并推进 Review"
       },
       "nodeDescriptions": {
-        "prepareContext": "对应 gentest_workflow.go 中的 prepare_context 节点，负责读取任务、问题单、工作流、Agent 与运行时配置，并把任务状态切为 running。",
+        "prepareContext": "对应 gentest_workflow.go 中的 prepare_context 节点，负责读取任务、Bug、工作流、Agent 与运行时配置，并把任务状态切为 running。",
         "mcpPreflight": "对应 mcp_preflight 节点，负责识别 Agent 绑定的 MCP Server，探测是否有 Chrome MCP，并把能力摘要注入到后续运行上下文。",
         "prepareWorkspace": "对应工作区准备阶段，负责创建运行工作目录、同步仓库上下文并写入控制文件，为后续 Eino runtime 执行提供稳定输入。",
         "generateAssets": "对应 generate_assets 节点，Eino runtime 会在这里完成仓库探索、Prompt 执行、工具调用、测试文档/脚本写入和结果文件生成。",

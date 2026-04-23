@@ -42,12 +42,12 @@
     "menu": {
       "dashboard": "Dashboard",
       "projects": "Projects",
-      "issues": "Issues",
+      "issues": "Bugs",
       "agents": "Agents",
       "workflows": "Workflows",
       "reviews": "Reviews",
       "testTasks": "Test Tasks",
-      "testCases": "Test Cases",
+      "testCases": "Bug Regression",
       "executions": "Executions",
       "users": "Users",
       "settings": "System Management",
@@ -82,7 +82,7 @@
     },
     "quickActions": {
       "title": "Quick Actions",
-      "issues": "View Issues",
+      "issues": "View Bugs",
       "reviews": "Review Reviews",
       "testTasks": "Test Tasks"
     },
@@ -101,7 +101,7 @@
       "empty": "No data"
     },
     "issueSync": {
-      "title": "Project Issue Sync Status",
+      "title": "Project Bug Sync Status",
       "empty": "No sync records",
       "lastSyncCounts": "Last sync issue counts",
       "added": "Added",
@@ -120,7 +120,7 @@
   },
   "issue": {
     "list": {
-      "title": "Issue List",
+      "title": "Bug List",
       "search": "Search title",
       "zentaoStatus": "Zentao Status",
       "testStatus": "Test Status",
@@ -128,7 +128,7 @@
       "branch": "Branch",
       "sync": "Sync Zentao",
       "syncModal": {
-        "title": "Sync Zentao Issues",
+        "title": "Sync Zentao Bugs",
         "selectProject": "Select Project",
         "fullSync": "Full Sync"
       },
@@ -157,13 +157,13 @@
         "viewTask": "View Run"
       },
       "detailModal": {
-        "title": "Issue Detail",
+        "title": "Bug Detail",
         "openInZentao": "Open in Zentao",
         "assignee": "Assignee",
         "reporter": "Reporter",
         "branch": "Branch",
         "updatedAt": "Last Synced At",
-        "description": "Issue Description",
+        "description": "Bug Description",
         "noDescription": "No description"
       },
       "messages": {
@@ -200,7 +200,7 @@
       "searchPlaceholder": "Search project name",
       "create": "Create Project",
       "edit": "Edit Project",
-      "syncIssues": "Sync Issues",
+      "syncIssues": "Sync Bugs",
       "viewSyncLogs": "Sync History",
       "columns": {
         "id": "ID",
@@ -230,8 +230,8 @@
         "zentaoBranchHint": "Please select a Zentao project first"
       },
       "syncHistory": {
-        "title": "Issue Sync History for {name}",
-        "defaultTitle": "Issue Sync History",
+        "title": "Bug Sync History for {name}",
+        "defaultTitle": "Bug Sync History",
         "logListTitle": "Sync Records",
         "detailTitle": "Sync Details",
         "viewDetail": "View Details",
@@ -264,7 +264,7 @@
         "detail": {
           "action": "Change Type",
           "zentaoId": "Zentao ID",
-          "issueTitle": "Issue Title",
+          "issueTitle": "Bug Title",
           "changedFields": "Change Details",
           "oldValue": "Before",
           "newValue": "After",
@@ -277,7 +277,7 @@
         "loadProductsFailed": "Failed to load Zentao products. Please check the Zentao settings.",
         "loadBranchesFailed": "Failed to load Zentao branches",
         "syncDisabled": "This project is not bound to a Zentao project and cannot sync issues.",
-        "syncSuccess": "Issue sync completed. {count} issues synced.",
+        "syncSuccess": "Bug sync completed. {count} bugs synced.",
         "syncTriggered": "Sync task triggered. Check sync history for progress."
       }
     }
@@ -320,7 +320,7 @@
     "detail": {
       "action": "Change Type",
       "zentaoId": "Zentao ID",
-      "issueTitle": "Issue Title",
+      "issueTitle": "Bug Title",
       "changedFields": "Change Details",
       "oldValue": "Before",
       "newValue": "After",
@@ -491,7 +491,7 @@
       "columns": {
         "id": "ID",
         "title": "Title",
-        "issue": "Related Issue",
+        "issue": "Related Bug",
         "status": "Status",
         "reviewer": "Reviewer",
         "createdAt": "Created At",
@@ -500,7 +500,7 @@
     },
     "detail": {
       "title": "Review Detail",
-      "issue": "Related Issue",
+      "issue": "Related Bug",
       "testCases": "Test Cases",
       "precondition": "Precondition",
       "steps": "Steps",
@@ -541,7 +541,7 @@
       "statusPlaceholder": "Task status",
       "columns": {
         "id": "ID",
-        "issue": "Related Issue",
+        "issue": "Related Bug",
         "workflow": "Workflow",
         "status": "Status",
         "retryCount": "Retries",
@@ -596,7 +596,7 @@
   },
   "testCase": {
     "list": {
-      "title": "Test Cases",
+      "title": "Bug Regression Cases",
       "searchPlaceholder": "Search issue title",
       "statusPlaceholder": "Task status",
       "edit": "Edit Test Case",
@@ -617,20 +617,20 @@
       },
       "columns": {
         "id": "ID",
-        "issue": "Issue Title",
-        "issueId": "Issue ID",
+        "issue": "Bug Title",
+        "issueId": "Bug ID",
         "taskStatus": "Task Status",
         "updatedAt": "Updated At",
         "action": "Action"
       }
     },
     "detail": {
-      "title": "Edit Test Cases",
-      "issueInfo": "Issue Information",
+      "title": "Edit Bug Regression Cases",
+      "issueInfo": "Bug Information",
       "reviewTitle": "Review Actions",
       "taskId": "Task ID",
-      "issueTitle": "Issue Title",
-      "issueId": "Issue ID",
+      "issueTitle": "Bug Title",
+      "issueId": "Bug ID",
       "selfTestReportTitle": "Self-test Report",
       "selfTestNoReport": "No self-test report",
       "selfTestNoSummary": "No self-test summary provided",
@@ -640,7 +640,7 @@
       "selfTestPass": "Passed",
       "selfTestFail": "Failed",
       "selfTestUnknown": "Unknown",
-      "caseGroupTitle": "Test Cases",
+      "caseGroupTitle": "Regression Cases",
       "scriptGroupTitle": "Test Scripts",
       "scriptContent": "Script Content",
       "caseTitle": "Case Title",

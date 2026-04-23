@@ -155,7 +155,7 @@ export interface ProjectIssueSyncDetail {
   created_at: string
 }
 
-// ====== 问题单 ======
+// ====== Bug ======
 export interface Issue {
   id: number
   zentao_id: number

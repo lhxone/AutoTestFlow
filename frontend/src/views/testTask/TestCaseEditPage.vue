@@ -46,105 +46,89 @@
             <span v-else>-</span>
           </a-descriptions-item>
         </a-descriptions>
+      </a-card>
 
-        <a-card size="small" :title="t('testCase.detail.playwrightReport')">
-          <template v-if="playwrightReport">
-            <a-tag :color="frameworkTagColor(playwrightReport.passed)">{{ frameworkStatusLabel(playwrightReport.passed) }}</a-tag>
-            <div v-if="playwrightReport.report_path" style="color:#8c8c8c; font-size:12px; margin-top: 6px; word-break: break-all">
-              {{ playwrightReport.report_path }}
-            </div>
-            <p v-if="playwrightReport.summary" style="margin: 8px 0">{{ playwrightReport.summary }}</p>
-            <ul v-if="frameworkChecks().length" style="margin: 0; padding-left: 18px">
-              <li v-for="(item, index) in frameworkChecks()" :key="`pw-${index}`">{{ item }}</li>
-            </ul>
+      <a-collapse :defaultActiveKey="['cases', 'scripts']" style="margin-top: 16px">
+        <a-collapse-panel key="cases" :header="t('testCase.detail.caseGroupTitle')">
+          <template v-if="editableCases.length">
+            <a-collapse v-model:activeKey="activeCasePanelKeys">
+              <a-collapse-panel
+                v-for="editableCase in editableCases"
+                :key="editableCase.id"
+                :header="`[${translateTestCaseCategory(t, editableCase.category)}] ${editableCase.title}`"
+              >
+                <a-form layout="vertical">
+                  <a-row :gutter="16">
+                    <a-col :span="24">
+                      <a-form-item :label="t('testCase.detail.caseTitle')">
+                        <a-input v-model:value="editableCase.title" :disabled="!canIntervene" />
+                      </a-form-item>
+                    </a-col>
+                  </a-row>
+
+                  <a-row :gutter="16">
+                    <a-col :span="16">
+                      <a-form-item :label="t('testCase.detail.precondition')">
+                        <a-textarea v-model:value="editableCase.precondition" :rows="3" :disabled="!canIntervene" />
+                      </a-form-item>
+                    </a-col>
+                    <a-col :span="8">
+                      <a-form-item :label="t('review.detail.selfTestResult')">
+                        <a-tag :color="editableCase.self_test_result === 'pass' ? 'green' : editableCase.self_test_result === 'fail' ? 'red' : 'default'">
+                          {{ translateSelfTestResult(t, editableCase.self_test_result) }}
+                        </a-tag>
+                      </a-form-item>
+                      <a-form-item :label="t('review.detail.source')">
+                        <a-tag :color="editableCase.source === 'ai' ? 'blue' : 'orange'">
+                          {{ translateCaseSource(t, editableCase.source) }}
+                        </a-tag>
+                      </a-form-item>
+                    </a-col>
+                  </a-row>
+
+                  <a-form-item :label="t('testCase.detail.stepTableTitle')">
+                    <a-table :dataSource="editableCase.stepRows" :columns="stepColumns" :pagination="false" size="small" rowKey="key">
+                      <template #bodyCell="{ column, record }">
+                        <template v-if="column.key === 'step'">
+                          <a-textarea v-model:value="record.step" :rows="2" :disabled="!canIntervene" />
+                        </template>
+                        <template v-if="column.key === 'expected'">
+                          <a-textarea v-model:value="record.expected" :rows="2" :disabled="!canIntervene" />
+                        </template>
+                        <template v-if="column.key === 'action'">
+                          <a-button type="link" danger size="small" @click="removeStepRow(editableCase.id, record.key)" :disabled="!canIntervene">
+                            {{ t('common.delete') }}
+                          </a-button>
+                        </template>
+                      </template>
+                    </a-table>
+                    <a-button type="dashed" block style="margin-top: 12px" @click="appendStepRow(editableCase.id)" :disabled="!canIntervene">
+                      {{ t('testCase.detail.addStep') }}
+                    </a-button>
+                  </a-form-item>
+
+                  <a-form-item :label="t('testCase.detail.changeNote')" required v-if="canIntervene">
+                    <a-input
+                      v-model:value="editableCase.changeNote"
+                      :placeholder="t('testCase.detail.changeNotePlaceholder')"
+                    />
+                  </a-form-item>
+
+                  <a-space v-if="canIntervene">
+                    <a-button type="primary" :loading="savingCaseId === editableCase.id" @click="saveCase(editableCase)">
+                      {{ t('common.save') }}
+                    </a-button>
+                  </a-space>
+                </a-form>
+              </a-collapse-panel>
+            </a-collapse>
           </template>
-          <a-empty v-else :description="t('testCase.detail.selfTestNoFrameworkReport')" />
-        </a-card>
-      </a-card>
+          <a-empty v-else :description="t('review.detail.noTestCases')" />
+        </a-collapse-panel>
 
-      <a-card :title="t('testCase.detail.caseGroupTitle')" size="small">
-        <a-collapse v-if="editableCases.length" v-model:activeKey="activeCaseKeys">
-          <a-collapse-panel
-            v-for="editableCase in editableCases"
-            :key="editableCase.id"
-            :header="`[${translateTestCaseCategory(t, editableCase.category)}] ${editableCase.title}`"
-          >
-            <a-form layout="vertical">
-              <a-row :gutter="16">
-                <a-col :span="24">
-                  <a-form-item :label="t('testCase.detail.caseTitle')">
-                    <a-input v-model:value="editableCase.title" :disabled="!canIntervene" />
-                  </a-form-item>
-                </a-col>
-              </a-row>
-
-              <a-row :gutter="16">
-                <a-col :span="16">
-                  <a-form-item :label="t('testCase.detail.precondition')">
-                    <a-textarea v-model:value="editableCase.precondition" :rows="3" :disabled="!canIntervene" />
-                  </a-form-item>
-                </a-col>
-                <a-col :span="8">
-                  <a-form-item :label="t('review.detail.selfTestResult')">
-                    <a-tag :color="editableCase.self_test_result === 'pass' ? 'green' : editableCase.self_test_result === 'fail' ? 'red' : 'default'">
-                      {{ translateSelfTestResult(t, editableCase.self_test_result) }}
-                    </a-tag>
-                  </a-form-item>
-                  <a-form-item :label="t('review.detail.source')">
-                    <a-tag :color="editableCase.source === 'ai' ? 'blue' : 'orange'">
-                      {{ translateCaseSource(t, editableCase.source) }}
-                    </a-tag>
-                  </a-form-item>
-                </a-col>
-              </a-row>
-
-              <a-form-item :label="t('testCase.detail.stepTableTitle')">
-                <a-table :dataSource="editableCase.stepRows" :columns="stepColumns" :pagination="false" size="small" rowKey="key">
-                  <template #bodyCell="{ column, record }">
-                    <template v-if="column.key === 'step'">
-                      <a-textarea v-model:value="record.step" :rows="2" :disabled="!canIntervene" />
-                    </template>
-                    <template v-if="column.key === 'expected'">
-                      <a-textarea v-model:value="record.expected" :rows="2" :disabled="!canIntervene" />
-                    </template>
-                    <template v-if="column.key === 'action'">
-                      <a-button type="link" danger size="small" @click="removeStepRow(editableCase.id, record.key)" :disabled="!canIntervene">
-                        {{ t('common.delete') }}
-                      </a-button>
-                    </template>
-                  </template>
-                </a-table>
-                <a-button type="dashed" block style="margin-top: 12px" @click="appendStepRow(editableCase.id)" :disabled="!canIntervene">
-                  {{ t('testCase.detail.addStep') }}
-                </a-button>
-              </a-form-item>
-
-              <a-form-item :label="t('testCase.detail.changeNote')" required v-if="canIntervene">
-                <a-input
-                  v-model:value="editableCase.changeNote"
-                  :placeholder="t('testCase.detail.changeNotePlaceholder')"
-                />
-              </a-form-item>
-
-              <a-space v-if="canIntervene">
-                <a-button type="primary" :loading="savingCaseId === editableCase.id" @click="saveCase(editableCase)">
-                  {{ t('common.save') }}
-                </a-button>
-              </a-space>
-            </a-form>
-          </a-collapse-panel>
-        </a-collapse>
-        <a-empty v-else :description="t('review.detail.noTestCases')" />
-      </a-card>
-
-      <a-card :title="t('testCase.detail.scriptGroupTitle')" size="small" style="margin-top: 16px">
-        <a-collapse v-if="editableScripts.length">
-          <a-collapse-panel
-            v-for="editableScript in editableScripts"
-            :key="editableScript.id"
-            :header="`${editableScript.file_path} (${editableScript.language})`"
-          >
-            <a-form layout="vertical">
+        <a-collapse-panel key="scripts" :header="t('testCase.detail.scriptGroupTitle')">
+          <template v-if="editableScripts.length">
+            <a-form v-for="editableScript in editableScripts" :key="editableScript.id" layout="vertical" style="margin-bottom: 16px">
               <a-form-item :label="t('testCase.detail.scriptContent')">
                 <CodeEditor
                   v-model="editableScript.file_content"
@@ -163,10 +147,26 @@
                 {{ t('common.save') }}
               </a-button>
             </a-form>
-          </a-collapse-panel>
-        </a-collapse>
-        <a-empty v-else :description="t('review.detail.noTestScripts')" />
-      </a-card>
+          </template>
+          <a-empty v-else :description="t('review.detail.noTestScripts')" />
+        </a-collapse-panel>
+
+        <a-collapse-panel key="playwright" :header="t('testCase.detail.playwrightReport')">
+          <template v-if="playwrightReportUrl">
+            <iframe
+              :key="playwrightReportFrameKey"
+              class="playwright-report-frame"
+              :src="playwrightReportUrl"
+              sandbox="allow-scripts allow-same-origin allow-modals allow-popups allow-forms allow-downloads"
+              @load="playwrightReportLoading = false"
+            />
+          </template>
+          <div v-else-if="playwrightReportLoading" class="report-loading">
+            <a-spin :tip="t('common.loading')" />
+          </div>
+          <a-empty v-else :description="t('taskRun.selfTest.noReportContent')" />
+        </a-collapse-panel>
+      </a-collapse>
 
       <a-card :title="t('testCase.detail.reviewTitle')" size="small" style="margin-top: 16px" v-if="canReviewList && reviewInfo">
         <a-descriptions :column="1" bordered size="small" style="margin-bottom: 12px">
@@ -215,10 +215,10 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
 import CodeEditor from '@/components/CodeEditor.vue'
-import { getTestCases, getTestScripts, getTestTaskById, updateTestCase, updateTestScript } from '@/api/testTask'
+import { getTestCases, getTestScripts, getTestTaskById, getSelfTestReport, getWorkspaceFileUrl, updateTestCase, updateTestScript } from '@/api/testTask'
 import { doReview, getReviewDetail, getReviewList } from '@/api/review'
 import { useUserStore } from '@/stores/user'
-import type { ReviewDetail, ReviewTask, SelfTestFrameworkReport, SelfTestReport, TestCaseVO, TestScriptVO, TestTask } from '@/types'
+import type { ReviewDetail, ReviewTask, SelfTestReport, TestCaseVO, TestScriptVO, TestTask } from '@/types'
 import { getReviewStatusMap, translateCaseSource, translateSelfTestResult, translateTaskStatus, translateTestCaseCategory } from '@/types'
 import { useI18n } from 'vue-i18n'
 
@@ -250,9 +250,13 @@ const task = ref<TestTask | null>(null)
 const editableCases = ref<EditableCase[]>([])
 const editableScripts = ref<EditableScript[]>([])
 const activeCaseKeys = ref<Array<number | string>>([])
+const activeCasePanelKeys = ref<(number | string)[]>([])
 const reviewInfo = ref<ReviewTask | null>(null)
 const reviewDetail = ref<ReviewDetail | null>(null)
 const reviewComment = ref('')
+const playwrightReportUrl = ref('')
+const playwrightReportLoading = ref(false)
+const playwrightReportFrameKey = ref(0)
 const canIntervene = computed(() => userStore.hasPermission('test:intervene'))
 const canReviewList = computed(() => userStore.hasPermission('review:list'))
 const canReviewApprove = computed(() => userStore.hasPermission('review:approve'))
@@ -268,8 +272,6 @@ const selfTestChecks = computed<string[]>(() => {
   }
   return selfTestReport.value.checks
 })
-const playwrightReport = computed<SelfTestFrameworkReport | null>(() => frameworkReport())
-
 const pageTitle = computed(() => task.value?.issue?.title || t('testCase.detail.title'))
 const stepColumns = computed(() => [
   { title: t('testCase.detail.columns.step'), key: 'step' },
@@ -303,6 +305,7 @@ async function fetchDetail() {
       changeNote: '',
     }))
     syncActiveCase()
+    activeCasePanelKeys.value = editableCases.value.map(c => c.id)
     if (scriptsRes.status === 'fulfilled') {
       editableScripts.value = (scriptsRes.value.data.data || []).map((item: TestScriptVO) => ({
         ...item,
@@ -312,10 +315,29 @@ async function fetchDetail() {
       editableScripts.value = []
     }
     await fetchReviewData()
+    await loadPlaywrightReport()
   } catch {
     message.error(t('common.requestFailed'))
   } finally {
     loading.value = false
+  }
+}
+
+async function loadPlaywrightReport() {
+  playwrightReportUrl.value = ''
+  playwrightReportLoading.value = true
+  try {
+    const res = await getSelfTestReport(taskId, 'playwright')
+    const data = res.data.data || {}
+    if (data.content_type?.includes('html') && data.report_path) {
+      playwrightReportUrl.value = getWorkspaceFileUrl(taskId, data.report_path)
+      playwrightReportFrameKey.value += 1
+    } else {
+      playwrightReportLoading.value = false
+    }
+  } catch (e) {
+    console.error('loadPlaywrightReport failed:', e)
+    playwrightReportLoading.value = false
   }
 }
 
@@ -472,34 +494,6 @@ function scriptEditorLanguage(script: EditableScript) {
   return script.language || 'typescript'
 }
 
-function frameworkReport(): SelfTestFrameworkReport | null {
-  const report = selfTestReport.value?.['playwright']
-  if (!report || typeof report !== 'object') return null
-  return report as SelfTestFrameworkReport
-}
-
-function frameworkChecks(): string[] {
-  const report = frameworkReport()
-  if (report?.checks && Array.isArray(report.checks) && report.checks.length > 0) {
-    return report.checks
-  }
-
-  const allChecks = selfTestChecks.value
-  return allChecks.filter((item) => /playwright/i.test(item))
-}
-
-function frameworkTagColor(passed: boolean | undefined) {
-  if (passed === true) return 'green'
-  if (passed === false) return 'red'
-  return 'default'
-}
-
-function frameworkStatusLabel(passed: boolean | undefined) {
-  if (passed === true) return t('testCase.detail.selfTestPass')
-  if (passed === false) return t('testCase.detail.selfTestFail')
-  return t('testCase.detail.selfTestUnknown')
-}
-
 function reviewActionLabel(action: string) {
   const map: Record<string, string> = {
     approve: t('review.detail.actions.approve'),
@@ -526,3 +520,23 @@ async function submitReview(action: string) {
   }
 }
 </script>
+
+<style scoped>
+.playwright-report-frame {
+  width: 100%;
+  height: 70vh;
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.report-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 180px;
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+  background: #fff;
+}
+</style>

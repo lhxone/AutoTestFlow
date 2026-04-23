@@ -149,7 +149,7 @@ const form = reactive({
   default_recipients: '',
   review_result_subject_template: '[AutoTestFlow] Review结果 - {{title}}',
   review_result_body_template:
-    '<h2>Review结果通知</h2>\n<p><strong>标题:</strong> {{title}}</p>\n<p><strong>状态:</strong> {{status}}</p>\n<p><strong>审核意见:</strong> {{review_note}}</p>\n<p><strong>Git推送:</strong> {{git_summary}}</p>\n<p><strong>问题单:</strong> {{issue_title}}</p>\n<p><strong>项目:</strong> {{project_name}}</p>',
+    '<h2>Review结果通知</h2>\n<p><strong>标题:</strong> {{title}}</p>\n<p><strong>状态:</strong> {{status}}</p>\n<p><strong>审核意见:</strong> {{review_note}}</p>\n<p><strong>Git推送:</strong> {{git_summary}}</p>\n<p><strong>Bug:</strong> {{issue_title}}</p>\n<p><strong>项目:</strong> {{project_name}}</p>',
   test_report_subject_template: '[AutoTestFlow] 测试报告 - {{title}}',
   test_report_body_template:
     '<h2>测试报告: {{title}}</h2>\n<p><strong>总用例数:</strong> {{total_cases}}</p>\n<p><strong>通过:</strong> {{passed_cases}} | <strong>失败:</strong> {{failed_cases}}</p>\n<p><strong>通过率:</strong> {{pass_rate}}%</p>\n<p><strong>是否经过人工介入:</strong> {{has_intervention}}</p>\n<hr>\n<p>{{summary}}</p>\n<p><a href="{{report_url}}">查看完整报告</a></p>',
