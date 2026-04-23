@@ -39,3 +39,4 @@ mysql_data/
 .codex/
 docs/zentao-bug-ticket-spec.md
 tracklist.txt
+frontend/vite.config.ts

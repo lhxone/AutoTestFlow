@@ -95,8 +95,20 @@
                     <li v-for="(item, idx) in getFrameworkChecks()" :key="`playwright-${idx}`">{{ item }}</li>
                   </ul>
                 </template>
-                <a-empty v-if="!playwrightReport && !playwrightReportUrl" :description="t('taskRun.selfTest.noFrameworkReport')" />
-                <iframe v-if="playwrightReportUrl" class="report-frame" :src="playwrightReportUrl" sandbox="allow-scripts allow-same-origin allow-modals allow-popups allow-forms allow-downloads" />
+                <div v-if="playwrightReportLoading && !playwrightReportUrl" class="report-loading">
+                  <a-spin :tip="t('common.loading')" />
+                </div>
+                <a-empty v-else-if="!playwrightReport && !playwrightReportUrl" :description="t('taskRun.selfTest.noFrameworkReport')" />
+                <a-spin v-else :spinning="playwrightReportLoading" :tip="t('common.loading')" wrapperClassName="report-spin">
+                  <iframe
+                    v-if="playwrightReportUrl"
+                    :key="playwrightReportFrameKey"
+                    class="report-frame"
+                    :src="playwrightReportUrl"
+                    sandbox="allow-scripts allow-same-origin allow-modals allow-popups allow-forms allow-downloads"
+                    @load="playwrightReportLoading = false"
+                  />
+                </a-spin>
               </a-card>
             </div>
           </a-tab-pane>
@@ -157,6 +169,8 @@ const resultsVisible = ref(false)
 const scriptModal = ref(false)
 const viewingScript = ref<TestScriptVO | null>(null)
 const playwrightReportUrl = ref('')
+const playwrightReportLoading = ref(false)
+const playwrightReportFrameKey = ref(0)
 const canEditCase = computed(() => userStore.hasPermission('test:intervene'))
 const selfTestReport = computed<SelfTestReport | null>(() => {
   const report = taskInfo.value?.ai_output?.self_test
@@ -383,14 +397,19 @@ async function loadResults(id: number) {
 
 async function loadPlaywrightHtml(id: number) {
   playwrightReportUrl.value = ''
+  playwrightReportLoading.value = true
   try {
     const res = await getSelfTestReport(id, 'playwright')
     const data = res.data.data || {}
     if (data.content_type?.includes('html') && data.report_path) {
       playwrightReportUrl.value = getWorkspaceFileUrl(id, data.report_path)
+      playwrightReportFrameKey.value += 1
+    } else {
+      playwrightReportLoading.value = false
     }
   } catch (e) {
     console.error('loadPlaywrightHtml failed:', e)
+    playwrightReportLoading.value = false
   }
 }
 
@@ -491,6 +510,20 @@ function viewScript(script: TestScriptVO) {
   border: 1px solid #f0f0f0;
   border-radius: 6px;
   background: #fff;
+}
+
+.report-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 180px;
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.report-spin :deep(.ant-spin-container) {
+  min-height: 70vh;
 }
 
 .self-test-report {
