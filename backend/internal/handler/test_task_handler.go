@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -425,12 +427,157 @@ func (h *TestTaskHandler) GetWorkspaceFile(c *gin.Context) {
 	}
 
 	contentType := detectReportContentType(cleanTarget, data)
+	if strings.HasPrefix(filepath.ToSlash(relativePath), "playwright-report/") {
+		if token := currentAccessToken(c); token != "" {
+			switch {
+			case contentType == "text/html":
+				html := rewritePlaywrightReportHTML(id, normalizeReportRelativePath(relativePath), string(data), token)
+				data = []byte(html)
+			case contentType == "application/json":
+				jsonText := rewritePlaywrightReportJSON(id, normalizeReportRelativePath(relativePath), string(data), token)
+				data = []byte(jsonText)
+			}
+		}
+	}
+
 	c.Header("Cache-Control", "public, max-age=3600")
 	c.Data(http.StatusOK, contentType, data)
 }
 
 // assetMatcher 匹配 HTML 中的相对资源引用（src 和 href 属性）
 var assetMatcher = regexp.MustCompile(`(src|href)=["']((?:data|trace|resources|blob)[^"']*?\.(?:webm|png|jpg|jpeg|gif|svg|json|trace|css))["']`)
+var headOpenMatcher = regexp.MustCompile(`(?i)<head[^>]*>`)
+var htmlURLAttrMatcher = regexp.MustCompile(`(src|href)=["']([^"']+)["']`)
+var jsonReportAssetMatcher = regexp.MustCompile(`"([^"\\]*(?:\.webm|\.png|\.jpg|\.jpeg|\.gif|\.svg|\.json|\.zip|\.trace)(?:\?[^"\\]*)?(?:#[^"\\]*)?)"`)
+
+func currentAccessToken(c *gin.Context) string {
+	if token := strings.TrimSpace(c.Query("access_token")); token != "" {
+		return token
+	}
+	authHeader := strings.TrimSpace(c.GetHeader(middleware.HeaderAuthorization))
+	if authHeader == "" {
+		return ""
+	}
+	parts := strings.SplitN(authHeader, " ", 2)
+	if len(parts) != 2 || parts[0] != "Bearer" {
+		return ""
+	}
+	return strings.TrimSpace(parts[1])
+}
+
+func rewritePlaywrightReportHTML(taskID uint64, relativePath, html, token string) string {
+	html = htmlURLAttrMatcher.ReplaceAllStringFunc(html, func(match string) string {
+		submatches := htmlURLAttrMatcher.FindStringSubmatch(match)
+		if len(submatches) < 3 {
+			return match
+		}
+		rewritten := appendReportAccessToken(taskID, relativePath, submatches[2], token)
+		if rewritten == submatches[2] {
+			return match
+		}
+		return fmt.Sprintf(`%s="%s"`, submatches[1], rewritten)
+	})
+
+	script := buildPlaywrightReportAuthScript(taskID, token)
+	headOpen := headOpenMatcher.FindString(html)
+	if headOpen != "" {
+		return strings.Replace(html, headOpen, headOpen+script, 1)
+	}
+	return script + html
+}
+
+func rewritePlaywrightReportJSON(taskID uint64, relativePath, content, token string) string {
+	return jsonReportAssetMatcher.ReplaceAllStringFunc(content, func(match string) string {
+		value := strings.Trim(match, `"`)
+		rewritten := appendReportAccessToken(taskID, relativePath, value, token)
+		if rewritten == value {
+			return match
+		}
+		return strconv.Quote(rewritten)
+	})
+}
+
+func buildPlaywrightReportAuthScript(taskID uint64, token string) string {
+	workspacePrefix := fmt.Sprintf("/api/test-tasks/%d/workspace/", taskID)
+	return fmt.Sprintf(`<script>
+(function(){
+  var token = %s;
+  var workspacePrefix = %s;
+  function withToken(input) {
+    try {
+      var url = new URL(input, window.location.href);
+      if (url.origin === window.location.origin && url.pathname.indexOf(workspacePrefix) === 0 && !url.searchParams.has('access_token')) {
+        url.searchParams.set('access_token', token);
+      }
+      return url.href;
+    } catch (e) {
+      return input;
+    }
+  }
+  var nativeFetch = window.fetch;
+  if (nativeFetch) {
+    window.fetch = function(input, init) {
+      if (typeof input === 'string') {
+        input = withToken(input);
+      } else if (input && input.url) {
+        input = new Request(withToken(input.url), input);
+      }
+      return nativeFetch.call(this, input, init);
+    };
+  }
+  var nativeOpen = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function(method, url) {
+    arguments[1] = withToken(url);
+    return nativeOpen.apply(this, arguments);
+  };
+})();
+</script>`, strconv.Quote(token), strconv.Quote(workspacePrefix))
+}
+
+func appendReportAccessToken(taskID uint64, currentPath, rawPath, token string) string {
+	if token == "" || shouldSkipReportURL(rawPath) {
+		return rawPath
+	}
+	parsed, err := url.Parse(rawPath)
+	if err != nil {
+		return rawPath
+	}
+	if parsed.IsAbs() && parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return rawPath
+	}
+	if parsed.IsAbs() {
+		return rawPath
+	}
+
+	if strings.HasPrefix(parsed.Path, "/") {
+		prefix := fmt.Sprintf("/api/test-tasks/%d/workspace/", taskID)
+		if !strings.HasPrefix(parsed.Path, prefix) {
+			return rawPath
+		}
+	} else {
+		dir := pathpkg.Dir(pathpkg.Clean("/" + normalizeReportRelativePath(currentPath)))
+		parsed.Path = pathpkg.Join(fmt.Sprintf("/api/test-tasks/%d/workspace", taskID), dir, parsed.Path)
+	}
+
+	values := parsed.Query()
+	if values.Get("access_token") == "" {
+		values.Set("access_token", token)
+		parsed.RawQuery = values.Encode()
+	}
+	return parsed.String()
+}
+
+func shouldSkipReportURL(rawPath string) bool {
+	rawPath = strings.TrimSpace(rawPath)
+	if rawPath == "" || strings.HasPrefix(rawPath, "#") {
+		return true
+	}
+	lower := strings.ToLower(rawPath)
+	return strings.HasPrefix(lower, "data:") ||
+		strings.HasPrefix(lower, "blob:") ||
+		strings.HasPrefix(lower, "javascript:") ||
+		strings.HasPrefix(lower, "mailto:")
+}
 
 // embedReportAssets 将 Playwright 报告中的相对资源路径替换为 base64 data URI。
 func embedReportAssets(repoDir, html string) string {

@@ -95,8 +95,8 @@
                     <li v-for="(item, idx) in getFrameworkChecks()" :key="`playwright-${idx}`">{{ item }}</li>
                   </ul>
                 </template>
-                <a-empty v-if="!playwrightReport && !playwrightReportHtml" :description="t('taskRun.selfTest.noFrameworkReport')" />
-                <iframe v-if="playwrightReportHtml" class="report-frame" :srcdoc="playwrightReportHtml" sandbox="allow-scripts allow-same-origin allow-modals allow-popups allow-forms allow-downloads" />
+                <a-empty v-if="!playwrightReport && !playwrightReportUrl" :description="t('taskRun.selfTest.noFrameworkReport')" />
+                <iframe v-if="playwrightReportUrl" class="report-frame" :src="playwrightReportUrl" sandbox="allow-scripts allow-same-origin allow-modals allow-popups allow-forms allow-downloads" />
               </a-card>
             </div>
           </a-tab-pane>
@@ -126,6 +126,7 @@ import {
   getTestCases,
   getTestScripts,
   getTestTaskById,
+  getWorkspaceFileUrl,
 } from '@/api/testTask'
 import type { SelfTestFrameworkReport, SelfTestReport, TestCaseVO, TestScriptVO, TestTask, TestTaskEvent } from '@/types'
 import { translateSelfTestResult, translateTaskStatus, translateTestCaseCategory } from '@/types'
@@ -155,7 +156,7 @@ const testScripts = ref<TestScriptVO[]>([])
 const resultsVisible = ref(false)
 const scriptModal = ref(false)
 const viewingScript = ref<TestScriptVO | null>(null)
-const playwrightReportHtml = ref('')
+const playwrightReportUrl = ref('')
 const canEditCase = computed(() => userStore.hasPermission('test:intervene'))
 const selfTestReport = computed<SelfTestReport | null>(() => {
   const report = taskInfo.value?.ai_output?.self_test
@@ -381,49 +382,16 @@ async function loadResults(id: number) {
 }
 
 async function loadPlaywrightHtml(id: number) {
-  playwrightReportHtml.value = ''
+  playwrightReportUrl.value = ''
   try {
     const res = await getSelfTestReport(id, 'playwright')
     const data = res.data.data || {}
-    if (data.content_type?.includes('html') && data.content) {
-      const html = injectSandboxScript(data.content, id)
-      playwrightReportHtml.value = html
+    if (data.content_type?.includes('html') && data.report_path) {
+      playwrightReportUrl.value = getWorkspaceFileUrl(id, data.report_path)
     }
   } catch (e) {
     console.error('loadPlaywrightHtml failed:', e)
   }
-}
-
-function injectSandboxScript(html: string, _taskId: number): string {
-  const headClose = `<\x2fhead>`
-  const scriptTag = `<\x2fscript>`
-
-  // 拦截 Playwright SPA hash 路由，防止 srcdoc iframe 跳出
-  const script = `
-<script>
-(function(){
-  try{
-    var _ps=history.pushState.bind(history);
-    var _rs=history.replaceState.bind(history);
-    history.pushState=function(s,t,u){if(u){var h=parseHash(u);if(h){window.location.hash=h;u='';}_ps(null,t,u);}else{_ps(null,t,'');}};
-    history.replaceState=function(s,t,u){if(u){var h=parseHash(u);if(h){window.location.hash=h;u='';}_rs(null,t,u);}else{_rs(null,t,'');}};
-    function parseHash(u){try{var p=new URL(u,'http://x');return p.hash||p.search?'#'+(p.hash||p.search.slice(1)):null}catch(e){return null}}
-  }catch(e){}
-  document.addEventListener('click',function(e){
-    var a=e.target.closest('a');
-    if(!a)return;
-    var href=a.getAttribute('href');
-    if(href&&href.indexOf('#')===0){
-      e.preventDefault();
-      window.location.hash=href.slice(1);
-    }
-  },true);
-})();
-${scriptTag}`
-  if (html.includes(headClose)) {
-    return html.replace(headClose, `${script}${headClose}`)
-  }
-  return script + html
 }
 
 function closeEventSource() {

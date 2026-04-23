@@ -50,6 +50,14 @@ export function getSelfTestReport(taskId: number, framework: 'playwright' | 'mid
   return request.get(`/test-tasks/${taskId}/self-test-report`, { params: { framework } })
 }
 
+export function getWorkspaceFileUrl(taskId: number, filePath: string) {
+  const token = localStorage.getItem('access_token') || ''
+  const cleanPath = filePath.replace(/^\.?[\\/]+/, '')
+  const encodedPath = cleanPath.split(/[\\/]+/).filter(Boolean).map(encodeURIComponent).join('/')
+  const query = token ? `?access_token=${encodeURIComponent(token)}` : ''
+  return `/api/test-tasks/${taskId}/workspace/${encodedPath}${query}`
+}
+
 export interface CLIInteraction {
   id: number;
   task_id: number;
