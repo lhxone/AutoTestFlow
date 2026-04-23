@@ -69,7 +69,7 @@
               <a-alert
                 v-else
                 type="info"
-                :message="t('taskRun.selfTest.noReport')"
+                :message="taskInfo?.status === 'running' ? '任务运行中，自测报告将在任务完成后生成' : t('taskRun.selfTest.noReport')"
                 show-icon
               />
 
@@ -98,7 +98,7 @@
                 <div v-if="playwrightReportLoading && !playwrightReportUrl" class="report-loading">
                   <a-spin :tip="t('common.loading')" />
                 </div>
-                <a-empty v-else-if="!playwrightReport && !playwrightReportUrl" :description="t('taskRun.selfTest.noFrameworkReport')" />
+                <a-empty v-else-if="!playwrightReport && !playwrightReportUrl" :description="taskInfo?.status === 'running' ? '任务运行中，报告将在任务完成后生成' : t('taskRun.selfTest.noFrameworkReport')" />
                 <a-spin v-else :spinning="playwrightReportLoading" :tip="t('common.loading')" wrapperClassName="report-spin">
                   <iframe
                     v-if="playwrightReportUrl"
