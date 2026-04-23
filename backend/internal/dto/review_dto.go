@@ -12,7 +12,7 @@ type ReviewListQuery struct {
 
 // ReviewActionRequest Review审核操作请求
 type ReviewActionRequest struct {
-	Action  string `json:"action" binding:"required,oneof=approve reject request_changes comment"`
+	Action  string `json:"action" binding:"required,oneof=approve reject request_changes comment fail_regression"`
 	Comment string `json:"comment"`
 }
 
