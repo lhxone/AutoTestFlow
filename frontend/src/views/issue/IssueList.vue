@@ -447,7 +447,8 @@ function formatSeverity(severity: string) {
 }
 
 function canGenerateTest(issue: Issue) {
-  if (issue.test_status === 'error') {
+  // 审核驳回、异常状态允许重新生成
+  if (issue.test_status === 'review_rejected' || issue.test_status === 'error') {
     return issue.zentao_status === 'resolved'
   }
 

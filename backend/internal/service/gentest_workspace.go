@@ -159,13 +159,13 @@ func (s *GenTestWorkspaceService) prepareNodeModules(ctx context.Context, taskID
 				sharedRepoBaseDir := filepath.Join(sharedRepoDir, relPath)
 				sharedRepoNodeModulesPath := filepath.Join(sharedRepoBaseDir, "node_modules")
 				if s.isValidNodeModules(sharedRepoNodeModulesPath) {
-					s.publish(taskID, taskEventTypeLog, "node_modules_reuse_shared_repo", model.TaskStatusRunning, "复用共享仓库中的node_modules", map[string]any{
+					s.publish(taskID, taskEventTypeLog, "node_modules_reuse_shared_repo", model.TaskStatusRunning, "创建连接复用共享仓库中的node_modules", map[string]any{
 						"shared_repo_node_modules": sharedRepoNodeModulesPath,
 						"target_node_modules":      nodeModulesDir,
 						"package_json":             packageJSONPath,
 					})
-					if err := s.copyNodeModules(sharedRepoNodeModulesPath, nodeModulesDir); err != nil {
-						return fmt.Errorf("复制共享仓库node_modules失败: %w", err)
+					if err := s.linkNodeModules(sharedRepoNodeModulesPath, nodeModulesDir); err != nil {
+						return fmt.Errorf("创建共享仓库node_modules连接失败: %w", err)
 					}
 					return nil
 				}
@@ -174,13 +174,13 @@ func (s *GenTestWorkspaceService) prepareNodeModules(ctx context.Context, taskID
 
 		sharedNodeModulesPath := filepath.Join(sharedNodeModulesDir, filepath.Base(nodeModulesBaseDir))
 		if s.isValidNodeModules(sharedNodeModulesPath) {
-			s.publish(taskID, taskEventTypeLog, "node_modules_reuse", model.TaskStatusRunning, "复用共享node_modules", map[string]any{
+			s.publish(taskID, taskEventTypeLog, "node_modules_reuse", model.TaskStatusRunning, "创建连接复用共享node_modules", map[string]any{
 				"shared_node_modules": sharedNodeModulesPath,
 				"target_node_modules": nodeModulesDir,
 				"package_json":        packageJSONPath,
 			})
-			if err := s.copyNodeModules(sharedNodeModulesPath, nodeModulesDir); err != nil {
-				return fmt.Errorf("复制共享node_modules失败: %w", err)
+			if err := s.linkNodeModules(sharedNodeModulesPath, nodeModulesDir); err != nil {
+				return fmt.Errorf("创建共享node_modules连接失败: %w", err)
 			}
 			return nil
 		}
@@ -282,7 +282,7 @@ func (s *GenTestWorkspaceService) isValidNodeModules(dir string) bool {
 	return false
 }
 
-func (s *GenTestWorkspaceService) copyNodeModules(src, dst string) error {
+func (s *GenTestWorkspaceService) linkNodeModules(src, dst string) error {
 	srcInfo, err := os.Stat(src)
 	if err != nil {
 		return fmt.Errorf("源node_modules不存在: %w", err)
@@ -291,32 +291,24 @@ func (s *GenTestWorkspaceService) copyNodeModules(src, dst string) error {
 		return fmt.Errorf("源node_modules不是目录: %s", src)
 	}
 
+	// 清理目标路径（可能是目录或符号链接）
 	if err := os.RemoveAll(dst); err != nil {
 		return fmt.Errorf("清理目标node_modules失败: %w", err)
 	}
-	if err := os.MkdirAll(dst, 0o755); err != nil {
-		return fmt.Errorf("创建目标node_modules目录失败: %w", err)
-	}
 
+	// 创建符号链接
 	if runtime.GOOS == "windows" {
-		cmd := exec.Command("robocopy", src, dst, "/E", "/NFL", "/NDL", "/NJH", "/NJS", "/NC", "/NS", "/NP")
-		err := cmd.Run()
-		if err == nil {
-			return nil
+		// Windows 使用 junction（目录连接）
+		cmd := exec.Command("cmd", "/c", "mklink", "/J", dst, src)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("创建目录连接失败: %w, output: %s", err, string(output))
 		}
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			if code := exitErr.ExitCode(); code >= 0 && code < 8 {
-				return nil
-			}
-			return fmt.Errorf("robocopy 复制node_modules失败, exit_code=%d", exitErr.ExitCode())
-		}
-		return fmt.Errorf("执行robocopy失败: %w", err)
+		return nil
 	}
 
-	cmd := exec.Command("cp", "-a", filepath.Join(src, "."), dst)
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("执行cp复制node_modules失败: %w", err)
+	// Linux/macOS 使用符号链接
+	if err := os.Symlink(src, dst); err != nil {
+		return fmt.Errorf("创建符号链接失败: %w", err)
 	}
 	return nil
 }
