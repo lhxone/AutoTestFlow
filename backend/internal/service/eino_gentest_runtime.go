@@ -29,9 +29,22 @@ const (
 	defaultGenTestTurnLimit          = 1000
 	defaultGenTestToolResultMaxBytes = 12_000
 	defaultGenTestReadMaxBytes       = 64_000
+	chromeProfilePath                = "/tmp/auto-test-flow/chrome-profile"
 )
 
 var errStopRepoWalk = errors.New("stop repo walk")
+
+// cleanupChromeProfile 清理 Chrome MCP 占用的 profile 目录
+func cleanupChromeProfile(logger *zap.Logger) {
+	if _, err := os.Stat(chromeProfilePath); os.IsNotExist(err) {
+		return
+	}
+	if err := os.RemoveAll(chromeProfilePath); err != nil {
+		logger.Warn("清理 Chrome profile 目录失败", zap.String("path", chromeProfilePath), zap.Error(err))
+	} else {
+		logger.Info("已清理 Chrome profile 目录", zap.String("path", chromeProfilePath))
+	}
+}
 
 type EinoGenTestRuntime struct {
 	logger          *zap.Logger
@@ -116,6 +129,9 @@ func (r *EinoGenTestRuntime) Generate(
 	if err != nil {
 		return nil, err
 	}
+
+	// 清理 Chrome MCP 占用的 profile 目录
+	cleanupChromeProfile(r.logger)
 
 	workspace, err := r.workspace.Prepare(ctx, task.ID, task, workspaceCfg)
 	if err != nil {

@@ -438,6 +438,9 @@ func (s *GenTestService) SelfTestTask(ctx context.Context, taskID uint64) (*Self
 }
 
 func (s *GenTestService) FinalizeTask(taskID uint64, report *SelfTestReport) error {
+	// 清理 Chrome MCP 占用的 profile 目录
+	cleanupChromeProfile(s.logger)
+
 	task, err := s.testTaskRepo.GetByID(taskID)
 	if err != nil {
 		return fmt.Errorf("测试任务不存在: %w", err)
