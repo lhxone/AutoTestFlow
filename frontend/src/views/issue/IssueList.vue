@@ -447,9 +447,9 @@ function formatSeverity(severity: string) {
 }
 
 function canGenerateTest(issue: Issue) {
-  // 审核驳回、异常状态允许重新生成
+  // 审核驳回、异常状态允许重新生成（不限制禅道状态）
   if (issue.test_status === 'review_rejected' || issue.test_status === 'error') {
-    return issue.zentao_status === 'resolved'
+    return issue.zentao_status === 'resolved' || issue.zentao_status === 'active'
   }
 
   if (issue.test_status === 'pending') {
