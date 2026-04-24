@@ -173,59 +173,34 @@ func (s *ZentaoService) syncFromZentao(project *model.Project, fullSync bool, ba
 	base := strings.TrimRight(baseURL, "/")
 	productID := *project.ZentaoProjectID
 
-	// 直接获取 bugs 列表，支持分页
-	return s.fetchAllBugsWithPagination(base, token, productID, project, fullSync, baseURL)
-}
+	product, err := s.getProductDetail(base, token, productID)
+	if err != nil {
+		return issueSyncResult{}, fmt.Errorf("获取禅道产品详情失败: %w", err)
+	}
 
-// fetchAllBugsWithPagination 分页获取所有bug并同步
-func (s *ZentaoService) fetchAllBugsWithPagination(base, token string, productID int, project *model.Project, fullSync bool, baseURL string) (issueSyncResult, error) {
-	const pageSize = 500
-	var allBugs []zentaoBug
-	var total int
-	page := 1
+	branchFilterID, err := s.resolveBranchFilterID(project, product)
+	if err != nil {
+		return issueSyncResult{}, err
+	}
 
-	for {
-		url := fmt.Sprintf("%s/api.php/v1/products/%d/bugs?limit=%d&page=%d&status=all", base, productID, pageSize, page)
+	if !fullSync {
+		// 增量：只获取最近24小时更新的
+		since := time.Now().Add(-24 * time.Hour).Format("2006-01-02")
+		url := fmt.Sprintf("%s/api.php/v1/products/%d/bugs?limit=500&lastEditedDate>%s", base, productID, since)
 		body, err := s.DoZentaoGet(url, token)
 		if err != nil {
-			return issueSyncResult{}, fmt.Errorf("请求禅道API失败(page=%d): %w", page, err)
+			return issueSyncResult{}, fmt.Errorf("请求禅道API失败: %w", err)
 		}
-
-		var resp struct {
-			Page  int         `json:"page"`
-			Total int         `json:"total"`
-			Limit int         `json:"limit"`
-			Bugs  []zentaoBug `json:"bugs"`
-		}
-		if err := json.Unmarshal(body, &resp); err != nil {
-			return issueSyncResult{}, fmt.Errorf("解析禅道响应失败: %w", err)
-		}
-
-		if page == 1 {
-			total = resp.Total
-			s.logger.Info("开始同步禅道bug", zap.Int("product_id", productID), zap.Int("total", total))
-		}
-
-		allBugs = append(allBugs, resp.Bugs...)
-
-		// 如果已获取的数量达到total或当前页返回数量小于pageSize，说明已获取完毕
-		if len(allBugs) >= total || len(resp.Bugs) < pageSize {
-			break
-		}
-		page++
+		return s.parseAndSyncBugs(body, project, product, branchFilterID, false, baseURL)
 	}
 
-	s.logger.Info("禅道bug获取完成", zap.Int("fetched", len(allBugs)), zap.Int("total", total))
-
-	// 将所有bug转换为JSON进行统一处理
-	body, err := json.Marshal(struct {
-		Bugs []zentaoBug `json:"bugs"`
-	}{Bugs: allBugs})
+	url := fmt.Sprintf("%s/api.php/v1/products/%d/bugs?limit=500", base, productID)
+	body, err := s.DoZentaoGet(url, token)
 	if err != nil {
-		return issueSyncResult{}, fmt.Errorf("序列化bug数据失败: %w", err)
+		return issueSyncResult{}, fmt.Errorf("请求禅道API失败: %w", err)
 	}
 
-	return s.parseAndSyncBugs(body, project, fullSync, baseURL)
+	return s.parseAndSyncBugs(body, project, product, branchFilterID, true, baseURL)
 }
 
 func (s *ZentaoService) getZentaoConnection() (string, string, error) {
@@ -312,8 +287,46 @@ func (s *ZentaoService) DoZentaoGet(urlWithPrefix, token string) ([]byte, error)
 	}
 }
 
+type zentaoProductDetail struct {
+	ID   int    `json:"id"`
+	Type string `json:"type"`
+	Name string `json:"name"`
+}
+
+func (s *ZentaoService) getProductDetail(baseURL, token string, productID int) (*zentaoProductDetail, error) {
+	body, err := s.DoZentaoGet(fmt.Sprintf("%s/api.php/v1/products/%d", strings.TrimRight(baseURL, "/"), productID), token)
+	if err != nil {
+		return nil, err
+	}
+
+	var product zentaoProductDetail
+	if err := json.Unmarshal(body, &product); err != nil {
+		return nil, fmt.Errorf("解析产品详情失败: %w", err)
+	}
+	return &product, nil
+}
+
+func (s *ZentaoService) resolveBranchFilterID(project *model.Project, product *zentaoProductDetail) (*int, error) {
+	branchValue := strings.TrimSpace(project.ZentaoBranch)
+	if branchValue == "" || strings.EqualFold(branchValue, "all") {
+		return nil, nil
+	}
+
+	// 分支型产品本身已经是分支视角，直接用 products/{id}/bugs 的结果即可。
+	if product != nil && product.Type == "branch" {
+		return nil, nil
+	}
+
+	branchID, err := strconv.Atoi(branchValue)
+	if err == nil {
+		return &branchID, nil
+	}
+
+	return nil, fmt.Errorf("当前项目配置的禅道分支为“%s”，但 bugs 接口返回的是数值 branch ID；请先将项目分支改为分支 ID、主干(0)、所有(all)，或选择分支型产品", project.ZentaoBranch)
+}
+
 // parseAndSyncBugs 解析禅道 bug 列表并同步到数据库
-func (s *ZentaoService) parseAndSyncBugs(body []byte, project *model.Project, fullSync bool, baseURL string) (issueSyncResult, error) {
+func (s *ZentaoService) parseAndSyncBugs(body []byte, project *model.Project, product *zentaoProductDetail, branchFilterID *int, fullSync bool, baseURL string) (issueSyncResult, error) {
 	var zentaoResp struct {
 		Bugs []zentaoBug `json:"bugs"`
 	}
@@ -327,6 +340,9 @@ func (s *ZentaoService) parseAndSyncBugs(body []byte, project *model.Project, fu
 	now := time.Now()
 
 	for _, bug := range zentaoResp.Bugs {
+		if branchFilterID != nil && bug.Branch != *branchFilterID {
+			continue
+		}
 		zentaoIDs = append(zentaoIDs, bug.ID)
 
 		reporter := ""
@@ -342,6 +358,9 @@ func (s *ZentaoService) parseAndSyncBugs(body []byte, project *model.Project, fu
 			assigneeEmail = bug.AssignedTo.Email
 		}
 		issueBranch := strconv.Itoa(bug.Branch)
+		if product != nil && product.Type == "branch" && project.ZentaoBranch != "" {
+			issueBranch = project.ZentaoBranch
+		}
 
 		description := normalizeZentaoRichText(bug.Steps, baseURL)
 
@@ -597,7 +616,7 @@ func (s *ZentaoService) syncWithMockData(project *model.Project) (issueSyncResul
 }
 
 // SyncAllProjects 同步所有启用项目的问题单
-func (s *ZentaoService) SyncAllProjects(fullSync bool) {
+func (s *ZentaoService) SyncAllProjects() {
 	projects, err := s.projectRepo.GetAllActive()
 	if err != nil {
 		s.logger.Error("获取项目列表失败", zap.Error(err))
@@ -608,7 +627,7 @@ func (s *ZentaoService) SyncAllProjects(fullSync bool) {
 		if p.ZentaoProjectID == nil {
 			continue
 		}
-		count, err := s.SyncProjectIssues(p.ID, fullSync)
+		count, err := s.SyncProjectIssues(p.ID, false)
 		if err != nil {
 			s.logger.Error("同步项目问题单失败", zap.Uint64("project_id", p.ID), zap.Error(err))
 			continue

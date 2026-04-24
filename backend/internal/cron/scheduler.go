@@ -48,8 +48,8 @@ func (s *Scheduler) Start() {
 	}
 
 	_, err := s.cron.AddFunc(cronExpr, func() {
-		s.logger.Info("定时任务: 开始全量同步禅道问题单")
-		s.zentaoService.SyncAllProjects(true)
+		s.logger.Info("定时任务: 开始同步禅道问题单")
+		s.zentaoService.SyncAllProjects()
 	})
 	if err != nil {
 		s.logger.Error("注册禅道同步定时任务失败", zap.Error(err))
