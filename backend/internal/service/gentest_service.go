@@ -439,7 +439,25 @@ func (s *GenTestService) SelfTestTask(ctx context.Context, taskID uint64) (*Self
 
 func (s *GenTestService) FinalizeTask(taskID uint64, report *SelfTestReport) error {
 	// 清理 Chrome MCP 占用的 profile 目录
-	cleanupChromeProfile(s.logger)
+	if cleaned, errMsg := cleanupChromeProfile(); cleaned {
+		if errMsg != "" {
+			s.publishTaskEvent(taskID, TaskEvent{
+				Type:    taskEventTypeLog,
+				Stage:   "chrome_profile_cleanup",
+				Status:  model.TaskStatusRunning,
+				Message: fmt.Sprintf("清理 Chrome profile 目录失败: %s", errMsg),
+				Data:    map[string]any{"path": chromeProfilePath, "error": errMsg},
+			})
+		} else {
+			s.publishTaskEvent(taskID, TaskEvent{
+				Type:    taskEventTypeLog,
+				Stage:   "chrome_profile_cleanup",
+				Status:  model.TaskStatusRunning,
+				Message: "已清理 Chrome profile 目录",
+				Data:    map[string]any{"path": chromeProfilePath},
+			})
+		}
+	}
 
 	task, err := s.testTaskRepo.GetByID(taskID)
 	if err != nil {

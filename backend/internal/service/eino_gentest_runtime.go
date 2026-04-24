@@ -35,15 +35,15 @@ const (
 var errStopRepoWalk = errors.New("stop repo walk")
 
 // cleanupChromeProfile 清理 Chrome MCP 占用的 profile 目录
-func cleanupChromeProfile(logger *zap.Logger) {
+// 返回值: (是否执行了清理, 错误信息)
+func cleanupChromeProfile() (bool, string) {
 	if _, err := os.Stat(chromeProfilePath); os.IsNotExist(err) {
-		return
+		return false, ""
 	}
 	if err := os.RemoveAll(chromeProfilePath); err != nil {
-		logger.Warn("清理 Chrome profile 目录失败", zap.String("path", chromeProfilePath), zap.Error(err))
-	} else {
-		logger.Info("已清理 Chrome profile 目录", zap.String("path", chromeProfilePath))
+		return true, err.Error()
 	}
+	return true, ""
 }
 
 type EinoGenTestRuntime struct {
@@ -131,7 +131,15 @@ func (r *EinoGenTestRuntime) Generate(
 	}
 
 	// 清理 Chrome MCP 占用的 profile 目录
-	cleanupChromeProfile(r.logger)
+	if cleaned, errMsg := cleanupChromeProfile(); cleaned {
+		if errMsg != "" {
+			r.publish(task.ID, taskEventTypeLog, "chrome_profile_cleanup", model.TaskStatusRunning,
+				fmt.Sprintf("清理 Chrome profile 目录失败: %s", errMsg), map[string]any{"path": chromeProfilePath, "error": errMsg})
+		} else {
+			r.publish(task.ID, taskEventTypeLog, "chrome_profile_cleanup", model.TaskStatusRunning,
+				"已清理 Chrome profile 目录", map[string]any{"path": chromeProfilePath})
+		}
+	}
 
 	workspace, err := r.workspace.Prepare(ctx, task.ID, task, workspaceCfg)
 	if err != nil {
