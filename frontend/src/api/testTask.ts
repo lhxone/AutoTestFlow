@@ -42,8 +42,8 @@ export function getTaskLogs(taskId: number) {
   return request.get(`/test-tasks/${taskId}/logs`)
 }
 
-export function getSelfTestReport(taskId: number, framework: 'playwright' | 'midscene') {
-  return request.get(`/test-tasks/${taskId}/self-test-report`, { params: { framework } })
+export function getSelfTestReport(taskId: number, framework: 'playwright' | 'midscene', silent = false) {
+  return request.get(`/test-tasks/${taskId}/self-test-report`, { params: { framework }, silent })
 }
 
 export function getWorkspaceFileUrl(taskId: number, filePath: string) {

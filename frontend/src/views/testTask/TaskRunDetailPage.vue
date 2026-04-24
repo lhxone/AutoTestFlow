@@ -487,7 +487,8 @@ async function loadPlaywrightHtml(id: number) {
   playwrightReportUrl.value = ''
   playwrightReportLoading.value = true
   try {
-    const res = await getSelfTestReport(id, 'playwright')
+    // 使用静默模式，任务运行中未产出报告是正常情况，不显示错误提示
+    const res = await getSelfTestReport(id, 'playwright', true)
     const data = res.data.data || {}
     if (data.content_type?.includes('html') && data.report_path) {
       playwrightReportUrl.value = getWorkspaceFileUrl(id, data.report_path)
@@ -495,8 +496,8 @@ async function loadPlaywrightHtml(id: number) {
     } else {
       playwrightReportLoading.value = false
     }
-  } catch (e) {
-    console.error('loadPlaywrightHtml failed:', e)
+  } catch {
+    // 任务运行中未产出报告是正常情况，静默处理
     playwrightReportLoading.value = false
   }
 }
