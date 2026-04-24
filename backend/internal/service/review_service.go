@@ -174,6 +174,8 @@ func (s *ReviewService) DoReview(reviewID, reviewerID uint64, req *dto.ReviewAct
 	case "request_changes":
 		rt.Status = model.ReviewStatusChangesRequested
 		gitSummary = "要求修改，未推送"
+		_ = s.issueRepo.ForceUpdateTestStatus(rt.IssueID, model.TestStatusReviewRejected)
+		s.logStatusChange(rt.IssueID, model.TestStatusReviewPending, model.TestStatusReviewRejected, "manual", &reviewerID, fmt.Sprintf("Review驳回(需修改): %s", req.Comment))
 
 	case "fail_regression":
 		if err := s.pushReviewedContentWithTimeout(rt); err != nil {
