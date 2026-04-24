@@ -35,15 +35,16 @@ const (
 var errStopRepoWalk = errors.New("stop repo walk")
 
 // cleanupChromeProfile 清理 Chrome MCP 占用的 profile 目录
-// 返回值: (是否执行了清理, 错误信息)
-func cleanupChromeProfile() (bool, string) {
+// 返回值: (状态, 错误信息)
+// 状态: "not_exist" 目录不存在, "cleaned" 清理成功, "error" 清理失败
+func cleanupChromeProfile() (status string, errMsg string) {
 	if _, err := os.Stat(chromeProfilePath); os.IsNotExist(err) {
-		return false, ""
+		return "not_exist", ""
 	}
 	if err := os.RemoveAll(chromeProfilePath); err != nil {
-		return true, err.Error()
+		return "error", err.Error()
 	}
-	return true, ""
+	return "cleaned", ""
 }
 
 type EinoGenTestRuntime struct {
@@ -131,14 +132,17 @@ func (r *EinoGenTestRuntime) Generate(
 	}
 
 	// 清理 Chrome MCP 占用的 profile 目录
-	if cleaned, errMsg := cleanupChromeProfile(); cleaned {
-		if errMsg != "" {
-			r.publish(task.ID, taskEventTypeLog, "chrome_profile_cleanup", model.TaskStatusRunning,
-				fmt.Sprintf("清理 Chrome profile 目录失败: %s", errMsg), map[string]any{"path": chromeProfilePath, "error": errMsg})
-		} else {
-			r.publish(task.ID, taskEventTypeLog, "chrome_profile_cleanup", model.TaskStatusRunning,
-				"已清理 Chrome profile 目录", map[string]any{"path": chromeProfilePath})
-		}
+	status, errMsg := cleanupChromeProfile()
+	switch status {
+	case "cleaned":
+		r.publish(task.ID, taskEventTypeLog, "chrome_profile_cleanup", model.TaskStatusRunning,
+			"已清理 Chrome profile 目录", map[string]any{"path": chromeProfilePath})
+	case "error":
+		r.publish(task.ID, taskEventTypeLog, "chrome_profile_cleanup", model.TaskStatusRunning,
+			fmt.Sprintf("清理 Chrome profile 目录失败: %s", errMsg), map[string]any{"path": chromeProfilePath, "error": errMsg})
+	case "not_exist":
+		r.publish(task.ID, taskEventTypeLog, "chrome_profile_cleanup", model.TaskStatusRunning,
+			"Chrome profile 目录不存在，跳过清理", map[string]any{"path": chromeProfilePath})
 	}
 
 	workspace, err := r.workspace.Prepare(ctx, task.ID, task, workspaceCfg)

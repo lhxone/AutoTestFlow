@@ -970,7 +970,8 @@
         "selfTestFailed": "自测失败",
         "reviewPending": "进入 Review",
         "workflowCompleted": "Workflow 完成",
-        "runtimeFailed": "Runtime 失败"
+        "runtimeFailed": "Runtime 失败",
+        "chromeProfileCleanup": "Chrome Profile 清理"
       }
     },
     "stages": {

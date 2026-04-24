@@ -970,7 +970,8 @@
         "selfTestFailed": "Self-test failed",
         "reviewPending": "Review pending",
         "workflowCompleted": "Workflow completed",
-        "runtimeFailed": "Runtime failed"
+        "runtimeFailed": "Runtime failed",
+        "chromeProfileCleanup": "Chrome Profile Cleanup"
       }
     },
     "stages": {

@@ -19,12 +19,14 @@
         <a-divider style="margin: 16px 0 8px" />
 
         <!-- 回归用例 -->
-        <a-collapse :defaultActiveKey="activeCaseKeys" style="margin-bottom: 16px">
-          <a-collapse-panel
-            v-for="editableCase in editableCases"
-            :key="editableCase.id"
-            :header="`[${translateTestCaseCategory(t, editableCase.category)}] ${editableCase.title}`"
-          >
+        <a-collapse :defaultActiveKey="['test-cases']" style="margin-bottom: 16px">
+          <a-collapse-panel key="test-cases" :header="t('taskRun.tabs.testCases')">
+            <a-collapse :defaultActiveKey="activeCaseKeys">
+              <a-collapse-panel
+                v-for="editableCase in editableCases"
+                :key="editableCase.id"
+                :header="editableCase.title"
+              >
             <a-descriptions :column="1" size="small" bordered style="margin-bottom: 12px">
               <a-descriptions-item :label="t('testCase.detail.precondition')">{{ editableCase.precondition || '-' }}</a-descriptions-item>
               <a-descriptions-item :label="t('testCase.detail.steps')">
@@ -77,9 +79,11 @@
                 {{ t('common.save') }}
               </a-button>
             </a-space>
+              </a-collapse-panel>
+            </a-collapse>
+            <a-empty v-if="!editableCases.length" :description="t('review.detail.noTestCases')" />
           </a-collapse-panel>
         </a-collapse>
-        <a-empty v-if="!editableCases.length" :description="t('review.detail.noTestCases')" style="margin-bottom: 16px" />
 
         <!-- 测试脚本 -->
         <a-collapse :defaultActiveKey="['scripts']" style="margin-bottom: 16px">

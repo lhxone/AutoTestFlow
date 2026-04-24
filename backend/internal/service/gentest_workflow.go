@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -10,6 +11,7 @@ import (
 	"auto-test-flow/internal/model"
 
 	"github.com/cloudwego/eino/compose"
+	"go.uber.org/zap"
 )
 
 type genTestWorkflowState struct {
@@ -183,6 +185,22 @@ func (s *GenTestService) performMCPPreflight(ctx context.Context, state *genTest
 		Status:  model.TaskStatusRunning,
 		Message: message,
 	})
+
+	// 立即更新任务的 ai_output，包含初始 workflow 元数据，以便前端显示 Chrome MCP 状态
+	initialMeta := &GenTestWorkflowMeta{
+		Engine:              "eino",
+		Name:                "gen-test-eino-workflow",
+		ChromeMCPServers:    chromeServers,
+		MCPCapabilitySummary: summary,
+	}
+	if len(chromeServers) > 0 {
+		initialMeta.ChromeMCPEnabled = true
+	}
+	initialMetaJSON, _ := json.Marshal(&GenTestOutput{Workflow: initialMeta})
+	state.Task.AIOutput = model.JSON(initialMetaJSON)
+	if err := s.testTaskRepo.Update(state.Task); err != nil {
+		s.logger.Warn("更新任务 workflow 元数据失败", zap.Uint64("task_id", state.Task.ID), zap.Error(err))
+	}
 
 	return state, nil
 }

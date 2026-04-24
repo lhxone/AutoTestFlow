@@ -357,6 +357,7 @@ const WORKSPACE_PREPARE_STAGES = new Set([
   'npm_install_skip',
   'node_modules_skip',
   'node_modules_skip_no_existing',
+  'chrome_profile_cleanup',
 ])
 
 const legendStatuses: WorkflowNodeStatus[] = ['wait', 'running', 'completed', 'failed']
@@ -780,6 +781,7 @@ function eventTitle(event: TestTaskEvent): string {
     review_pending: t('taskRun.workflow.eventTitles.reviewPending'),
     workflow_completed: t('taskRun.workflow.eventTitles.workflowCompleted'),
     runtime_failed: t('taskRun.workflow.eventTitles.runtimeFailed'),
+    chrome_profile_cleanup: t('taskRun.workflow.eventTitles.chromeProfileCleanup'),
   }
   return stageMap[stage] || stage || event.type
 }
