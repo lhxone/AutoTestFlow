@@ -1,10 +1,13 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -63,8 +66,19 @@ func (s *GitOpsService) PushReviewedContent(reviewTask *model.ReviewTask) error 
 	}
 	_ = s.ensureGitIdentity(repoDir)
 
-	// 创建feature分支
-	branchName := fmt.Sprintf("autotest/review-%d", reviewTask.ID)
+	// 获取 ZentaoID 用于分支命名
+	var zentaoID int
+	if reviewTask.Issue != nil {
+		zentaoID = reviewTask.Issue.ZentaoID
+	}
+
+	// 创建 feature 分支
+	var branchName string
+	if zentaoID > 0 {
+		branchName = fmt.Sprintf("autotest/review-zentao-%d", zentaoID)
+	} else {
+		branchName = fmt.Sprintf("autotest/review-%d", reviewTask.ID)
+	}
 	if err := s.gitExec(repoDir, "checkout", "-b", branchName); err != nil {
 		// 分支可能已存在
 		_ = s.gitExec(repoDir, "checkout", branchName)
@@ -155,6 +169,14 @@ func (s *GitOpsService) PushReviewedContent(reviewTask *model.ReviewTask) error 
 		zap.Uint64("review_id", reviewTask.ID),
 		zap.String("branch", branchName),
 		zap.String("commit", strings.TrimSpace(hash)))
+
+	// 创建 Merge Request
+	projectPath := s.parseGitLabProjectPath(project.GitRepoURL)
+	mrTitle := fmt.Sprintf("[AutoTestFlow] Review #%d - %s", reviewTask.ID, reviewTask.Title)
+	if err := s.CreateMergeRequest(projectPath, branchName, project.GitBranch, mrTitle); err != nil {
+		s.logger.Warn("创建 MergeRequest 失败", zap.Error(err), zap.String("branch", branchName))
+		// 不阻断流程，仅记录日志
+	}
 
 	return nil
 }
@@ -298,4 +320,61 @@ func (s *GitOpsService) gitCommand(dir string, args ...string) (context.Context,
 		"GIT_ASKPASS=",
 	)
 	return ctx, cmd, cancel
+}
+
+// parseGitLabProjectPath 从 Git URL 解析项目路径
+// http://git.inspur.com/kms2/kms-project-test.git → kms2%2Fkms-project-test
+func (s *GitOpsService) parseGitLabProjectPath(gitURL string) string {
+	u, err := url.Parse(gitURL)
+	if err != nil {
+		return ""
+	}
+
+	// 获取路径部分，去掉 .git 后缀
+	path := strings.TrimSuffix(u.Path, ".git")
+	path = strings.TrimPrefix(path, "/")
+
+	// URL encode (GitLab API 要求 / 编码为 %2F)
+	return url.PathEscape(path)
+}
+
+// CreateMergeRequest 调用 GitLab API 创建 Merge Request
+func (s *GitOpsService) CreateMergeRequest(projectPath, sourceBranch, targetBranch, title string) error {
+	baseURL := strings.TrimSpace(s.settingRepo.GetValue("gitlab", "base_url"))
+	accessToken := strings.TrimSpace(s.settingRepo.GetValue("gitlab", "access_token"))
+
+	if baseURL == "" || accessToken == "" {
+		return errors.New("GitLab 配置缺失")
+	}
+
+	// POST /api/v4/projects/{id}/merge_requests
+	apiURL := fmt.Sprintf("%s/api/v4/projects/%s/merge_requests", strings.TrimRight(baseURL, "/"), projectPath)
+
+	payload := map[string]interface{}{
+		"source_branch":        sourceBranch,
+		"target_branch":        targetBranch,
+		"title":                title,
+		"remove_source_branch": true,
+	}
+	body, _ := json.Marshal(payload)
+
+	req, err := http.NewRequest("POST", apiURL, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("PRIVATE-TOKEN", accessToken)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("GitLab API 错误: %s", string(respBody))
+	}
+
+	return nil
 }
