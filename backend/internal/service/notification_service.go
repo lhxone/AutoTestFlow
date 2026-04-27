@@ -215,13 +215,14 @@ func (s *NotificationService) NotifyDevFlowFailure(devTaskID string, issue *mode
 		return nil
 	}
 
+	// 获取API Key
+	apiKey := s.settingRepo.GetValue("integration", "devflow_api_key")
+
+	// 构造请求体，按照外部测试结果回调接口规范
 	payload := map[string]interface{}{
-		"dev_task_id":   devTaskID,
-		"zentao_id":     issue.ZentaoID,
-		"issue_title":   issue.Title,
-		"failure_type":  failureType,
-		"comment":       comment,
-		"timestamp":     time.Now().Format(time.RFC3339),
+		"taskid":  devTaskID,
+		"success": false,
+		"reason":  fmt.Sprintf("[%s] %s - %s", failureType, issue.Title, comment),
 	}
 
 	body, err := json.Marshal(payload)
@@ -241,6 +242,9 @@ func (s *NotificationService) NotifyDevFlowFailure(devTaskID string, issue *mode
 		return fmt.Errorf("创建请求失败: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if apiKey != "" {
+		req.Header.Set("X-External-Api-Key", apiKey)
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
