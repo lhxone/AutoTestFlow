@@ -186,7 +186,7 @@ func (s *ZentaoService) syncFromZentao(project *model.Project, fullSync bool, ba
 	if !fullSync {
 		// 增量：只获取最近24小时更新的
 		since := time.Now().Add(-24 * time.Hour).Format("2006-01-02")
-		url := fmt.Sprintf("%s/api.php/v1/products/%d/bugs?limit=500&lastEditedDate>%s", base, productID, since)
+		url := fmt.Sprintf("%s/api.php/v1/products/%d/bugs?limit=1000&status=all&lastEditedDate>%s", base, productID, since)
 		body, err := s.DoZentaoGet(url, token)
 		if err != nil {
 			return issueSyncResult{}, fmt.Errorf("请求禅道API失败: %w", err)
@@ -194,7 +194,7 @@ func (s *ZentaoService) syncFromZentao(project *model.Project, fullSync bool, ba
 		return s.parseAndSyncBugs(body, project, product, branchFilterID, false, baseURL)
 	}
 
-	url := fmt.Sprintf("%s/api.php/v1/products/%d/bugs?limit=500", base, productID)
+	url := fmt.Sprintf("%s/api.php/v1/products/%d/bugs?limit=1000&status=all", base, productID)
 	body, err := s.DoZentaoGet(url, token)
 	if err != nil {
 		return issueSyncResult{}, fmt.Errorf("请求禅道API失败: %w", err)
@@ -466,30 +466,31 @@ func (s *ZentaoService) syncIssues(projectID uint64, incomingIssues []model.Issu
 		result.SyncedCount++
 	}
 
-	if fullSync {
-		deletedIssues, err := s.issueRepo.ListMissingByProject(projectID, zentaoIDs)
-		if err != nil {
-			return result, fmt.Errorf("查询失效问题单失败: %w", err)
-		}
+	// TODO: 暂时屏蔽Bug单删除逻辑，避免误删数据
+	// if fullSync {
+	// 	deletedIssues, err := s.issueRepo.ListMissingByProject(projectID, zentaoIDs)
+	// 	if err != nil {
+	// 		return result, fmt.Errorf("查询失效问题单失败: %w", err)
+	// 	}
 
-		deletedCount, err := s.issueRepo.DeleteMissingByProject(projectID, zentaoIDs)
-		if err != nil {
-			return result, fmt.Errorf("删除失效问题单失败: %w", err)
-		}
-		result.DeletedCount = int(deletedCount)
+	// 	deletedCount, err := s.issueRepo.DeleteMissingByProject(projectID, zentaoIDs)
+	// 	if err != nil {
+	// 		return result, fmt.Errorf("删除失效问题单失败: %w", err)
+	// 	}
+	// 	result.DeletedCount = int(deletedCount)
 
-		for _, deletedIssue := range deletedIssues {
-			issueID := deletedIssue.ID
-			result.Details = append(result.Details, model.IssueSyncLogDetail{
-				ProjectID:         projectID,
-				IssueID:           &issueID,
-				ZentaoID:          deletedIssue.ZentaoID,
-				IssueTitle:        deletedIssue.Title,
-				Action:            model.IssueSyncActionDeleted,
-				ChangedFieldsJSON: model.EncodeIssueSyncFieldChanges(nil),
-			})
-		}
-	}
+	// 	for _, deletedIssue := range deletedIssues {
+	// 		issueID := deletedIssue.ID
+	// 		result.Details = append(result.Details, model.IssueSyncLogDetail{
+	// 			ProjectID:         projectID,
+	// 			IssueID:           &issueID,
+	// 			ZentaoID:          deletedIssue.ZentaoID,
+	// 			IssueTitle:        deletedIssue.Title,
+	// 			Action:            model.IssueSyncActionDeleted,
+	// 			ChangedFieldsJSON: model.EncodeIssueSyncFieldChanges(nil),
+	// 		})
+	// 	}
+	// }
 
 	return result, nil
 }
