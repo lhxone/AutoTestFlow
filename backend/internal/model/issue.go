@@ -41,6 +41,7 @@ type Issue struct {
 	ZentaoUpdatedAt   *time.Time `json:"zentao_updated_at"`
 	SyncedAt          *time.Time `json:"synced_at"`
 	DevFlowSubmitTime *time.Time `json:"dev_flow_submit_time"` // 研发流水线提交时间
+	DevTaskID         string     `gorm:"size:128;default:''" json:"dev_task_id"` // 研发流水线任务ID
 	// 关联
 	Project *Project `gorm:"foreignKey:ProjectID" json:"project,omitempty"`
 }

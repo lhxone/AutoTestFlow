@@ -151,9 +151,10 @@ func (r *IssueRepo) FindByZentaoIssueID(zentaoIssueID int) (*model.Issue, error)
 }
 
 // UpdateDevFlowSubmitTime 更新研发流水线提交时间并设置状态为待升级
-func (r *IssueRepo) UpdateDevFlowSubmitTime(id uint64, submitTime time.Time) error {
+func (r *IssueRepo) UpdateDevFlowSubmitTime(id uint64, submitTime time.Time, devTaskID string) error {
 	return r.db.Model(&model.Issue{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"dev_flow_submit_time": submitTime,
+		"dev_task_id":          devTaskID,
 		"test_status":          model.TestStatusPendingUpgrade,
 	}).Error
 }

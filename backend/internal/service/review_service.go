@@ -170,12 +170,24 @@ func (s *ReviewService) DoReview(reviewID, reviewerID uint64, req *dto.ReviewAct
 		gitSummary = "审核驳回，未推送"
 		_ = s.issueRepo.ForceUpdateTestStatus(rt.IssueID, model.TestStatusReviewRejected)
 		s.logStatusChange(rt.IssueID, model.TestStatusReviewPending, model.TestStatusReviewRejected, "manual", &reviewerID, fmt.Sprintf("Review驳回: %s", req.Comment))
+		// 通知研发流水线
+		if issue, err := s.issueRepo.GetByID(rt.IssueID); err == nil && issue.DevTaskID != "" {
+			if err := s.notifyService.NotifyDevFlowFailure(issue.DevTaskID, issue, "review_rejected", req.Comment); err != nil {
+				s.logger.Warn("通知研发流水线失败", zap.Error(err), zap.Uint64("issueID", rt.IssueID))
+			}
+		}
 
 	case "request_changes":
 		rt.Status = model.ReviewStatusChangesRequested
 		gitSummary = "要求修改，未推送"
 		_ = s.issueRepo.ForceUpdateTestStatus(rt.IssueID, model.TestStatusReviewRejected)
 		s.logStatusChange(rt.IssueID, model.TestStatusReviewPending, model.TestStatusReviewRejected, "manual", &reviewerID, fmt.Sprintf("Review驳回(需修改): %s", req.Comment))
+		// 通知研发流水线
+		if issue, err := s.issueRepo.GetByID(rt.IssueID); err == nil && issue.DevTaskID != "" {
+			if err := s.notifyService.NotifyDevFlowFailure(issue.DevTaskID, issue, "review_rejected", req.Comment); err != nil {
+				s.logger.Warn("通知研发流水线失败", zap.Error(err), zap.Uint64("issueID", rt.IssueID))
+			}
+		}
 
 	case "fail_regression":
 		if err := s.pushReviewedContentWithTimeout(rt); err != nil {
@@ -190,6 +202,12 @@ func (s *ReviewService) DoReview(reviewID, reviewerID uint64, req *dto.ReviewAct
 			activateComment := fmt.Sprintf("[AutoTestFlow] 回归测试失败，Review#%d 确认失败。%s", rt.ID, req.Comment)
 			if err := s.zentaoProxy.ActivateBug(issue.ZentaoID, activateComment); err != nil {
 				s.logger.Warn("调用禅道激活Bug API失败", zap.Error(err), zap.Uint64("issueID", rt.IssueID))
+			}
+			// 通知研发流水线
+			if issue.DevTaskID != "" {
+				if err := s.notifyService.NotifyDevFlowFailure(issue.DevTaskID, issue, "regression_failed", req.Comment); err != nil {
+					s.logger.Warn("通知研发流水线失败", zap.Error(err), zap.Uint64("issueID", rt.IssueID))
+				}
 			}
 		}
 

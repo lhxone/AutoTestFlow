@@ -1,8 +1,11 @@
 package service
 
 import (
+	"bytes"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -197,4 +200,64 @@ func escapeEmpty(value string) string {
 		return "-"
 	}
 	return value
+}
+
+// NotifyDevFlowFailure 通知研发流水线测试失败
+func (s *NotificationService) NotifyDevFlowFailure(devTaskID string, issue *model.Issue, failureType, comment string) error {
+	if devTaskID == "" {
+		s.logger.Debug("dev_task_id为空，跳过通知研发流水线")
+		return nil
+	}
+
+	callbackURL := s.settingRepo.GetValue("integration", "devflow_callback_url")
+	if callbackURL == "" {
+		s.logger.Warn("研发流水线回调URL未配置，跳过通知")
+		return nil
+	}
+
+	payload := map[string]interface{}{
+		"dev_task_id":   devTaskID,
+		"zentao_id":     issue.ZentaoID,
+		"issue_title":   issue.Title,
+		"failure_type":  failureType,
+		"comment":       comment,
+		"timestamp":     time.Now().Format(time.RFC3339),
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("序列化请求体失败: %w", err)
+	}
+
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+
+	req, err := http.NewRequest("POST", callbackURL, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("创建请求失败: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		s.logger.Error("通知研发流水线失败", zap.Error(err), zap.String("dev_task_id", devTaskID))
+		return fmt.Errorf("请求失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		s.logger.Warn("研发流水线回调返回错误状态", zap.Int("status", resp.StatusCode), zap.String("dev_task_id", devTaskID))
+		return fmt.Errorf("回调返回状态码: %d", resp.StatusCode)
+	}
+
+	s.logger.Info("已通知研发流水线测试失败",
+		zap.String("dev_task_id", devTaskID),
+		zap.Int("zentao_id", issue.ZentaoID),
+		zap.String("failure_type", failureType))
+
+	return nil
 }

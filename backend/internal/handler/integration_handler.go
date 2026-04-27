@@ -38,6 +38,7 @@ func NewIntegrationHandler(logger *zap.Logger) *IntegrationHandler {
 type DevFlowSubmitRequest struct {
 	ZentaoIssueID     int    `json:"zentao_issue_id"`
 	DevFlowSubmitTime string `json:"dev_flow_submit_time"`
+	DevTaskID         string `json:"dev_task_id"`
 }
 
 // DevFlowSubmitResponse DevFlow提交通知响应
@@ -83,7 +84,7 @@ func (h *IntegrationHandler) DevFlowSubmit(c *gin.Context) {
 	}
 
 	// 更新issue状态和提交时间
-	if err := h.issueRepo.UpdateDevFlowSubmitTime(issue.ID, submitTime); err != nil {
+	if err := h.issueRepo.UpdateDevFlowSubmitTime(issue.ID, submitTime, req.DevTaskID); err != nil {
 		h.logger.Error("DevFlow提交通知：更新问题单失败",
 			zap.Uint64("issue_id", issue.ID),
 			zap.Error(err))
@@ -94,7 +95,8 @@ func (h *IntegrationHandler) DevFlowSubmit(c *gin.Context) {
 	h.logger.Info("DevFlow提交通知处理完成",
 		zap.Uint64("issue_id", issue.ID),
 		zap.Int("zentao_issue_id", req.ZentaoIssueID),
-		zap.Time("submit_time", submitTime))
+		zap.Time("submit_time", submitTime),
+		zap.String("dev_task_id", req.DevTaskID))
 
 	c.JSON(200, DevFlowSubmitResponse{Code: 0, Message: "success"})
 }
