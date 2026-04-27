@@ -1,6 +1,9 @@
 package repository
 
 import (
+	"strconv"
+	"time"
+
 	"auto-test-flow/internal/model"
 
 	"gorm.io/gorm"
@@ -53,7 +56,12 @@ func (r *IssueRepo) List(projectID uint64, zentaoStatus, testStatus, branch, key
 		query = query.Where("branch = ?", branch)
 	}
 	if keyword != "" {
-		query = query.Where("title LIKE ? OR description LIKE ?", "%"+keyword+"%", "%"+keyword+"%")
+		// 支持通过本地ID或禅道ID精确搜索，或通过标题/描述模糊搜索
+		if id, err := strconv.Atoi(keyword); err == nil && id > 0 {
+			query = query.Where("id = ? OR zentao_id = ?", uint64(id), id)
+		} else {
+			query = query.Where("title LIKE ? OR description LIKE ?", "%"+keyword+"%", "%"+keyword+"%")
+		}
 	}
 	if assignee != "" {
 		query = query.Where("assignee = ?", assignee)
@@ -129,5 +137,73 @@ func (r *IssueRepo) ListMissingByProject(projectID uint64, keepZentaoIDs []int) 
 
 	var issues []model.Issue
 	err := query.Order("id DESC").Find(&issues).Error
+	return issues, err
+}
+
+// FindByZentaoIssueID 根据禅道问题单ID查找issue
+func (r *IssueRepo) FindByZentaoIssueID(zentaoIssueID int) (*model.Issue, error) {
+	var issue model.Issue
+	err := r.db.Where("zentao_id = ?", zentaoIssueID).First(&issue).Error
+	if err != nil {
+		return nil, err
+	}
+	return &issue, nil
+}
+
+// UpdateDevFlowSubmitTime 更新研发流水线提交时间并设置状态为待升级
+func (r *IssueRepo) UpdateDevFlowSubmitTime(id uint64, submitTime time.Time) error {
+	return r.db.Model(&model.Issue{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"dev_flow_submit_time": submitTime,
+		"test_status":          model.TestStatusPendingUpgrade,
+	}).Error
+}
+
+// FindPendingUpgradeBeforeTime 查询提交时间在指定时间之前且状态为待升级的问题单
+func (r *IssueRepo) FindPendingUpgradeBeforeTime(ciStartTime time.Time) ([]model.Issue, error) {
+	var issues []model.Issue
+	err := r.db.Where("dev_flow_submit_time < ? AND dev_flow_submit_time IS NOT NULL AND test_status = ?",
+		ciStartTime, model.TestStatusPendingUpgrade).
+		Order("dev_flow_submit_time ASC").
+		Find(&issues).Error
+	return issues, err
+}
+
+// BatchUpdateTestStatus 批量更新测试状态
+func (r *IssueRepo) BatchUpdateTestStatus(ids []uint64, newStatus string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	return r.db.Model(&model.Issue{}).Where("id IN ?", ids).Update("test_status", newStatus).Error
+}
+
+// MarkMissingAsClosed 将API未返回的issue标记为closed
+func (r *IssueRepo) MarkMissingAsClosed(projectID uint64, keepZentaoIDs []int, syncedAt time.Time) ([]model.Issue, error) {
+	query := r.db.Model(&model.Issue{}).Where("project_id = ?", projectID)
+	if len(keepZentaoIDs) > 0 {
+		query = query.Where("zentao_id NOT IN ?", keepZentaoIDs)
+	}
+	// 只更新状态不是closed的issue
+	query = query.Where("zentao_status != ?", "closed")
+
+	var issues []model.Issue
+	if err := query.Find(&issues).Error; err != nil {
+		return nil, err
+	}
+
+	if len(issues) == 0 {
+		return issues, nil
+	}
+
+	// 批量更新为closed
+	ids := make([]uint64, len(issues))
+	for i, issue := range issues {
+		ids[i] = issue.ID
+	}
+
+	err := r.db.Model(&model.Issue{}).Where("id IN ?", ids).Updates(map[string]interface{}{
+		"zentao_status": "closed",
+		"synced_at":     syncedAt,
+	}).Error
+
 	return issues, err
 }

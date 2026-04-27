@@ -30,6 +30,7 @@ func Setup(logger *zap.Logger) *gin.Engine {
 	zentaoProxyH := handler.NewZentaoProxyHandler(logger)
 	cliInteractionH := handler.NewCLIInteractionHandler(nil)
 	zentaoTestCaseH := handler.NewZentaoTestCaseHandler(logger)
+	integrationH := handler.NewIntegrationHandler(logger)
 
 	api := r.Group("/api")
 	{
@@ -217,6 +218,14 @@ func Setup(logger *zap.Logger) *gin.Engine {
 
 	// CI 回调接口(公开，由CI系统调用，通过Token验证)
 	api.POST("/ci/callback", ciCallbackH.Callback)
+
+	// 流水线集成接口(公开，通过Token验证)
+	integration := api.Group("/integration")
+	integration.Use(middleware.TokenAuth())
+	{
+		integration.POST("/devflow-submit", integrationH.DevFlowSubmit)
+		integration.POST("/cicd-deploy", integrationH.CICDDeploy)
+	}
 
 	// 健康检查
 	r.GET("/health", func(c *gin.Context) {

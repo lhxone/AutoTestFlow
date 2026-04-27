@@ -173,6 +173,11 @@ func (s *ZentaoService) syncFromZentao(project *model.Project, fullSync bool, ba
 	base := strings.TrimRight(baseURL, "/")
 	productID := *project.ZentaoProjectID
 
+	s.logger.Info("开始同步禅道Bug",
+		zap.Uint64("project_id", project.ID),
+		zap.Int("product_id", productID),
+		zap.String("base_url", base))
+
 	product, err := s.getProductDetail(base, token, productID)
 	if err != nil {
 		return issueSyncResult{}, fmt.Errorf("获取禅道产品详情失败: %w", err)
@@ -183,24 +188,19 @@ func (s *ZentaoService) syncFromZentao(project *model.Project, fullSync bool, ba
 		return issueSyncResult{}, err
 	}
 
-	if !fullSync {
-		// 增量：只获取最近24小时更新的
-		since := time.Now().Add(-24 * time.Hour).Format("2006-01-02")
-		url := fmt.Sprintf("%s/api.php/v1/products/%d/bugs?limit=1000&status=all&lastEditedDate>%s", base, productID, since)
-		body, err := s.DoZentaoGet(url, token)
-		if err != nil {
-			return issueSyncResult{}, fmt.Errorf("请求禅道API失败: %w", err)
-		}
-		return s.parseAndSyncBugs(body, project, product, branchFilterID, false, baseURL)
-	}
+	// 全量同步：获取所有Bug（不传status参数，禅道API默认返回所有状态的bug）
+	url := fmt.Sprintf("%s/api.php/v1/products/%d/bugs?limit=1000", base, productID)
+	s.logger.Info("请求禅道Bug列表API", zap.String("url", url))
 
-	url := fmt.Sprintf("%s/api.php/v1/products/%d/bugs?limit=1000&status=all", base, productID)
 	body, err := s.DoZentaoGet(url, token)
 	if err != nil {
+		s.logger.Error("请求禅道API失败", zap.String("url", url), zap.Error(err))
 		return issueSyncResult{}, fmt.Errorf("请求禅道API失败: %w", err)
 	}
 
-	return s.parseAndSyncBugs(body, project, product, branchFilterID, true, baseURL)
+	s.logger.Info("禅道API响应成功", zap.String("url", url), zap.Int("response_size", len(body)))
+
+	return s.parseAndSyncBugs(body, project, product, branchFilterID, fullSync, baseURL)
 }
 
 func (s *ZentaoService) getZentaoConnection() (string, string, error) {
@@ -242,6 +242,8 @@ func (s *ZentaoService) DoZentaoGet(urlWithPrefix, token string) ([]byte, error)
 		unauthorized := false
 
 		for _, a := range attempts {
+			s.logger.Debug("发起禅道API请求", zap.String("url", a.url))
+
 			req, err := http.NewRequest("GET", a.url, nil)
 			if err != nil {
 				lastErr = err
@@ -251,6 +253,7 @@ func (s *ZentaoService) DoZentaoGet(urlWithPrefix, token string) ([]byte, error)
 
 			resp, err := s.httpClient.Do(req)
 			if err != nil {
+				s.logger.Warn("禅道API请求失败", zap.String("url", a.url), zap.Error(err))
 				lastErr = err
 				continue
 			}
@@ -258,22 +261,31 @@ func (s *ZentaoService) DoZentaoGet(urlWithPrefix, token string) ([]byte, error)
 			resp.Body.Close()
 
 			if resp.StatusCode == http.StatusUnauthorized {
+				s.logger.Warn("禅道API返回401未授权", zap.String("url", a.url))
 				unauthorized = true
 				lastErr = fmt.Errorf("401: %s", a.url)
 				continue
 			}
 			if resp.StatusCode == http.StatusNotFound {
+				s.logger.Warn("禅道API返回404未找到", zap.String("url", a.url))
 				lastErr = fmt.Errorf("404: %s", a.url)
 				continue
 			}
 			if resp.StatusCode != http.StatusOK {
+				s.logger.Warn("禅道API返回非200状态",
+					zap.String("url", a.url),
+					zap.Int("status_code", resp.StatusCode),
+					zap.String("response", string(body[:min(len(body), 200)])))
 				lastErr = fmt.Errorf("禅道API返回错误 %d: %s", resp.StatusCode, string(body[:min(len(body), 200)]))
 				continue
 			}
+
+			s.logger.Debug("禅道API请求成功", zap.String("url", a.url), zap.Int("response_size", len(body)))
 			return body, nil
 		}
 
 		if unauthorized && !refreshed {
+			s.logger.Info("禅道Token已过期，尝试刷新Token")
 			newToken, err := s.settingSvc.RefreshZentaoToken()
 			if err != nil {
 				return nil, fmt.Errorf("禅道认证失效且刷新Token失败: %w", err)
@@ -334,6 +346,11 @@ func (s *ZentaoService) parseAndSyncBugs(body []byte, project *model.Project, pr
 	if err := json.Unmarshal(body, &zentaoResp); err != nil {
 		return issueSyncResult{}, fmt.Errorf("解析禅道响应失败: %w", err)
 	}
+
+	s.logger.Info("解析禅道Bug响应",
+		zap.Uint64("project_id", project.ID),
+		zap.Int("total_bugs", len(zentaoResp.Bugs)),
+		zap.Any("branch_filter", branchFilterID))
 
 	zentaoIDs := make([]int, 0, len(zentaoResp.Bugs))
 	incomingIssues := make([]model.Issue, 0, len(zentaoResp.Bugs))
@@ -466,31 +483,33 @@ func (s *ZentaoService) syncIssues(projectID uint64, incomingIssues []model.Issu
 		result.SyncedCount++
 	}
 
-	// TODO: 暂时屏蔽Bug单删除逻辑，避免误删数据
-	// if fullSync {
-	// 	deletedIssues, err := s.issueRepo.ListMissingByProject(projectID, zentaoIDs)
-	// 	if err != nil {
-	// 		return result, fmt.Errorf("查询失效问题单失败: %w", err)
-	// 	}
-
-	// 	deletedCount, err := s.issueRepo.DeleteMissingByProject(projectID, zentaoIDs)
-	// 	if err != nil {
-	// 		return result, fmt.Errorf("删除失效问题单失败: %w", err)
-	// 	}
-	// 	result.DeletedCount = int(deletedCount)
-
-	// 	for _, deletedIssue := range deletedIssues {
-	// 		issueID := deletedIssue.ID
-	// 		result.Details = append(result.Details, model.IssueSyncLogDetail{
-	// 			ProjectID:         projectID,
-	// 			IssueID:           &issueID,
-	// 			ZentaoID:          deletedIssue.ZentaoID,
-	// 			IssueTitle:        deletedIssue.Title,
-	// 			Action:            model.IssueSyncActionDeleted,
-	// 			ChangedFieldsJSON: model.EncodeIssueSyncFieldChanges(nil),
-	// 		})
-	// 	}
-	// }
+	// 处理API未返回的issue：将其状态标记为closed
+	if fullSync {
+		now := time.Now()
+		closedIssues, err := s.issueRepo.MarkMissingAsClosed(projectID, zentaoIDs, now)
+		if err != nil {
+			s.logger.Error("标记缺失问题单为closed失败", zap.Uint64("project_id", projectID), zap.Error(err))
+		} else {
+			for _, closedIssue := range closedIssues {
+				result.UpdatedCount++
+				issueID := closedIssue.ID
+				result.Details = append(result.Details, model.IssueSyncLogDetail{
+					ProjectID:         projectID,
+					IssueID:           &issueID,
+					ZentaoID:          closedIssue.ZentaoID,
+					IssueTitle:        closedIssue.Title,
+					Action:            model.IssueSyncActionUpdated,
+					ChangedFieldsJSON: model.EncodeIssueSyncFieldChanges([]model.IssueSyncFieldChange{
+						{Field: "zentao_status", FieldLabel: "禅道状态", OldValue: closedIssue.ZentaoStatus, NewValue: "closed"},
+					}),
+				})
+				s.logger.Info("问题单已标记为closed（API未返回）",
+					zap.Uint64("project_id", projectID),
+					zap.Int("zentao_id", closedIssue.ZentaoID),
+					zap.String("title", closedIssue.Title))
+			}
+		}
+	}
 
 	return result, nil
 }

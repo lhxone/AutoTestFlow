@@ -1,6 +1,6 @@
-<mxfile host="Electron" modified="2026-04-23T07:04:21.914Z" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/21.6.8 Chrome/114.0.5735.289 Electron/25.5.0 Safari/537.36" version="21.6.8" etag="svVPfNjKHvz-BalIHNbX" type="device">
+<mxfile host="Electron" modified="2026-04-24T08:41:12.330Z" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/21.6.8 Chrome/114.0.5735.289 Electron/25.5.0 Safari/537.36" etag="toagEDMp2vm5VncoJI61" version="21.6.8" type="device">
   <diagram id="zentao-regression-flow" name="禅道回归测试流程">
-    <mxGraphModel dx="4562" dy="1470" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1750" pageHeight="1550" math="0" shadow="0">
+    <mxGraphModel dx="4093" dy="1225" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1750" pageHeight="1550" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -34,7 +34,7 @@
         <mxCell id="b2" value="ZentaoService.SyncProjectIssues()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#E6A23C;fontSize=11;" parent="lane_backend" vertex="1">
           <mxGeometry x="103" y="152" width="200" height="42" as="geometry" />
         </mxCell>
-        <mxCell id="i3H8mTF95WY6F8CbsYGV-1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="lane_backend" source="b3" target="b9">
+        <mxCell id="i3H8mTF95WY6F8CbsYGV-1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" parent="lane_backend" source="b3" target="b9" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="b3" value="ZentaoProxyService HTTP代理" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#9C27B0;fontSize=11;" parent="lane_backend" vertex="1">
@@ -118,6 +118,9 @@
         <mxCell id="b25" value="审核通过 Push内容到Git" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1976D2;fontSize=11;" parent="lane_backend" vertex="1">
           <mxGeometry x="598" y="1140" width="180" height="40" as="geometry" />
         </mxCell>
+        <mxCell id="a2" value="git clone 测试资产仓库&lt;br&gt;作为AGENT工作区" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;fillColor=#E3F2FD;strokeColor=#1976D2;fontSize=12;" parent="lane_backend" vertex="1">
+          <mxGeometry x="880" y="780" width="140" height="80" as="geometry" />
+        </mxCell>
         <mxCell id="lane_ai" value="" style="swimlane;horizontal=0;startSize=40;strokeColor=#67C23A;fillColor=#F0F9EB;" parent="1" vertex="1">
           <mxGeometry x="1260" y="50" width="440" height="1450" as="geometry" />
         </mxCell>
@@ -126,9 +129,6 @@
         </mxCell>
         <mxCell id="a1" value="AI 大模型&#xa;OpenAI / Claude / 其他" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;fillColor=#E8F5E9;strokeColor=#4CAF50;fontSize=12;fontStyle=1;" parent="lane_ai" vertex="1">
           <mxGeometry x="150" y="370" width="140" height="65" as="geometry" />
-        </mxCell>
-        <mxCell id="a2" value="Git 仓库&#xa;目标项目代码" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;fillColor=#E3F2FD;strokeColor=#1976D2;fontSize=12;" parent="lane_ai" vertex="1">
-          <mxGeometry x="280" y="640" width="140" height="55" as="geometry" />
         </mxCell>
         <mxCell id="ea1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#F56C6C;strokeWidth=2;" parent="1" source="b1" target="b2" edge="1">
           <mxGeometry relative="1" as="geometry" />
@@ -205,7 +205,12 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="ec_git" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#1976D2;strokeWidth=2;dashed=1;" parent="1" source="a1" target="a2" edge="1">
-          <mxGeometry relative="1" as="geometry" />
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1480" y="710" />
+              <mxPoint x="1090" y="710" />
+            </Array>
+          </mxGeometry>
         </mxCell>
         <mxCell id="ec_git_label" value="Agent读写代码" style="text;html=1;resizable=0;points=[];fontSize=10;fontColor=#1976D2;align=center;verticalAlign=middle;" parent="ec_git" vertex="1" connectable="0">
           <mxGeometry relative="1" as="geometry">
@@ -264,6 +269,18 @@
         </mxCell>
         <mxCell id="legend" value="&lt;b&gt;图例&lt;/b&gt;&lt;br&gt;&#xa;&lt;font color=&quot;#F56C6C&quot;&gt;Bug / Issue&lt;/font&gt; &#xa;&lt;font color=&quot;#67C23A&quot;&gt;测试用例&lt;/font&gt; &#xa;&lt;font color=&quot;#409EFF&quot;&gt;后端处理&lt;/font&gt; &#xa;&lt;font color=&quot;#FF5722&quot;&gt;AI生成引擎&lt;/font&gt; &#xa;&lt;font color=&quot;#9C27B0&quot;&gt;审核/代理&lt;/font&gt; &#xa;&lt;font color=&quot;#1976D2&quot;&gt;Git操作&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#CCCCCC;fontSize=10;verticalAlign=top;align=left;spacing=4;" parent="1" vertex="1">
           <mxGeometry x="-270" y="1350" width="210" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="kSrNKHau6w2aA5gBeprg-2" value="List" style="swimlane;fontStyle=0;childLayout=stackLayout;horizontal=1;startSize=30;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="-590" y="490" width="300" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="kSrNKHau6w2aA5gBeprg-3" value="依据Bug单生成回归测试用例" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="kSrNKHau6w2aA5gBeprg-2">
+          <mxGeometry y="30" width="300" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="kSrNKHau6w2aA5gBeprg-4" value="嵌入Playwright报告展示" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="kSrNKHau6w2aA5gBeprg-2">
+          <mxGeometry y="60" width="300" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="kSrNKHau6w2aA5gBeprg-5" value="Item 3" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;spacingLeft=4;spacingRight=4;overflow=hidden;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;rotatable=0;whiteSpace=wrap;html=1;" vertex="1" parent="kSrNKHau6w2aA5gBeprg-2">
+          <mxGeometry y="90" width="300" height="30" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>

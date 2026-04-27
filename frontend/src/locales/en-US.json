@@ -139,7 +139,7 @@
   "issue": {
     "list": {
       "title": "Bug List",
-      "search": "Search title",
+      "search": "Search ID/Title",
       "zentaoStatus": "Zentao Status",
       "testStatus": "Test Status",
       "project": "Project",
@@ -1061,6 +1061,8 @@
   "status": {
     "test": {
       "pending": "Not Started",
+      "pending_upgrade": "Pending Upgrade",
+      "pending_generate": "Pending Generate",
       "generating": "Generating",
       "review_pending": "Review Pending",
       "review_approved": "Review Approved",

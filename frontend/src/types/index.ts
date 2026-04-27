@@ -395,6 +395,8 @@ type Translator = (key: string) => string
 export function getTestStatusMap(t: Translator): Record<string, { label: string; color: string }> {
   return {
     pending: { label: t('status.test.pending'), color: 'default' },
+    pending_upgrade: { label: t('status.test.pending_upgrade'), color: 'blue' },
+    pending_generate: { label: t('status.test.pending_generate'), color: 'purple' },
     generating: { label: t('status.test.generating'), color: 'processing' },
     review_pending: { label: t('status.test.review_pending'), color: 'warning' },
     review_approved: { label: t('status.test.review_approved'), color: 'cyan' },

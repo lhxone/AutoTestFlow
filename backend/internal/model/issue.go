@@ -5,6 +5,8 @@ import "time"
 // 测试状态枚举
 const (
 	TestStatusPending                = "pending"
+	TestStatusPendingUpgrade         = "pending_upgrade" // 待升级（研发流水线已提交，等待CI/CD部署）
+	TestStatusPendingGenerate        = "pending_generate" // 待生成（部署完成，等待生成测试）
 	TestStatusGenerating             = "generating"
 	TestStatusReviewPending          = "review_pending"
 	TestStatusReviewApproved         = "review_approved"
@@ -21,23 +23,24 @@ const (
 // Issue 问题单
 type Issue struct {
 	BaseModelNoSoftDelete
-	ZentaoID        int       `gorm:"uniqueIndex:uk_zentao_project;not null" json:"zentao_id"`
-	ProjectID       uint64    `gorm:"uniqueIndex:uk_zentao_project;index;not null" json:"project_id"`
-	Title           string    `gorm:"size:512;not null" json:"title"`
-	Description     string    `gorm:"type:text" json:"description"`
-	IssueType       string    `gorm:"size:32;default:'bug'" json:"issue_type"`
-	ZentaoStatus    string    `gorm:"size:32;index;default:''" json:"zentao_status"`
-	TestStatus      string    `gorm:"size:32;index;default:'pending'" json:"test_status"`
-	Severity        string    `gorm:"size:16;default:'normal'" json:"severity"`
-	Priority        int8      `gorm:"default:3" json:"priority"`
-	Reporter        string    `gorm:"size:64;default:''" json:"reporter"`
-	ReporterEmail   string    `gorm:"size:128;default:''" json:"reporter_email"`
-	Assignee        string    `gorm:"size:64;index;default:''" json:"assignee"`
-	AssigneeEmail   string    `gorm:"size:128;default:''" json:"assignee_email"`
-	Branch          string    `gorm:"size:128;default:''" json:"branch"`
-	ResolvedAt      *time.Time `json:"resolved_at"`
-	ZentaoUpdatedAt *time.Time `json:"zentao_updated_at"`
-	SyncedAt        *time.Time `json:"synced_at"`
+	ZentaoID          int        `gorm:"uniqueIndex:uk_zentao_project;not null" json:"zentao_id"`
+	ProjectID         uint64     `gorm:"uniqueIndex:uk_zentao_project;index;not null" json:"project_id"`
+	Title             string     `gorm:"size:512;not null" json:"title"`
+	Description       string     `gorm:"type:text" json:"description"`
+	IssueType         string     `gorm:"size:32;default:'bug'" json:"issue_type"`
+	ZentaoStatus      string     `gorm:"size:32;index;default:''" json:"zentao_status"`
+	TestStatus        string     `gorm:"size:32;index;default:'pending'" json:"test_status"`
+	Severity          string     `gorm:"size:16;default:'normal'" json:"severity"`
+	Priority          int8       `gorm:"default:3" json:"priority"`
+	Reporter          string     `gorm:"size:64;default:''" json:"reporter"`
+	ReporterEmail     string     `gorm:"size:128;default:''" json:"reporter_email"`
+	Assignee          string     `gorm:"size:64;index;default:''" json:"assignee"`
+	AssigneeEmail     string     `gorm:"size:128;default:''" json:"assignee_email"`
+	Branch            string     `gorm:"size:128;default:''" json:"branch"`
+	ResolvedAt        *time.Time `json:"resolved_at"`
+	ZentaoUpdatedAt   *time.Time `json:"zentao_updated_at"`
+	SyncedAt          *time.Time `json:"synced_at"`
+	DevFlowSubmitTime *time.Time `json:"dev_flow_submit_time"` // 研发流水线提交时间
 	// 关联
 	Project *Project `gorm:"foreignKey:ProjectID" json:"project,omitempty"`
 }

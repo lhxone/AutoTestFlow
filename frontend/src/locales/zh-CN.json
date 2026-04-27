@@ -139,7 +139,7 @@
   "issue": {
     "list": {
       "title": "Bug列表",
-      "search": "搜索标题",
+      "search": "搜索ID/标题",
       "zentaoStatus": "禅道状态",
       "testStatus": "测试状态",
       "project": "项目",
@@ -1061,6 +1061,8 @@
   "status": {
     "test": {
       "pending": "未开始",
+      "pending_upgrade": "待升级",
+      "pending_generate": "待生成",
       "generating": "生成中",
       "review_pending": "待审核",
       "review_approved": "审核通过",
