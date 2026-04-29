@@ -454,9 +454,10 @@ func buildModelToolName(serverName, toolName string) string {
 				builder.WriteByte('-')
 			}
 		}
+		// 使用下划线分隔，确保兼容更多模型API（如Kimi），它们只允许字母、数字、下划线和破折号
 		return strings.Trim(builder.String(), "-")
 	}
-	return fmt.Sprintf("mcp.%s.%s", sanitize(serverName), sanitize(toolName))
+	return fmt.Sprintf("mcp_%s_%s", sanitize(serverName), sanitize(toolName))
 }
 
 func buildToolDescription(serverName, description, kind string) string {
