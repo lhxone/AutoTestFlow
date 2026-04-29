@@ -447,16 +447,8 @@ function formatSeverity(severity: string) {
 }
 
 function canGenerateTest(issue: Issue) {
-  // 审核驳回、异常状态允许重新生成（不限制禅道状态）
-  if (issue.test_status === 'review_rejected' || issue.test_status === 'error') {
-    return issue.zentao_status === 'resolved' || issue.zentao_status === 'active'
-  }
-
-  if (issue.test_status === 'pending') {
-    return issue.zentao_status === 'resolved' || issue.zentao_status === 'active'
-  }
-
-  return false
+  // 允许对任意状态的Bug单生成测试，不限制禅道状态或测试状态
+  return true
 }
 </script>
 
