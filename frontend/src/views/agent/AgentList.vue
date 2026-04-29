@@ -70,15 +70,13 @@
           </a-col>
           <a-col :span="16">
             <a-form-item :label="t('agent.list.form.modelName')" required>
-              <a-select
-                v-if="!isCustomProvider"
+              <a-auto-complete
                 v-model:value="form.model_name"
                 :options="modelOptions"
                 :placeholder="t('agent.list.form.selectModel')"
-                show-search
                 :filter-option="filterOption"
+                allow-clear
               />
-              <a-input v-else v-model:value="form.model_name" placeholder="claude-sonnet-4-20250514" />
             </a-form-item>
           </a-col>
         </a-row>
@@ -332,8 +330,6 @@ const providerOptions = computed(() => [
   { label: t('agent.list.form.custom'), value: 'custom' },
 ])
 
-const isCustomProvider = computed(() => form.model_provider === 'custom')
-
 const currentPreset = computed(() => {
   if (form.model_provider === 'custom') {
     return null
@@ -423,7 +419,7 @@ function getProviderLabel(provider: string) {
 function applyProviderPreset(provider: Exclude<ProviderKey, 'custom'>) {
   const preset = MODEL_PRESETS[provider]
   form.base_url = preset.baseUrl
-  if (!preset.models.includes(form.model_name)) {
+  if (!form.model_name) {
     form.model_name = preset.models[0]
   }
 }
@@ -470,7 +466,6 @@ function buildConfigJSON(): any {
 function handleProviderChange(value: ProviderKey) {
   form.model_provider = value
   if (value === 'custom') {
-    form.model_name = ''
     form.base_url = ''
     return
   }
