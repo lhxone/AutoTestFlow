@@ -62,5 +62,10 @@ func ensureRuntimeTables(db *gorm.DB) error {
 			return err
 		}
 	}
+	if !db.Migrator().HasTable(&model.APIExchangeLog{}) {
+		if err := db.AutoMigrate(&model.APIExchangeLog{}); err != nil {
+			return err
+		}
+	}
 	return nil
 }

@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -22,6 +23,7 @@ type NotificationService struct {
 	projectRepo   *repository.ProjectRepo
 	testTaskRepo  *repository.TestTaskRepo
 	settingRepo   *repository.SettingRepo
+	apiLogRepo    *repository.APIExchangeLogRepo
 	logger        *zap.Logger
 }
 
@@ -32,6 +34,7 @@ func NewNotificationService(logger *zap.Logger) *NotificationService {
 		projectRepo:   repository.NewProjectRepo(),
 		testTaskRepo:  repository.NewTestTaskRepo(),
 		settingRepo:   repository.NewSettingRepo(),
+		apiLogRepo:    repository.NewAPIExchangeLogRepo(),
 		logger:        logger,
 	}
 }
@@ -230,6 +233,7 @@ func (s *NotificationService) NotifyDevFlowFailure(devTaskID string, issue *mode
 		return fmt.Errorf("序列化请求体失败: %w", err)
 	}
 
+	start := time.Now()
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 		Transport: &http.Transport{
@@ -239,6 +243,7 @@ func (s *NotificationService) NotifyDevFlowFailure(devTaskID string, issue *mode
 
 	req, err := http.NewRequest("POST", callbackURL, bytes.NewReader(body))
 	if err != nil {
+		s.logExternalTaskTestResult(start, callbackURL, nil, string(body), 0, "", model.APIExchangeStatusFailed, err.Error(), issue, devTaskID)
 		return fmt.Errorf("创建请求失败: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -249,12 +254,15 @@ func (s *NotificationService) NotifyDevFlowFailure(devTaskID string, issue *mode
 	resp, err := client.Do(req)
 	if err != nil {
 		s.logger.Error("通知研发流水线失败", zap.Error(err), zap.String("dev_task_id", devTaskID))
+		s.logExternalTaskTestResult(start, callbackURL, req.Header, string(body), 0, "", model.APIExchangeStatusFailed, err.Error(), issue, devTaskID)
 		return fmt.Errorf("请求失败: %w", err)
 	}
 	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode >= 400 {
 		s.logger.Warn("研发流水线回调返回错误状态", zap.Int("status", resp.StatusCode), zap.String("dev_task_id", devTaskID))
+		s.logExternalTaskTestResult(start, callbackURL, req.Header, string(body), resp.StatusCode, string(respBody), model.APIExchangeStatusFailed, fmt.Sprintf("回调返回状态码: %d", resp.StatusCode), issue, devTaskID)
 		return fmt.Errorf("回调返回状态码: %d", resp.StatusCode)
 	}
 
@@ -263,5 +271,50 @@ func (s *NotificationService) NotifyDevFlowFailure(devTaskID string, issue *mode
 		zap.Int("zentao_id", issue.ZentaoID),
 		zap.String("failure_type", failureType))
 
+	s.logExternalTaskTestResult(start, callbackURL, req.Header, string(body), resp.StatusCode, string(respBody), model.APIExchangeStatusSuccess, "", issue, devTaskID)
 	return nil
+}
+
+func (s *NotificationService) logExternalTaskTestResult(start time.Time, callbackURL string, headers http.Header, requestBody string, responseStatus int, responseBody string, resultStatus, errMsg string, issue *model.Issue, devTaskID string) {
+	if s.apiLogRepo == nil {
+		return
+	}
+	var issueID *uint64
+	if issue != nil {
+		issueID = &issue.ID
+	}
+	if resultStatus == "" {
+		resultStatus = model.APIExchangeStatusSuccess
+	}
+	log := &model.APIExchangeLog{
+		APIName:          "external_task_test_result",
+		Direction:        model.APIExchangeDirectionOutbound,
+		Method:           http.MethodPost,
+		URL:              callbackURL,
+		RequestHeaders:   repository.JSONValue(redactNotificationHeaders(headers)),
+		RequestBody:      requestBody,
+		ResponseStatus:   responseStatus,
+		ResponseBody:     responseBody,
+		ResultStatus:     resultStatus,
+		ErrorMessage:     errMsg,
+		DurationMillis:   time.Since(start).Milliseconds(),
+		RelatedIssueID:   issueID,
+		RelatedDevTaskID: devTaskID,
+	}
+	if err := s.apiLogRepo.Create(log); err != nil {
+		s.logger.Warn("记录外部测试结果回调历史失败", zap.String("dev_task_id", devTaskID), zap.Error(err))
+	}
+}
+
+func redactNotificationHeaders(headers http.Header) map[string][]string {
+	result := make(map[string][]string, len(headers))
+	for key, values := range headers {
+		lower := strings.ToLower(key)
+		if strings.Contains(lower, "token") || strings.Contains(lower, "key") || lower == "authorization" {
+			result[key] = []string{"***"}
+			continue
+		}
+		result[key] = values
+	}
+	return result
 }
