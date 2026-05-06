@@ -1,4 +1,4 @@
-FROM harbor.inspur.local/atf/node:20-alpine AS builder
+FROM harbor.inspur.local/atf/node:20 AS builder
 RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
 RUN npm config set registry https://registry.npmmirror.com
 WORKDIR /build
