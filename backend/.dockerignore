@@ -1,0 +1,12 @@
+.cache/
+.codex-runtime/
+.idea/
+bin/
+logs/
+pkg/mod/
+test-results/
+
+*.exe
+*.log
+
+Dockerfile.runtime-base

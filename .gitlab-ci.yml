@@ -70,8 +70,6 @@ build-backend-image:
     - name: harbor.inspur.local/atf/docker:${DOCKER_VERSION}-dind
   needs:
     - backend-test
-  variables:
-    DOCKER_BUILDKIT: "0"
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH'
@@ -83,11 +81,11 @@ build-backend-image:
       -u "$DOCKER_USERNAME" \
       -p "$DOCKER_PASSWORD"
     - docker pull harbor.inspur.local/atf/golang:1.26.2
-    - docker pull harbor.inspur.local/atf/auto-test-flow-backend-runtime:node20-bash
+    - docker pull harbor.inspur.local/atf/auto-test-flow-backend-runtime:node20-bash-chromium
   script:
     - export BACKEND_IMAGE="${BACKEND_IMAGE_REPO}:${CI_COMMIT_SHORT_SHA}"
     - echo "BACKEND_IMAGE=${BACKEND_IMAGE}"
-    - docker build -t "$BACKEND_IMAGE" backend
+    - docker build --progress=plain --build-arg GOPROXY="$GOPROXY" --build-arg GOSUMDB="$GOSUMDB" -t "$BACKEND_IMAGE" backend
     - docker push "$BACKEND_IMAGE"
 
 build-frontend-image:
@@ -99,8 +97,6 @@ build-frontend-image:
     - name: harbor.inspur.local/atf/docker:${DOCKER_VERSION}-dind
   needs:
     - frontend-test
-  variables:
-    DOCKER_BUILDKIT: "0"
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH'
@@ -116,7 +112,7 @@ build-frontend-image:
   script:
     - export FRONTEND_IMAGE="${FRONTEND_IMAGE_REPO}:${CI_COMMIT_SHORT_SHA}"
     - echo "FRONTEND_IMAGE=${FRONTEND_IMAGE}"
-    - docker build -t "$FRONTEND_IMAGE" frontend
+    - docker build --progress=plain --build-arg NPM_CONFIG_REGISTRY="$NPM_CONFIG_REGISTRY" -t "$FRONTEND_IMAGE" frontend
     - docker push "$FRONTEND_IMAGE"
 
 deploy-production:
