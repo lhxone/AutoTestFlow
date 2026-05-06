@@ -55,10 +55,15 @@ frontend-test:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH'
   before_script:
-    - npm config set registry "$NPM_CONFIG_REGISTRY" --legacy-peer-deps
+    - npm config set registry "$NPM_CONFIG_REGISTRY"
+    - npm config set fetch-retries 5
+    - npm config set fetch-retry-mintimeout 20000
+    - npm config set fetch-retry-maxtimeout 120000
   script:
     - cd frontend
-    - npm ci
+    - npm ci --include=dev --no-audit --fund=false
+    - test -x node_modules/.bin/vue-tsc
+    - test -x node_modules/.bin/vite
     - npm run build
 
 build-backend-image:
