@@ -1,13 +1,11 @@
 FROM harbor.inspur.local/atf/node:20-alpine AS builder
 
 RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
-ARG NPM_CONFIG_REGISTRY=https://registry.npmmirror.com
-RUN npm config set registry ${NPM_CONFIG_REGISTRY}
+RUN npm config set registry https://registry.npmmirror.com
 WORKDIR /build
 
 COPY package*.json ./
-RUN --mount=type=cache,target=/root/.npm \
-    npm ci --include=dev
+RUN npm ci --include=dev
 
 COPY . .
 RUN npm run build
