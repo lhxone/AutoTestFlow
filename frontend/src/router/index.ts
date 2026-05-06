@@ -51,6 +51,12 @@ const routes: RouteRecordRaw[] = [
         meta: { titleKey: 'layout.menu.workflows', permission: 'agent:list' },
       },
       {
+        path: 'knowledge/:projectId?',
+        name: 'Knowledge',
+        component: () => import('@/views/knowledge/index.vue'),
+        meta: { titleKey: 'layout.menu.knowledge', permission: 'knowledge:list' },
+      },
+      {
         path: 'reviews',
         name: 'ReviewList',
         component: () => import('@/views/review/ReviewList.vue'),

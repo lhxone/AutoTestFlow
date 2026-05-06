@@ -45,6 +45,7 @@
       "issues": "Bug",
       "agents": "Agent 管理",
       "workflows": "Workflow 管理",
+      "knowledge": "知识库",
       "reviews": "Review 审核",
       "testTasks": "测试任务",
       "testCases": "Bug回归用例",

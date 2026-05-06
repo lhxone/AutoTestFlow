@@ -31,6 +31,7 @@ func Setup(logger *zap.Logger) *gin.Engine {
 	cliInteractionH := handler.NewCLIInteractionHandler(nil)
 	zentaoTestCaseH := handler.NewZentaoTestCaseHandler(logger)
 	integrationH := handler.NewIntegrationHandler(logger)
+	knowledgeH := handler.NewKnowledgeHandler(logger)
 
 	api := r.Group("/api")
 	{
@@ -196,6 +197,29 @@ func Setup(logger *zap.Logger) *gin.Engine {
 				// CLI Runtime 配置
 				settings.GET("/cli-runtime", settingH.GetCLIRuntimeSettings)
 				settings.PUT("/cli-runtime", settingH.SaveCLIRuntimeSettings)
+			}
+
+			// 知识库配置
+			protected.GET("/knowledge-base/config", middleware.RequirePermission("knowledge:list"), knowledgeH.GetConfig)
+			protected.PUT("/knowledge-base/config", middleware.RequirePermission("knowledge:manage"), knowledgeH.SaveConfig)
+
+			// RAG 知识库
+			knowledgeBases := protected.Group("/knowledge-bases")
+			{
+				knowledgeBases.POST("", middleware.RequirePermission("knowledge:manage"), knowledgeH.CreateKB)
+				knowledgeBases.GET("", middleware.RequirePermission("knowledge:list"), knowledgeH.ListKB)
+				knowledgeBases.GET("/:id", middleware.RequirePermission("knowledge:list"), knowledgeH.GetKB)
+				knowledgeBases.PUT("/:id", middleware.RequirePermission("knowledge:manage"), knowledgeH.UpdateKB)
+				knowledgeBases.DELETE("/:id", middleware.RequirePermission("knowledge:manage"), knowledgeH.DeleteKB)
+				knowledgeBases.GET("/:id/stats", middleware.RequirePermission("knowledge:list"), knowledgeH.Stats)
+				knowledgeBases.POST("/:id/documents", middleware.RequirePermission("knowledge:manage"), knowledgeH.AddDocument)
+				knowledgeBases.POST("/:id/documents/batch", middleware.RequirePermission("knowledge:manage"), knowledgeH.BatchDocuments)
+				knowledgeBases.GET("/:id/documents", middleware.RequirePermission("knowledge:list"), knowledgeH.ListDocuments)
+				knowledgeBases.POST("/:id/documents/:docId/rebuild", middleware.RequirePermission("knowledge:manage"), knowledgeH.RebuildDocument)
+				knowledgeBases.DELETE("/:id/documents/:docId", middleware.RequirePermission("knowledge:manage"), knowledgeH.DeleteDocument)
+				knowledgeBases.POST("/:id/chunks/rebuild", middleware.RequirePermission("knowledge:manage"), knowledgeH.RebuildKB)
+				knowledgeBases.POST("/:id/query", middleware.RequirePermission("knowledge:list"), knowledgeH.Query)
+				knowledgeBases.GET("/:id/graph", middleware.RequirePermission("knowledge:list"), knowledgeH.Graph)
 			}
 
 			// 禅道代理接口(获取项目集/分支下拉选项)

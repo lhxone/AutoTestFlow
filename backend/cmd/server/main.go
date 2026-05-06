@@ -61,6 +61,7 @@ func main() {
 
 	// 5.5 初始化事件持久化
 	service.DefaultTaskEventHub.SetRepo(repository.NewTaskEventLogRepo())
+	service.InitKnowledgeBaseConfig(logger)
 
 	// 6. 初始化路由
 	r := router.Setup(logger)

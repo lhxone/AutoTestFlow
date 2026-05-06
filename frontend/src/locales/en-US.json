@@ -45,6 +45,7 @@
       "issues": "Bugs",
       "agents": "Agents",
       "workflows": "Workflows",
+      "knowledge": "Knowledge Base",
       "reviews": "Reviews",
       "testTasks": "Test Tasks",
       "testCases": "Bug Regression",

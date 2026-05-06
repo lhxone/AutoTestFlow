@@ -25,6 +25,9 @@
         <a-menu-item key="/workflows" v-if="hasPermission('agent:list')">
           <AppstoreOutlined /><span>{{ t('layout.menu.workflows') }}</span>
         </a-menu-item>
+        <a-menu-item key="/knowledge" v-if="hasPermission('knowledge:list')">
+          <BookOutlined /><span>{{ t('layout.menu.knowledge') }}</span>
+        </a-menu-item>
         <a-sub-menu key="system" v-if="showSystemMenu">
           <template #title>
             <span class="menu-group-title"><SettingOutlined /><span>{{ t('layout.menu.settings') }}</span></span>
@@ -86,7 +89,7 @@ import {
   DashboardOutlined, ProjectOutlined, BugOutlined, RobotOutlined,
   MenuFoldOutlined, MenuUnfoldOutlined, SettingOutlined, GlobalOutlined,
   AppstoreOutlined, SyncOutlined,
-  CheckSquareOutlined,
+  CheckSquareOutlined, BookOutlined,
 } from '@ant-design/icons-vue'
 
 const router = useRouter()

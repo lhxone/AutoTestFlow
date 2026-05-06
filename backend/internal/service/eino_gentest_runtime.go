@@ -56,12 +56,13 @@ type EinoGenTestRuntime struct {
 }
 
 type genTestToolCallContext struct {
-	Task      *model.TestTask
-	Input     *GenTestInput
-	Workflow  *model.Skill
-	Agent     *model.Agent
-	Workspace *RuntimeWorkspace
-	MCP       *MCPRuntime
+	Task       *model.TestTask
+	Input      *GenTestInput
+	Workflow   *model.Skill
+	Agent      *model.Agent
+	Workspace  *RuntimeWorkspace
+	MCP        *MCPRuntime
+	RAGContext string
 }
 
 type genTestToolResult struct {
@@ -156,7 +157,8 @@ func (r *EinoGenTestRuntime) Generate(
 			"repo_dir":      workspace.RepoDir,
 		})
 
-	prompt := r.buildPrompt(workspace, task, input, workflow, agent, promptCtx)
+	ragContext := r.retrieveRAGContext(ctx, task, input, workflow)
+	prompt := r.buildPrompt(workspace, task, input, workflow, agent, promptCtx, ragContext)
 	if err := r.workspace.WriteControlFiles(workspace, input, prompt, agent); err != nil {
 		return nil, err
 	}
@@ -195,12 +197,13 @@ func (r *EinoGenTestRuntime) Generate(
 		})
 
 	agentCtx := &genTestToolCallContext{
-		Task:      task,
-		Input:     input,
-		Workflow:  workflow,
-		Agent:     agent,
-		Workspace: workspace,
-		MCP:       mcpRuntime,
+		Task:       task,
+		Input:      input,
+		Workflow:   workflow,
+		Agent:      agent,
+		Workspace:  workspace,
+		MCP:        mcpRuntime,
+		RAGContext: ragContext,
 	}
 	output, err := r.runAgentLoop(ctx, execCfg, agentCtx, promptCtx)
 	if err != nil {
@@ -223,6 +226,39 @@ func (r *EinoGenTestRuntime) Generate(
 	return output, nil
 }
 
+func (r *EinoGenTestRuntime) retrieveRAGContext(ctx context.Context, task *model.TestTask, input *GenTestInput, workflow *model.Skill) string {
+	if task == nil || input == nil {
+		return ""
+	}
+	queryParts := []string{
+		input.ProjectName,
+		input.IssueTitle,
+		input.IssueDesc,
+		input.IssueSeverity,
+	}
+	query := strings.TrimSpace(strings.Join(queryParts, "\n"))
+	if query == "" {
+		return ""
+	}
+	knowledgeService := NewKnowledgeService(r.logger)
+	contextText, err := knowledgeService.RetrieveContextForGeneration(ctx, task.ProjectID, query, workflow)
+	if err != nil {
+		if r.logger != nil {
+			r.logger.Warn("RAG 检索失败，降级为无知识库模式",
+				zap.Uint64("task_id", task.ID),
+				zap.Uint64("project_id", task.ProjectID),
+				zap.Error(err))
+		}
+		r.publish(task.ID, taskEventTypeLog, "rag_retrieve", model.TaskStatusRunning,
+			fmt.Sprintf("RAG 检索失败，已降级为无知识库模式: %v", err), nil)
+		return ""
+	}
+	if strings.TrimSpace(contextText) != "" {
+		r.publish(task.ID, taskEventTypeLog, "rag_retrieve", model.TaskStatusRunning, "已注入 RAG 知识库检索上下文", nil)
+	}
+	return contextText
+}
+
 func (r *EinoGenTestRuntime) buildPrompt(
 	workspace *RuntimeWorkspace,
 	task *model.TestTask,
@@ -230,6 +266,7 @@ func (r *EinoGenTestRuntime) buildPrompt(
 	workflow *model.Skill,
 	agent *model.Agent,
 	promptCtx *CLIPromptContext,
+	ragContext string,
 ) string {
 	workflowPrompt := ""
 	if workflow != nil && strings.TrimSpace(workflow.PromptTemplate) != "" {
@@ -255,6 +292,11 @@ func (r *EinoGenTestRuntime) buildPrompt(
 	if agent != nil {
 		agentNote = fmt.Sprintf("\n## Agent\n- name: %s\n- description: %s\n- provider: %s\n- model: %s\n",
 			agent.Name, strings.TrimSpace(agent.Description), agent.ModelProvider, agent.ModelName)
+	}
+
+	ragNote := ""
+	if strings.TrimSpace(ragContext) != "" {
+		ragNote = "\n" + strings.TrimSpace(ragContext) + "\n"
 	}
 
 	inputJSON, _ := json.MarshalIndent(input, "", "  ")
@@ -373,7 +415,7 @@ Caution
 
 ## 输入上下文 JSON
 %s
-%s%s%s`,
+%s%s%s%s`,
 		runtime.GOOS,
 		strings.Join(availableCommandToolNames(runtime.GOOS), ", "),
 		workspace.RepoDir,
@@ -389,6 +431,7 @@ Caution
 		workflowPrompt,
 		mcpNote,
 		agentNote,
+		ragNote,
 	)
 }
 
@@ -399,7 +442,7 @@ func (r *EinoGenTestRuntime) runAgentLoop(
 	promptCtx *CLIPromptContext,
 ) (*GenTestOutput, error) {
 	systemPrompt := "你是 AutoTestFlow 的测试生成代理。严格使用工具探索事实，少猜测，多验证。完成所有动作后调用 SubmitGenTestResult。"
-	userPrompt := r.buildPrompt(toolCtx.Workspace, toolCtx.Task, toolCtx.Input, toolCtx.Workflow, toolCtx.Agent, promptCtx)
+	userPrompt := r.buildPrompt(toolCtx.Workspace, toolCtx.Task, toolCtx.Input, toolCtx.Workflow, toolCtx.Agent, promptCtx, toolCtx.RAGContext)
 
 	history := []runtimeMessage{
 		{Role: "system", Text: systemPrompt},
