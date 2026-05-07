@@ -65,6 +65,10 @@ frontend-test:
     - test -x node_modules/.bin/vue-tsc
     - test -x node_modules/.bin/vite
     - npm run build
+  artifacts:
+    paths:
+      - frontend/dist/
+    expire_in: 1 day
 
 build-backend-image:
   tags:
@@ -101,7 +105,8 @@ build-frontend-image:
   services:
     - name: harbor.inspur.local/atf/docker:${DOCKER_VERSION}-dind
   needs:
-    - frontend-test
+    - job: frontend-test
+      artifacts: true
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH'
@@ -112,12 +117,12 @@ build-frontend-image:
       docker login "$HARBOR_REGISTRY" \
       -u "$DOCKER_USERNAME" \
       -p "$DOCKER_PASSWORD"
-    - docker pull harbor.inspur.local/atf/node:20-alpine
     - docker pull harbor.inspur.local/atf/nginx:1.27-alpine
   script:
     - export FRONTEND_IMAGE="${FRONTEND_IMAGE_REPO}:${CI_COMMIT_SHORT_SHA}"
     - echo "FRONTEND_IMAGE=${FRONTEND_IMAGE}"
-    - docker build --progress=plain --build-arg NPM_CONFIG_REGISTRY="$NPM_CONFIG_REGISTRY" -t "$FRONTEND_IMAGE" frontend
+    - test -f frontend/dist/index.html
+    - docker build --progress=plain -f frontend/Dockerfile.ci -t "$FRONTEND_IMAGE" frontend
     - docker push "$FRONTEND_IMAGE"
 
 deploy-production:
