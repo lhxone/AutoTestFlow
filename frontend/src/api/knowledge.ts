@@ -6,6 +6,9 @@ export interface KnowledgeBaseConfig {
   vector_store_host: string
   vector_store_port: number
   vector_store_collection: string
+  embedding_provider: string
+  embedding_api_key: string
+  embedding_base_url: string
   embedding_model: string
   embedding_dimension: number
   embedding_batch_size: number

@@ -117,12 +117,6 @@ const routes: RouteRecordRaw[] = [
         meta: { titleKey: 'layout.menu.mail', role: 'admin' },
       },
       {
-        path: 'settings/ai',
-        name: 'AISettings',
-        component: () => import('@/views/settings/AISettings.vue'),
-        meta: { titleKey: 'layout.menu.ai', role: 'admin' },
-      },
-      {
         path: 'settings/cli-runtime',
         name: 'CLIRuntimeSettings',
         component: () => import('@/views/settings/CLIRuntimeSettings.vue'),

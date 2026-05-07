@@ -56,14 +56,18 @@ func NewVectorStore(ctx context.Context, cfg KnowledgeBaseConfig) (VectorStore, 
 	if strings.ToLower(strings.TrimSpace(cfg.VectorStoreType)) != "milvus" {
 		return nil, fmt.Errorf("不支持的向量存储类型: %s", cfg.VectorStoreType)
 	}
-	aiCfg := LoadAIConfig()
-	if strings.TrimSpace(aiCfg.APIKey) == "" {
-		return nil, fmt.Errorf("知识库已启用，但 AI API Key 为空，无法创建 Embedding 客户端")
+	apiKey := strings.TrimSpace(cfg.EmbeddingAPIKey)
+	if apiKey == "" {
+		return nil, fmt.Errorf("知识库已启用，但 knowledge_base.embedding.api_key 为空，无法创建 Embedding 客户端")
+	}
+	baseURL := strings.TrimRight(strings.TrimSpace(cfg.EmbeddingBaseURL), "/")
+	if baseURL == "" {
+		return nil, fmt.Errorf("知识库已启用，但 knowledge_base.embedding.base_url 为空，无法创建 Embedding 客户端")
 	}
 	dim := cfg.EmbeddingDimension
 	embedder, err := openaiembedding.NewEmbedder(ctx, &openaiembedding.EmbeddingConfig{
-		APIKey:     aiCfg.APIKey,
-		BaseURL:    strings.TrimRight(aiCfg.BaseURL, "/"),
+		APIKey:     apiKey,
+		BaseURL:    baseURL,
 		Model:      cfg.EmbeddingModel,
 		Dimensions: &dim,
 		Timeout:    60 * time.Second,
@@ -75,7 +79,7 @@ func NewVectorStore(ctx context.Context, cfg KnowledgeBaseConfig) (VectorStore, 
 		Address: fmt.Sprintf("%s:%d", cfg.VectorStoreHost, cfg.VectorStorePort),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("连接 Milvus 失败: %w", err)
+		return nil, fmt.Errorf("连接 Milvus 失败 (%s:%d): %w", cfg.VectorStoreHost, cfg.VectorStorePort, err)
 	}
 	return &MilvusVectorStore{cfg: cfg, client: client, embedder: embedder}, nil
 }
@@ -103,21 +107,44 @@ func (s *MilvusVectorStore) Store(ctx context.Context, projectID, kbID uint64, d
 	if err := s.ensurePartition(ctx, partition); err != nil {
 		return nil, err
 	}
-	einoDocs := make([]*schema.Document, 0, len(docs))
-	for _, item := range docs {
-		meta := item.Metadata
-		if meta == nil {
-			meta = map[string]any{}
-		}
-		meta["project_id"] = projectID
-		meta["knowledge_base_id"] = kbID
-		einoDocs = append(einoDocs, &schema.Document{
-			ID:       item.ID,
-			Content:  item.Content,
-			MetaData: meta,
-		})
+	batchSize := s.cfg.EmbeddingBatchSize
+	if batchSize <= 0 || batchSize > 64 {
+		batchSize = 64
 	}
-	return indexer.Store(ctx, einoDocs, milvusindexer.WithPartition(partition))
+	ids := make([]string, 0, len(docs))
+	for start := 0; start < len(docs); start += batchSize {
+		end := start + batchSize
+		if end > len(docs) {
+			end = len(docs)
+		}
+		einoDocs := make([]*schema.Document, 0, end-start)
+		for _, item := range docs[start:end] {
+			meta := item.Metadata
+			if meta == nil {
+				meta = map[string]any{}
+			}
+			meta["project_id"] = projectID
+			meta["knowledge_base_id"] = kbID
+			einoDocs = append(einoDocs, &schema.Document{
+				ID:       item.ID,
+				Content:  item.Content,
+				MetaData: meta,
+			})
+		}
+		storedIDs, err := indexer.Store(ctx, einoDocs, milvusindexer.WithPartition(partition))
+		if err != nil {
+			return ids, err
+		}
+		ids = append(ids, storedIDs...)
+	}
+	flushTask, err := s.client.Flush(ctx, milvusclient.NewFlushOption(s.cfg.VectorStoreCollection))
+	if err != nil {
+		return ids, fmt.Errorf("flush Milvus collection 失败: %w", err)
+	}
+	if err := flushTask.Await(ctx); err != nil {
+		return ids, fmt.Errorf("等待 Milvus flush 完成失败: %w", err)
+	}
+	return ids, nil
 }
 
 func (s *MilvusVectorStore) Search(ctx context.Context, query string, opts VectorSearchOptions) ([]VectorSearchResult, error) {
@@ -128,10 +155,18 @@ func (s *MilvusVectorStore) Search(ctx context.Context, query string, opts Vecto
 	if topK <= 0 {
 		topK = s.cfg.TopK
 	}
+	partition := knowledgePartition(opts.ProjectID, opts.KnowledgeBaseID)
+	hasPartition, err := s.client.HasPartition(ctx, milvusclient.NewHasPartitionOption(s.cfg.VectorStoreCollection, partition))
+	if err != nil {
+		return nil, fmt.Errorf("检查 Milvus partition 失败 (%s): %w", partition, err)
+	}
+	if !hasPartition {
+		return []VectorSearchResult{}, nil
+	}
 	retriever, err := milvusretriever.NewRetriever(ctx, &milvusretriever.RetrieverConfig{
 		Client:       s.client,
 		Collection:   s.cfg.VectorStoreCollection,
-		Partitions:   []string{knowledgePartition(opts.ProjectID, opts.KnowledgeBaseID)},
+		Partitions:   []string{partition},
 		Embedding:    s.embedder,
 		TopK:         topK,
 		SearchMode:   search_mode.NewApproximate(milvusretriever.COSINE),

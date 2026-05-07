@@ -35,7 +35,7 @@
     </a-row>
 
     <a-table :dataSource="list" :columns="columns" :loading="loading" :pagination="pagination"
-             @change="handleTableChange" rowKey="id" size="middle" :scroll="{ x: 1200 }">
+             @change="handleTableChange" rowKey="id" size="middle" :scroll="{ x: 1520 }">
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'zentao_status'">
           <a-tag>{{ formatZentaoStatus(record.zentao_status) }}</a-tag>
@@ -50,6 +50,12 @@
         </template>
         <template v-if="column.key === 'severity'">
           <a-tag :color="severityColor(record.severity)">{{ formatSeverity(record.severity) }}</a-tag>
+        </template>
+        <template v-if="column.key === 'resolved_at'">
+          {{ formatDateTime(record.resolved_at) }}
+        </template>
+        <template v-if="column.key === 'created_at'">
+          {{ formatDateTime(record.created_at) }}
         </template>
         <template v-if="column.key === 'action'">
           <a-button type="link" size="small" @click="handleViewDetail(record)">
@@ -156,8 +162,10 @@
               <div>{{ detailIssue.reporter || '-' }}</div>
               <div class="issue-detail-email">{{ detailIssue.reporter_email || '-' }}</div>
             </a-descriptions-item>
+            <a-descriptions-item :label="$t('issue.list.columns.resolvedAt')">{{ formatDateTime(detailIssue.resolved_at) }}</a-descriptions-item>
+            <a-descriptions-item :label="$t('issue.list.columns.createdAt')">{{ formatDateTime(detailIssue.created_at) }}</a-descriptions-item>
             <a-descriptions-item :label="$t('issue.list.detailModal.branch')">{{ detailIssue.branch || '-' }}</a-descriptions-item>
-            <a-descriptions-item :label="$t('issue.list.detailModal.updatedAt')">{{ detailIssue.synced_at || '-' }}</a-descriptions-item>
+            <a-descriptions-item :label="$t('issue.list.detailModal.updatedAt')">{{ formatDateTime(detailIssue.synced_at) }}</a-descriptions-item>
           </a-descriptions>
 
           <div class="issue-detail-section-title">{{ $t('issue.list.detailModal.description') }}</div>
@@ -178,6 +186,7 @@
 import { computed, ref, reactive, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { useRouter } from 'vue-router'
+import dayjs from 'dayjs'
 import { getIssueById, getIssueList, syncIssues } from '@/api/issue'
 import { getProjectList } from '@/api/project'
 import { createTestTask, getTestTaskList } from '@/api/testTask'
@@ -228,6 +237,8 @@ const columns = computed(() => [
   { title: t('issue.list.columns.testStatus'), key: 'test_status', width: 110 },
   { title: t('issue.list.columns.assignee'), dataIndex: 'assignee', key: 'assignee', width: 80 },
   { title: t('issue.list.columns.reporter'), dataIndex: 'reporter', key: 'reporter', width: 80 },
+  { title: t('issue.list.columns.resolvedAt'), dataIndex: 'resolved_at', key: 'resolved_at', width: 170 },
+  { title: t('issue.list.columns.createdAt'), dataIndex: 'created_at', key: 'created_at', width: 170 },
   { title: t('issue.list.columns.action'), key: 'action', width: 280, fixed: 'right' as const, customHeaderCell: () => ({ style: 'text-align: center' }) },
 ])
 
@@ -444,6 +455,12 @@ function formatSeverity(severity: string) {
     'minor': t('issue.list.severity.minor')
   }
   return severityMap[severity] || severity
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return '-'
+  const parsed = dayjs(value)
+  return parsed.isValid() ? parsed.format('YYYY-MM-DD HH:mm:ss') : value
 }
 
 function canGenerateTest(issue: Issue) {

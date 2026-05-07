@@ -55,15 +55,6 @@ export function sendTestMail(data: {
   return request.post('/settings/mail/send-test', data)
 }
 
-// AI设置
-export function getAISettings() {
-  return request.get('/settings/ai')
-}
-
-export function saveAISettings(data: { settings: any[] }) {
-  return request.put('/settings/ai', data)
-}
-
 // CLI Runtime 设置
 export function getCLIRuntimeSettings() {
   return request.get('/settings/cli-runtime')

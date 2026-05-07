@@ -149,33 +149,6 @@ func (h *SettingHandler) SendTestMail(c *gin.Context) {
 	pkg.OK(c, result)
 }
 
-// GetAISettings 获取AI配置
-// GET /api/settings/ai
-func (h *SettingHandler) GetAISettings(c *gin.Context) {
-	settings, err := h.settingService.GetSettings("ai")
-	if err != nil {
-		pkg.Fail(c, pkg.CodeInternalError, err.Error())
-		return
-	}
-	pkg.OK(c, settings)
-}
-
-// SaveAISettings 保存AI配置
-// PUT /api/settings/ai
-func (h *SettingHandler) SaveAISettings(c *gin.Context) {
-	var req dto.SaveSettingsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		pkg.Fail(c, pkg.CodeParamError, "参数错误: "+err.Error())
-		return
-	}
-	userID := middleware.GetCurrentUserID(c)
-	if err := h.settingService.SaveSettings("ai", &req, userID); err != nil {
-		pkg.Fail(c, pkg.CodeInternalError, err.Error())
-		return
-	}
-	pkg.OK(c, nil)
-}
-
 // GetCLIRuntimeSettings 获取 CLI Runtime 配置
 // GET /api/settings/cli-runtime
 func (h *SettingHandler) GetCLIRuntimeSettings(c *gin.Context) {

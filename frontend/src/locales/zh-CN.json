@@ -56,7 +56,6 @@
       "zentao": "禅道管理",
       "gitlab": "GitLab 管理",
       "mail": "邮件管理",
-      "ai": "AI 管理",
       "cliRuntime": "CLI Runtime",
       "syncLogs": "采集记录"
     },
@@ -168,6 +167,8 @@
         "testStatus": "测试状态",
         "assignee": "负责人",
         "reporter": "提出人",
+        "resolvedAt": "解决时间",
+        "createdAt": "创建时间",
         "action": "操作"
       },
       "action": {
@@ -808,26 +809,6 @@
       "messages": {
         "required": "请填写 SMTP 服务器、端口和发件人邮箱",
         "recipientRequired": "请填写测试收件人邮箱"
-      }
-    },
-    "ai": {
-      "title": "AI 管理",
-      "subtitle": "配置 AI 模型和 API 密钥",
-      "configuration": "AI 配置",
-      "provider": "AI 提供商",
-      "apiKey": "API Key",
-      "apiKeyPlaceholder": "输入 API Key",
-      "baseUrl": "Base URL",
-      "baseUrlPlaceholder": "可选，自定义 API 地址",
-      "baseUrlHint": "留空使用默认地址。Claude 默认: https://api.anthropic.com，OpenAI 默认: https://api.openai.com",
-      "model": "模型名称",
-      "modelPlaceholder": "如 claude-sonnet-4-20250514",
-      "modelHint": "留空使用默认模型。Claude 默认: claude-sonnet-4-20250514，OpenAI 默认: gpt-4o",
-      "maxTokens": "Max Tokens",
-      "temperature": "Temperature",
-      "save": "保存配置",
-      "messages": {
-        "required": "请填写 AI 提供商和 API Key"
       }
     },
     "cliRuntime": {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"auto-test-flow/internal/model"
 	"auto-test-flow/internal/repository"
@@ -89,7 +90,9 @@ func NewKnowledgeService(logger *zap.Logger) *KnowledgeService {
 	var store VectorStore
 	cfg := cfgSvc.Current()
 	if cfg.Enabled {
-		if created, err := NewVectorStore(context.Background(), cfg); err != nil {
+		initCtx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		defer cancel()
+		if created, err := NewVectorStore(initCtx, cfg); err != nil {
 			if logger != nil {
 				logger.Warn("初始化知识库向量存储失败", zap.Error(err))
 			}
@@ -115,7 +118,9 @@ func (s *KnowledgeService) SaveConfig(ctx context.Context, cfg KnowledgeBaseConf
 	newCfg := normalizeKnowledgeBaseConfig(cfg)
 	var newStore VectorStore
 	if newCfg.Enabled {
-		store, err := NewVectorStore(ctx, newCfg)
+		initCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+		defer cancel()
+		store, err := NewVectorStore(initCtx, newCfg)
 		if err != nil {
 			return err
 		}
@@ -356,23 +361,35 @@ func (s *KnowledgeService) Graph(projectID, kbID uint64) (*KnowledgeGraph, error
 	}
 	nodes := make(map[string]KnowledgeGraphNode)
 	edges := make([]KnowledgeGraphEdge, 0)
+	seenChunks := make(map[uint64]struct{})
+	seenEdges := make(map[string]struct{})
 	for _, row := range rows {
 		docID := fmt.Sprintf("doc-%d", row.DocID)
 		chunkID := fmt.Sprintf("chunk-%d", row.ChunkID)
 		nodes[docID] = KnowledgeGraphNode{ID: docID, Name: firstDocString(row.DocTitle, fmt.Sprintf("Doc %d", row.DocID)), Type: "document", Category: "document", Value: 12, Meta: map[string]any{"doc_id": row.DocID}}
-		nodes[chunkID] = KnowledgeGraphNode{ID: chunkID, Name: fmt.Sprintf("Chunk %d", row.ChunkIndex+1), Type: "chunk", Category: "chunk", Value: 6, Meta: map[string]any{"chunk_id": row.ChunkID, "doc_id": row.DocID, "text": row.ChunkText}}
-		edges = append(edges, KnowledgeGraphEdge{Source: docID, Target: chunkID, Type: "contains", Score: 1})
-		for _, tag := range extractKeywords(row.ChunkText, 4) {
-			tagID := "tag-" + tag
-			nodes[tagID] = KnowledgeGraphNode{ID: tagID, Name: tag, Type: "tag", Category: "tag", Value: 4, Meta: map[string]any{"tag": tag}}
-			edges = append(edges, KnowledgeGraphEdge{Source: chunkID, Target: tagID, Type: "tag", Score: 1})
+		if _, exists := seenChunks[row.ChunkID]; !exists {
+			seenChunks[row.ChunkID] = struct{}{}
+			nodes[chunkID] = KnowledgeGraphNode{
+				ID:       chunkID,
+				Name:     fmt.Sprintf("Chunk %d", row.ChunkIndex+1),
+				Type:     "chunk",
+				Category: "chunk",
+				Value:    6,
+				Meta:     map[string]any{"chunk_id": row.ChunkID, "doc_id": row.DocID, "text": truncateGraphText(row.ChunkText, 500)},
+			}
+			edges = appendGraphEdge(edges, seenEdges, KnowledgeGraphEdge{Source: docID, Target: chunkID, Type: "contains", Score: 1})
+			for _, tag := range extractKeywords(row.ChunkText, 4) {
+				tagID := "tag-" + tag
+				nodes[tagID] = KnowledgeGraphNode{ID: tagID, Name: tag, Type: "tag", Category: "tag", Value: 4, Meta: map[string]any{"tag": tag}}
+				edges = appendGraphEdge(edges, seenEdges, KnowledgeGraphEdge{Source: chunkID, Target: tagID, Type: "tag", Score: 1})
+			}
 		}
 		if row.TargetID != nil && row.RelationType != nil {
 			score := 0.0
 			if row.Score != nil {
 				score = *row.Score
 			}
-			edges = append(edges, KnowledgeGraphEdge{Source: chunkID, Target: fmt.Sprintf("chunk-%d", *row.TargetID), Type: *row.RelationType, Score: score})
+			edges = appendGraphEdge(edges, seenEdges, KnowledgeGraphEdge{Source: chunkID, Target: fmt.Sprintf("chunk-%d", *row.TargetID), Type: *row.RelationType, Score: score})
 		}
 	}
 	list := make([]KnowledgeGraphNode, 0, len(nodes))
@@ -381,6 +398,23 @@ func (s *KnowledgeService) Graph(projectID, kbID uint64) (*KnowledgeGraph, error
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].ID < list[j].ID })
 	return &KnowledgeGraph{Nodes: list, Edges: edges}, nil
+}
+
+func appendGraphEdge(edges []KnowledgeGraphEdge, seen map[string]struct{}, edge KnowledgeGraphEdge) []KnowledgeGraphEdge {
+	key := edge.Source + "->" + edge.Target + ":" + edge.Type
+	if _, exists := seen[key]; exists {
+		return edges
+	}
+	seen[key] = struct{}{}
+	return append(edges, edge)
+}
+
+func truncateGraphText(text string, limit int) string {
+	runes := []rune(strings.TrimSpace(text))
+	if len(runes) <= limit {
+		return string(runes)
+	}
+	return string(runes[:limit]) + "..."
 }
 
 func (s *KnowledgeService) RetrieveContextForGeneration(ctx context.Context, projectID uint64, query string, workflow *model.Skill) (string, error) {

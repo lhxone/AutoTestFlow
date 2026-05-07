@@ -12,18 +12,21 @@ import (
 )
 
 const (
-	kbKeyEnabled             = "knowledge_base.enabled"
-	kbKeyVectorStoreType     = "knowledge_base.vector_store.type"
-	kbKeyVectorStoreHost     = "knowledge_base.vector_store.host"
-	kbKeyVectorStorePort     = "knowledge_base.vector_store.port"
-	kbKeyVectorStoreColl     = "knowledge_base.vector_store.collection"
-	kbKeyEmbeddingModel      = "knowledge_base.embedding.model"
-	kbKeyEmbeddingDimension  = "knowledge_base.embedding.dimension"
-	kbKeyEmbeddingBatchSize  = "knowledge_base.embedding.batch_size"
-	kbKeyChunkSize           = "knowledge_base.chunk_size"
-	kbKeyChunkOverlap        = "knowledge_base.chunk_overlap"
-	kbKeyTopK                = "knowledge_base.top_k"
-	kbKeySimilarityThreshold = "knowledge_base.similarity_threshold"
+	kbKeyEnabled             = "enabled"
+	kbKeyVectorStoreType     = "vector_store.type"
+	kbKeyVectorStoreHost     = "vector_store.host"
+	kbKeyVectorStorePort     = "vector_store.port"
+	kbKeyVectorStoreColl     = "vector_store.collection"
+	kbKeyEmbeddingProvider   = "embedding.provider"
+	kbKeyEmbeddingAPIKey     = "embedding.api_key"
+	kbKeyEmbeddingBaseURL    = "embedding.base_url"
+	kbKeyEmbeddingModel      = "embedding.model"
+	kbKeyEmbeddingDimension  = "embedding.dimension"
+	kbKeyEmbeddingBatchSize  = "embedding.batch_size"
+	kbKeyChunkSize           = "chunk_size"
+	kbKeyChunkOverlap        = "chunk_overlap"
+	kbKeyTopK                = "top_k"
+	kbKeySimilarityThreshold = "similarity_threshold"
 )
 
 type KnowledgeBaseConfig struct {
@@ -32,6 +35,9 @@ type KnowledgeBaseConfig struct {
 	VectorStoreHost       string  `json:"vector_store_host"`
 	VectorStorePort       int     `json:"vector_store_port"`
 	VectorStoreCollection string  `json:"vector_store_collection"`
+	EmbeddingProvider     string  `json:"embedding_provider"`
+	EmbeddingAPIKey       string  `json:"embedding_api_key"`
+	EmbeddingBaseURL      string  `json:"embedding_base_url"`
 	EmbeddingModel        string  `json:"embedding_model"`
 	EmbeddingDimension    int     `json:"embedding_dimension"`
 	EmbeddingBatchSize    int     `json:"embedding_batch_size"`
@@ -85,18 +91,21 @@ func (s *KnowledgeBaseConfigService) Refresh() (KnowledgeBaseConfig, error) {
 	for _, item := range settings {
 		values[item.Key] = item.Value
 	}
-	cfg.Enabled = parseKBBool(values[kbKeyEnabled], cfg.Enabled)
-	cfg.VectorStoreType = firstKBString(values[kbKeyVectorStoreType], cfg.VectorStoreType)
-	cfg.VectorStoreHost = firstKBString(values[kbKeyVectorStoreHost], cfg.VectorStoreHost)
-	cfg.VectorStorePort = parseKBInt(values[kbKeyVectorStorePort], cfg.VectorStorePort)
-	cfg.VectorStoreCollection = firstKBString(values[kbKeyVectorStoreColl], cfg.VectorStoreCollection)
-	cfg.EmbeddingModel = firstKBString(values[kbKeyEmbeddingModel], cfg.EmbeddingModel)
-	cfg.EmbeddingDimension = parseKBInt(values[kbKeyEmbeddingDimension], cfg.EmbeddingDimension)
-	cfg.EmbeddingBatchSize = parseKBInt(values[kbKeyEmbeddingBatchSize], cfg.EmbeddingBatchSize)
-	cfg.ChunkSize = parseKBInt(values[kbKeyChunkSize], cfg.ChunkSize)
-	cfg.ChunkOverlap = parseKBInt(values[kbKeyChunkOverlap], cfg.ChunkOverlap)
-	cfg.TopK = parseKBInt(values[kbKeyTopK], cfg.TopK)
-	cfg.SimilarityThreshold = parseKBFloat(values[kbKeySimilarityThreshold], cfg.SimilarityThreshold)
+	cfg.Enabled = parseKBBool(kbValue(values, kbKeyEnabled), cfg.Enabled)
+	cfg.VectorStoreType = firstKBString(kbValue(values, kbKeyVectorStoreType), cfg.VectorStoreType)
+	cfg.VectorStoreHost = firstKBString(kbValue(values, kbKeyVectorStoreHost), cfg.VectorStoreHost)
+	cfg.VectorStorePort = parseKBInt(kbValue(values, kbKeyVectorStorePort), cfg.VectorStorePort)
+	cfg.VectorStoreCollection = firstKBString(kbValue(values, kbKeyVectorStoreColl), cfg.VectorStoreCollection)
+	cfg.EmbeddingProvider = firstKBString(kbValue(values, kbKeyEmbeddingProvider), cfg.EmbeddingProvider)
+	cfg.EmbeddingAPIKey = firstKBString(kbValue(values, kbKeyEmbeddingAPIKey), cfg.EmbeddingAPIKey)
+	cfg.EmbeddingBaseURL = firstKBString(kbValue(values, kbKeyEmbeddingBaseURL), cfg.EmbeddingBaseURL)
+	cfg.EmbeddingModel = firstKBString(kbValue(values, kbKeyEmbeddingModel), cfg.EmbeddingModel)
+	cfg.EmbeddingDimension = parseKBInt(kbValue(values, kbKeyEmbeddingDimension), cfg.EmbeddingDimension)
+	cfg.EmbeddingBatchSize = parseKBInt(kbValue(values, kbKeyEmbeddingBatchSize), cfg.EmbeddingBatchSize)
+	cfg.ChunkSize = parseKBInt(kbValue(values, kbKeyChunkSize), cfg.ChunkSize)
+	cfg.ChunkOverlap = parseKBInt(kbValue(values, kbKeyChunkOverlap), cfg.ChunkOverlap)
+	cfg.TopK = parseKBInt(kbValue(values, kbKeyTopK), cfg.TopK)
+	cfg.SimilarityThreshold = parseKBFloat(kbValue(values, kbKeySimilarityThreshold), cfg.SimilarityThreshold)
 
 	s.mu.Lock()
 	s.cache = cfg
@@ -112,6 +121,9 @@ func (s *KnowledgeBaseConfigService) Save(cfg KnowledgeBaseConfig, operatorID ui
 		{Key: kbKeyVectorStoreHost, Value: normalized.VectorStoreHost, Description: "Milvus 地址", UpdatedBy: &operatorID},
 		{Key: kbKeyVectorStorePort, Value: strconv.Itoa(normalized.VectorStorePort), Description: "Milvus 端口", UpdatedBy: &operatorID},
 		{Key: kbKeyVectorStoreColl, Value: normalized.VectorStoreCollection, Description: "Milvus Collection", UpdatedBy: &operatorID},
+		{Key: kbKeyEmbeddingProvider, Value: normalized.EmbeddingProvider, Description: "Embedding 服务类型", UpdatedBy: &operatorID},
+		{Key: kbKeyEmbeddingAPIKey, Value: normalized.EmbeddingAPIKey, Encrypted: 1, Description: "Embedding API Key", UpdatedBy: &operatorID},
+		{Key: kbKeyEmbeddingBaseURL, Value: normalized.EmbeddingBaseURL, Description: "Embedding OpenAI 兼容 Base URL", UpdatedBy: &operatorID},
 		{Key: kbKeyEmbeddingModel, Value: normalized.EmbeddingModel, Description: "Embedding 模型名", UpdatedBy: &operatorID},
 		{Key: kbKeyEmbeddingDimension, Value: strconv.Itoa(normalized.EmbeddingDimension), Description: "Embedding 向量维度", UpdatedBy: &operatorID},
 		{Key: kbKeyEmbeddingBatchSize, Value: strconv.Itoa(normalized.EmbeddingBatchSize), Description: "Embedding 批大小", UpdatedBy: &operatorID},
@@ -136,6 +148,9 @@ func defaultKnowledgeBaseConfig() KnowledgeBaseConfig {
 		VectorStoreHost:       "localhost",
 		VectorStorePort:       19530,
 		VectorStoreCollection: "autotestflow_knowledge",
+		EmbeddingProvider:     "openai_compatible",
+		EmbeddingAPIKey:       "",
+		EmbeddingBaseURL:      "https://api.openai.com/v1",
 		EmbeddingModel:        "text-embedding-3-small",
 		EmbeddingDimension:    1536,
 		EmbeddingBatchSize:    16,
@@ -154,12 +169,18 @@ func normalizeKnowledgeBaseConfig(cfg KnowledgeBaseConfig) KnowledgeBaseConfig {
 		cfg.VectorStorePort = def.VectorStorePort
 	}
 	cfg.VectorStoreCollection = firstKBString(cfg.VectorStoreCollection, def.VectorStoreCollection)
+	cfg.EmbeddingProvider = firstKBString(cfg.EmbeddingProvider, def.EmbeddingProvider)
+	cfg.EmbeddingAPIKey = strings.TrimSpace(cfg.EmbeddingAPIKey)
+	cfg.EmbeddingBaseURL = firstKBString(strings.TrimRight(strings.TrimSpace(cfg.EmbeddingBaseURL), "/"), def.EmbeddingBaseURL)
 	cfg.EmbeddingModel = firstKBString(cfg.EmbeddingModel, def.EmbeddingModel)
 	if cfg.EmbeddingDimension <= 0 {
 		cfg.EmbeddingDimension = def.EmbeddingDimension
 	}
 	if cfg.EmbeddingBatchSize <= 0 {
 		cfg.EmbeddingBatchSize = def.EmbeddingBatchSize
+	}
+	if cfg.EmbeddingBatchSize > 64 {
+		cfg.EmbeddingBatchSize = 64
 	}
 	if cfg.ChunkSize <= 0 {
 		cfg.ChunkSize = def.ChunkSize
@@ -174,6 +195,13 @@ func normalizeKnowledgeBaseConfig(cfg KnowledgeBaseConfig) KnowledgeBaseConfig {
 		cfg.SimilarityThreshold = def.SimilarityThreshold
 	}
 	return cfg
+}
+
+func kbValue(values map[string]string, key string) string {
+	if value, ok := values[key]; ok {
+		return value
+	}
+	return values["knowledge_base."+key]
 }
 
 func firstKBString(value, fallback string) string {

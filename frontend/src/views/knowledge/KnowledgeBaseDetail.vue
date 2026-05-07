@@ -26,7 +26,9 @@
         </a-row>
       </a-tab-pane>
       <a-tab-pane key="graph" tab="知识图谱">
-        <KnowledgeGraph :graph="graph" />
+        <div class="graph-tab">
+          <KnowledgeGraph :graph="graph" :loading="graphLoading" />
+        </div>
       </a-tab-pane>
     </a-tabs>
   </a-space>
@@ -60,6 +62,7 @@ const actionId = ref<number>()
 const documents = ref<KnowledgeDocument[]>([])
 const stats = ref<KnowledgeStats>()
 const graph = ref<KnowledgeGraphData>()
+const graphLoading = ref(false)
 
 const statItems = computed(() => [
   { label: '文档数', value: stats.value?.document_count || 0 },
@@ -84,8 +87,13 @@ async function loadStats() {
 }
 
 async function loadGraph() {
-  const res = await getKnowledgeGraph(props.kb.id, props.projectId)
-  graph.value = res.data.data
+  graphLoading.value = true
+  try {
+    const res = await getKnowledgeGraph(props.kb.id, props.projectId)
+    graph.value = res.data.data
+  } finally {
+    graphLoading.value = false
+  }
 }
 
 async function rebuildDoc(id: number) {
@@ -119,6 +127,22 @@ onMounted(() => {
 <style scoped>
 .kb-detail {
   width: 100%;
+  min-height: calc(100vh - 172px);
+}
+.kb-detail :deep(.ant-space-item:last-child) {
+  flex: 1;
+  min-height: 0;
+}
+.kb-detail :deep(.ant-tabs) {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.kb-detail :deep(.ant-tabs-content-holder),
+.kb-detail :deep(.ant-tabs-content),
+.kb-detail :deep(.ant-tabs-tabpane-active) {
+  flex: 1;
+  min-height: 0;
 }
 .detail-header {
   display: grid;
@@ -136,5 +160,9 @@ onMounted(() => {
 }
 .table-block {
   margin-top: 16px;
+}
+.graph-tab {
+  height: calc(100vh - 260px);
+  min-height: 640px;
 }
 </style>

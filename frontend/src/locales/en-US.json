@@ -56,7 +56,6 @@
       "zentao": "Zentao Settings",
       "gitlab": "GitLab Settings",
       "mail": "Mail Settings",
-      "ai": "AI Settings",
       "cliRuntime": "CLI Runtime",
       "syncLogs": "Sync Logs"
     },
@@ -168,6 +167,8 @@
         "testStatus": "Test Status",
         "assignee": "Assignee",
         "reporter": "Reporter",
+        "resolvedAt": "Resolved At",
+        "createdAt": "Created At",
         "action": "Action"
       },
       "action": {
@@ -808,26 +809,6 @@
       "messages": {
         "required": "Please enter the SMTP host, port, and sender address",
         "recipientRequired": "Please enter a recipient email"
-      }
-    },
-    "ai": {
-      "title": "AI Settings",
-      "subtitle": "Configure AI model and API key",
-      "configuration": "AI Configuration",
-      "provider": "AI Provider",
-      "apiKey": "API Key",
-      "apiKeyPlaceholder": "Enter API Key",
-      "baseUrl": "Base URL",
-      "baseUrlPlaceholder": "Optional, custom API endpoint",
-      "baseUrlHint": "Leave empty for default. Claude default: https://api.anthropic.com, OpenAI default: https://api.openai.com",
-      "model": "Model Name",
-      "modelPlaceholder": "e.g. claude-sonnet-4-20250514",
-      "modelHint": "Leave empty for default. Claude default: claude-sonnet-4-20250514, OpenAI default: gpt-4o",
-      "maxTokens": "Max Tokens",
-      "temperature": "Temperature",
-      "save": "Save Settings",
-      "messages": {
-        "required": "Please enter the AI provider and API key"
       }
     },
     "cliRuntime": {

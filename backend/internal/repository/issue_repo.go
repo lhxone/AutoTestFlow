@@ -73,7 +73,7 @@ func (r *IssueRepo) List(projectID uint64, zentaoStatus, testStatus, branch, key
 	}
 
 	var issues []model.Issue
-	if err := query.Offset(offset).Limit(limit).Order("id DESC").Find(&issues).Error; err != nil {
+	if err := query.Offset(offset).Limit(limit).Order("resolved_at IS NULL ASC, resolved_at DESC, id DESC").Find(&issues).Error; err != nil {
 		return nil, 0, err
 	}
 

@@ -191,9 +191,6 @@ func Setup(logger *zap.Logger) *gin.Engine {
 				settings.PUT("/mail", settingH.SaveMailSettings)
 				settings.POST("/mail/test", settingH.TestMailConnection)
 				settings.POST("/mail/send-test", settingH.SendTestMail)
-				// AI配置
-				settings.GET("/ai", settingH.GetAISettings)
-				settings.PUT("/ai", settingH.SaveAISettings)
 				// CLI Runtime 配置
 				settings.GET("/cli-runtime", settingH.GetCLIRuntimeSettings)
 				settings.PUT("/cli-runtime", settingH.SaveCLIRuntimeSettings)
