@@ -845,6 +845,7 @@
   },
   "taskRun": {
     "drawerTitle": "任务运行详情",
+    "viewBugDetail": "查看Bug详情",
     "noLogs": "等待任务输出...",
     "viewScript": "查看",
     "scriptPreview": "脚本内容",

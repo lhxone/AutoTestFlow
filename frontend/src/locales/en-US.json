@@ -845,6 +845,7 @@
   },
   "taskRun": {
     "drawerTitle": "Task Run Details",
+    "viewBugDetail": "View Bug Detail",
     "noLogs": "Waiting for task output...",
     "viewScript": "View",
     "scriptPreview": "Script Content",

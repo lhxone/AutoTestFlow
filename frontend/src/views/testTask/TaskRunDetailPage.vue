@@ -1,6 +1,12 @@
 <template>
   <div class="task-run-page">
-    <a-page-header :title="`${t('taskRun.drawerTitle')} #${taskId}`" @back="handleBack" />
+    <a-page-header :title="`${t('taskRun.drawerTitle')} #${taskId}`" @back="handleBack">
+      <template #extra>
+        <a-button v-if="taskInfo?.issue" @click="handleViewIssueDetail">
+          {{ t('taskRun.viewBugDetail') }}
+        </a-button>
+      </template>
+    </a-page-header>
 
     <a-skeleton v-if="initializing" active :paragraph="{ rows: 8 }" />
 
@@ -180,6 +186,61 @@
     >
       <pre class="script-preview">{{ viewingScript?.file_content }}</pre>
     </a-modal>
+
+    <!-- Bug detail modal -->
+    <a-modal
+      v-model:open="issueDetailModal"
+      :title="t('issue.list.detailModal.title')"
+      :footer="null"
+      :width="920"
+      destroyOnClose
+    >
+      <a-spin :spinning="issueDetailLoading">
+        <template v-if="issueDetailData">
+          <div class="issue-detail-toolbar">
+            <a-button
+              type="primary"
+              ghost
+              @click="handleOpenIssueZentao"
+              :disabled="!issueDetailData.zentao_url"
+            >
+              {{ t('issue.list.detailModal.openInZentao') }}
+            </a-button>
+          </div>
+          <a-descriptions :column="2" bordered size="small" style="margin-bottom: 16px">
+            <a-descriptions-item :label="t('issue.list.columns.id')">{{ issueDetailData.zentao_id }}</a-descriptions-item>
+            <a-descriptions-item :label="t('issue.list.columns.title')">{{ issueDetailData.title }}</a-descriptions-item>
+            <a-descriptions-item :label="t('issue.list.columns.zentaoStatus')">
+              <a-tag>{{ formatIssueZentaoStatus(issueDetailData.zentao_status) }}</a-tag>
+            </a-descriptions-item>
+            <a-descriptions-item :label="t('issue.list.columns.testStatus')">
+              <a-tag :color="issueTestStatusMap[issueDetailData.test_status]?.color || 'default'">
+                {{ issueTestStatusMap[issueDetailData.test_status]?.label || issueDetailData.test_status }}
+              </a-tag>
+            </a-descriptions-item>
+            <a-descriptions-item :label="t('issue.list.detailModal.assignee')">
+              <div>{{ issueDetailData.assignee || '-' }}</div>
+              <div style="color: #999; font-size: 12px">{{ issueDetailData.assignee_email || '-' }}</div>
+            </a-descriptions-item>
+            <a-descriptions-item :label="t('issue.list.detailModal.reporter')">
+              <div>{{ issueDetailData.reporter || '-' }}</div>
+              <div style="color: #999; font-size: 12px">{{ issueDetailData.reporter_email || '-' }}</div>
+            </a-descriptions-item>
+            <a-descriptions-item :label="t('issue.list.columns.resolvedAt')">{{ formatIssueDateTime(issueDetailData.resolved_at) }}</a-descriptions-item>
+            <a-descriptions-item :label="t('issue.list.columns.createdAt')">{{ formatIssueDateTime(issueDetailData.created_at) }}</a-descriptions-item>
+            <a-descriptions-item :label="t('issue.list.detailModal.branch')">{{ issueDetailData.branch || '-' }}</a-descriptions-item>
+            <a-descriptions-item :label="t('issue.list.detailModal.updatedAt')">{{ formatIssueDateTime(issueDetailData.synced_at) }}</a-descriptions-item>
+          </a-descriptions>
+          <div class="issue-detail-section-title">{{ t('issue.list.detailModal.description') }}</div>
+          <div
+            v-if="issueDetailData.description"
+            class="issue-detail-content"
+            v-html="issueDetailData.description"
+          />
+          <a-empty v-else :description="t('issue.list.detailModal.noDescription')" />
+        </template>
+      </a-spin>
+    </a-modal>
   </div>
 </template>
 
@@ -201,8 +262,10 @@ import {
   updateTestScript,
 } from '@/api/testTask'
 import { doReview, getReviewDetail, getReviewList } from '@/api/review'
-import type { ReviewDetail, ReviewTask, SelfTestFrameworkReport, SelfTestReport, TestCaseVO, TestScriptVO, TestTask, TestTaskEvent } from '@/types'
-import { translateSelfTestResult, translateTaskStatus, translateTestCaseCategory, translateCaseSource, getReviewStatusMap } from '@/types'
+import { getIssueById } from '@/api/issue'
+import type { Issue, ReviewDetail, ReviewTask, SelfTestFrameworkReport, SelfTestReport, TestCaseVO, TestScriptVO, TestTask, TestTaskEvent } from '@/types'
+import { translateSelfTestResult, translateTaskStatus, translateTestCaseCategory, translateCaseSource, getReviewStatusMap, getTestStatusMap } from '@/types'
+import dayjs from 'dayjs'
 import EinoWorkflowPanel from '@/components/EinoWorkflowPanel.vue'
 import { useUserStore } from '@/stores/user'
 
@@ -233,6 +296,47 @@ const taskId = computed(() => Number(route.params.id))
 
 function handleBack() {
   router.push({ name: 'IssueList' })
+}
+
+async function handleViewIssueDetail() {
+  const issueId = taskInfo.value?.issue_id
+  if (!issueId) return
+  issueDetailModal.value = true
+  issueDetailLoading.value = true
+  issueDetailData.value = null
+  try {
+    const res = await getIssueById(issueId)
+    issueDetailData.value = res.data.data || null
+  } catch {
+    message.error(t('issue.list.messages.loadDetailFailed'))
+    issueDetailModal.value = false
+  } finally {
+    issueDetailLoading.value = false
+  }
+}
+
+function handleOpenIssueZentao() {
+  const url = issueDetailData.value?.zentao_url
+  if (!url) {
+    message.warning(t('issue.list.messages.zentaoUrlUnavailable'))
+    return
+  }
+  window.open(url, '_blank', 'noopener,noreferrer')
+}
+
+function formatIssueZentaoStatus(status: string) {
+  const map: Record<string, string> = {
+    active: t('issue.list.status.active'),
+    resolved: t('issue.list.status.resolved'),
+    closed: t('issue.list.status.closed'),
+  }
+  return map[status] || status
+}
+
+function formatIssueDateTime(value?: string | null) {
+  if (!value) return '-'
+  const parsed = dayjs(value)
+  return parsed.isValid() ? parsed.format('YYYY-MM-DD HH:mm:ss') : value
 }
 
 const initializing = ref(true)
@@ -273,6 +377,12 @@ const canReviewApprove = computed(() => userStore.hasPermission('review:approve'
 
 const savingCaseId = ref<number | null>(null)
 const savingScriptId = ref<number | null>(null)
+
+// Issue detail
+const issueDetailModal = ref(false)
+const issueDetailLoading = ref(false)
+const issueDetailData = ref<Issue | null>(null)
+const issueTestStatusMap = computed(() => getTestStatusMap(t))
 
 let eventSource: EventSource | null = null
 let taskRefreshTimer: number | null = null
@@ -788,5 +898,24 @@ async function fetchDetail() {
   border: 1px solid #f0f0f0;
   border-radius: 6px;
   background: #fff;
+}
+
+.issue-detail-toolbar {
+  margin-bottom: 12px;
+}
+
+.issue-detail-section-title {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.issue-detail-content {
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+  padding: 12px;
+  max-height: 360px;
+  overflow: auto;
+  font-size: 13px;
+  line-height: 1.6;
 }
 </style>
