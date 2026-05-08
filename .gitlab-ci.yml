@@ -13,7 +13,7 @@ variables:
   FRONTEND_IMAGE_REPO: "harbor.inspur.local/atf/auto-test-flow-frontend"
   DOCKER_TLS_CERTDIR: "/certs"
   DOCKER_BUILDKIT: "1"
-  GOPROXY: "https://mirrors.aliyun.com/goproxy,direct"
+  GOPROXY: "https://goproxy.cn|https://proxy.golang.org|https://mirrors.aliyun.com/goproxy|direct"
   GOSUMDB: "sum.golang.google.cn"
   NPM_CONFIG_REGISTRY: "https://registry.npmmirror.com"
   ALPINE_MIRROR: "https://mirrors.aliyun.com"

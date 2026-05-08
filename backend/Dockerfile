@@ -4,7 +4,7 @@ FROM harbor.inspur.local/atf/golang:1.26.2 AS builder
 
 WORKDIR /build
 
-ARG GOPROXY=https://mirrors.aliyun.com/goproxy,direct
+ARG GOPROXY=https://goproxy.cn|https://proxy.golang.org|https://mirrors.aliyun.com/goproxy|direct
 ARG GOSUMDB=sum.golang.google.cn
 ENV GOPROXY=${GOPROXY} \
     GOSUMDB=${GOSUMDB}
