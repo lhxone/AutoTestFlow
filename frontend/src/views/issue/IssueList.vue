@@ -37,6 +37,9 @@
     <a-table :dataSource="list" :columns="columns" :loading="loading" :pagination="pagination"
              @change="handleTableChange" rowKey="id" size="middle" :scroll="{ x: 1520 }">
       <template #bodyCell="{ column, record }">
+        <template v-if="column.key === 'project'">
+          {{ record.project?.name || '-' }}
+        </template>
         <template v-if="column.key === 'zentao_status'">
           <a-tag>{{ formatZentaoStatus(record.zentao_status) }}</a-tag>
         </template>
@@ -231,6 +234,8 @@ const detailIssue = ref<Issue | null>(null)
 const columns = computed(() => [
   { title: t('issue.list.columns.id'), dataIndex: 'zentao_id', key: 'zentao_id', width: 70 },
   { title: t('issue.list.columns.title'), dataIndex: 'title', key: 'title', ellipsis: true },
+  { title: t('issue.list.project'), key: 'project', width: 180 },
+  { title: t('issue.list.branch'), dataIndex: 'branch', key: 'branch', width: 140 },
   { title: t('issue.list.columns.type'), dataIndex: 'issue_type', key: 'issue_type', width: 70 },
   { title: t('issue.list.columns.severity'), key: 'severity', width: 90 },
   { title: t('issue.list.columns.zentaoStatus'), key: 'zentao_status', width: 100 },

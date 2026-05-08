@@ -186,6 +186,12 @@ func (h *IntegrationHandler) GetProjectMetrics(c *gin.Context) {
 		h.respondProjectMetrics(c, start, rawBody, query, resp, model.APIExchangeStatusFailed, err.Error())
 		return
 	}
+	if query.StartDate == "" {
+		query.StartDate = strings.TrimSpace(c.Query("start_date"))
+	}
+	if query.EndDate == "" {
+		query.EndDate = strings.TrimSpace(c.Query("end_date"))
+	}
 
 	items, err := h.projectService.GetProjectMetrics(&query)
 	if err != nil {

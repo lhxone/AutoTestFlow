@@ -164,6 +164,10 @@ export interface Issue {
   id: number
   zentao_id: number
   project_id: number
+  project?: {
+    id: number
+    name: string
+  }
   title: string
   description: string
   issue_type: string

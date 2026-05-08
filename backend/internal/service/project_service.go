@@ -2,7 +2,10 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"math"
+	"strings"
+	"time"
 
 	"auto-test-flow/internal/dto"
 	"auto-test-flow/internal/model"
@@ -127,6 +130,11 @@ func (s *ProjectService) GetProjectMetrics(req *dto.ProjectMetricsQuery) ([]dto.
 		}
 	}
 
+	startAt, endBefore, err := parseProjectMetricsDateRange(req.StartDate, req.EndDate)
+	if err != nil {
+		return nil, err
+	}
+
 	projects, err := s.projectRepo.ListMetricProjects(req.ProjectID, req.IncludeDisabled)
 	if err != nil {
 		return nil, err
@@ -137,7 +145,7 @@ func (s *ProjectService) GetProjectMetrics(req *dto.ProjectMetricsQuery) ([]dto.
 		projectIDs = append(projectIDs, project.ProjectID)
 	}
 
-	countMap, err := s.projectRepo.GetMetricCounts(projectIDs)
+	countMap, err := s.projectRepo.GetMetricCounts(projectIDs, startAt, endBefore)
 	if err != nil {
 		return nil, err
 	}
@@ -161,6 +169,37 @@ func (s *ProjectService) GetProjectMetrics(req *dto.ProjectMetricsQuery) ([]dto.
 	}
 
 	return items, nil
+}
+
+func parseProjectMetricsDateRange(startDate, endDate string) (*time.Time, *time.Time, error) {
+	startDate = strings.TrimSpace(startDate)
+	endDate = strings.TrimSpace(endDate)
+
+	var startAt *time.Time
+	var endBefore *time.Time
+
+	if startDate != "" {
+		parsed, err := time.ParseInLocation("2006-01-02", startDate, time.Local)
+		if err != nil {
+			return nil, nil, fmt.Errorf("startDate 格式错误，应为 YYYY-MM-DD")
+		}
+		startAt = &parsed
+	}
+
+	if endDate != "" {
+		parsed, err := time.ParseInLocation("2006-01-02", endDate, time.Local)
+		if err != nil {
+			return nil, nil, fmt.Errorf("endDate 格式错误，应为 YYYY-MM-DD")
+		}
+		nextDay := parsed.AddDate(0, 0, 1)
+		endBefore = &nextDay
+	}
+
+	if startAt != nil && endBefore != nil && !startAt.Before(*endBefore) {
+		return nil, nil, errors.New("startDate 不能晚于 endDate")
+	}
+
+	return startAt, endBefore, nil
 }
 
 func (s *ProjectService) ListIssueSyncLogs(projectID uint64, req *dto.ProjectIssueSyncLogQuery) ([]model.IssueSyncLog, int64, error) {

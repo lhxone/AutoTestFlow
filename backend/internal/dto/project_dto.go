@@ -49,6 +49,8 @@ type ProjectListQuery struct {
 type ProjectMetricsQuery struct {
 	ProjectID       uint64 `form:"project_id"`
 	IncludeDisabled bool   `form:"include_disabled"`
+	StartDate       string `form:"startDate"`
+	EndDate         string `form:"endDate"`
 }
 
 // ProjectMetricVO 项目维度指标

@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"time"
+
 	"auto-test-flow/internal/model"
 
 	"gorm.io/gorm"
@@ -102,7 +104,7 @@ func (r *ProjectRepo) ListMetricProjects(projectID uint64, includeDisabled bool)
 	return projects, nil
 }
 
-func (r *ProjectRepo) GetMetricCounts(projectIDs []uint64) (map[uint64]ProjectMetricCounts, error) {
+func (r *ProjectRepo) GetMetricCounts(projectIDs []uint64, startAt, endBefore *time.Time) (map[uint64]ProjectMetricCounts, error) {
 	result := make(map[uint64]ProjectMetricCounts, len(projectIDs))
 	if len(projectIDs) == 0 {
 		return result, nil
@@ -120,12 +122,22 @@ func (r *ProjectRepo) GetMetricCounts(projectIDs []uint64) (map[uint64]ProjectMe
 		}
 	}
 
+	applyIssueDateRange := func(query *gorm.DB, column string) *gorm.DB {
+		if startAt != nil {
+			query = query.Where(column+" >= ?", *startAt)
+		}
+		if endBefore != nil {
+			query = query.Where(column+" < ?", *endBefore)
+		}
+		return query
+	}
+
 	var closedRows []projectMetricCountRow
-	if err := r.db.Table("issue").
+	closedQuery := r.db.Table("issue").
 		Select("project_id, COUNT(*) AS count").
-		Where("project_id IN ? AND zentao_status = ?", projectIDs, "closed").
-		Group("project_id").
-		Scan(&closedRows).Error; err != nil {
+		Where("project_id IN ? AND zentao_status = ?", projectIDs, "closed")
+	closedQuery = applyIssueDateRange(closedQuery, "created_at")
+	if err := closedQuery.Group("project_id").Scan(&closedRows).Error; err != nil {
 		return nil, err
 	}
 	merge(closedRows, func(counts *ProjectMetricCounts, count int64) {
@@ -143,11 +155,11 @@ func (r *ProjectRepo) GetMetricCounts(projectIDs []uint64) (map[uint64]ProjectMe
 		model.TestStatusReviewRejected,
 	}
 	var processingRows []projectMetricCountRow
-	if err := r.db.Table("issue").
+	processingQuery := r.db.Table("issue").
 		Select("project_id, COUNT(*) AS count").
-		Where("project_id IN ? AND test_status IN ?", projectIDs, processingStatuses).
-		Group("project_id").
-		Scan(&processingRows).Error; err != nil {
+		Where("project_id IN ? AND test_status IN ?", projectIDs, processingStatuses)
+	processingQuery = applyIssueDateRange(processingQuery, "created_at")
+	if err := processingQuery.Group("project_id").Scan(&processingRows).Error; err != nil {
 		return nil, err
 	}
 	merge(processingRows, func(counts *ProjectMetricCounts, count int64) {
@@ -155,11 +167,12 @@ func (r *ProjectRepo) GetMetricCounts(projectIDs []uint64) (map[uint64]ProjectMe
 	})
 
 	var pendingReviewRows []projectMetricCountRow
-	if err := r.db.Table("review_task").
-		Select("project_id, COUNT(DISTINCT issue_id) AS count").
-		Where("project_id IN ? AND status = ?", projectIDs, model.ReviewStatusPending).
-		Group("project_id").
-		Scan(&pendingReviewRows).Error; err != nil {
+	pendingReviewQuery := r.db.Table("review_task").
+		Select("review_task.project_id, COUNT(DISTINCT review_task.issue_id) AS count").
+		Joins("JOIN issue ON issue.id = review_task.issue_id").
+		Where("review_task.project_id IN ? AND review_task.status = ?", projectIDs, model.ReviewStatusPending)
+	pendingReviewQuery = applyIssueDateRange(pendingReviewQuery, "issue.created_at")
+	if err := pendingReviewQuery.Group("review_task.project_id").Scan(&pendingReviewRows).Error; err != nil {
 		return nil, err
 	}
 	merge(pendingReviewRows, func(counts *ProjectMetricCounts, count int64) {
@@ -167,13 +180,13 @@ func (r *ProjectRepo) GetMetricCounts(projectIDs []uint64) (map[uint64]ProjectMe
 	})
 
 	var aiResolvedRows []projectMetricCountRow
-	if err := r.db.Table("issue").
+	aiResolvedQuery := r.db.Table("issue").
 		Select("issue.project_id, COUNT(DISTINCT issue.id) AS count").
 		Joins("LEFT JOIN review_task ON review_task.issue_id = issue.id AND review_task.status = ?", model.ReviewStatusApproved).
 		Where("issue.project_id IN ? AND issue.zentao_status = ? AND (issue.test_status = ? OR review_task.id IS NOT NULL)",
-			projectIDs, "closed", model.TestStatusReviewApproved).
-		Group("issue.project_id").
-		Scan(&aiResolvedRows).Error; err != nil {
+			projectIDs, "closed", model.TestStatusReviewApproved)
+	aiResolvedQuery = applyIssueDateRange(aiResolvedQuery, "issue.created_at")
+	if err := aiResolvedQuery.Group("issue.project_id").Scan(&aiResolvedRows).Error; err != nil {
 		return nil, err
 	}
 	merge(aiResolvedRows, func(counts *ProjectMetricCounts, count int64) {
