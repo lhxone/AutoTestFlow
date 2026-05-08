@@ -22,6 +22,12 @@ import (
 	"auto-test-flow/internal/model"
 	"auto-test-flow/internal/repository"
 
+	openaiacl "github.com/cloudwego/eino-ext/libs/acl/openai"
+	"github.com/cloudwego/eino/adk"
+	"github.com/cloudwego/eino/adk/middlewares/reduction"
+	einomodel "github.com/cloudwego/eino/components/model"
+	"github.com/cloudwego/eino/schema"
+	einojsonschema "github.com/eino-contrib/jsonschema"
 	"go.uber.org/zap"
 )
 
@@ -29,6 +35,12 @@ const (
 	defaultGenTestTurnLimit          = 1000
 	defaultGenTestToolResultMaxBytes = 12_000
 	defaultGenTestReadMaxBytes       = 64_000
+	defaultGenTestHistoryMaxBytes    = 90_000
+	defaultGenTestInitialPromptBytes = 70_000
+	defaultGenTestRecentMessageKeep  = 12
+	defaultGenTestRepairLimit        = 2
+	defaultGenTestSelfTestTimeout    = 5 * time.Minute
+	genTestContextSummaryPrefix      = "## AutoTestFlow 历史上下文压缩摘要"
 	chromeProfilePath                = "/tmp/auto-test-flow/chrome-profile"
 )
 
@@ -189,11 +201,19 @@ func (r *EinoGenTestRuntime) Generate(
 		return nil, fmt.Errorf("Agent 未配置可用 Base URL")
 	}
 
+	adkCfg := resolveGenTestADKConfig(workflow, agent)
+	runtimeLabel := "Eino 原生运行时"
+	runtimeType := "eino"
+	if adkCfg.Enabled {
+		runtimeLabel = "Eino ADK 运行时"
+		runtimeType = "adk"
+	}
 	r.publish(task.ID, taskEventTypeStage, "runtime_started", model.TaskStatusRunning,
-		fmt.Sprintf("开始执行 Eino 原生运行时\n  provider: %s\n  model: %s", execCfg.Provider, execCfg.Model),
+		fmt.Sprintf("开始执行 %s\n  provider: %s\n  model: %s", runtimeLabel, execCfg.Provider, execCfg.Model),
 		map[string]any{
-			"provider": execCfg.Provider,
-			"model":    execCfg.Model,
+			"provider":     execCfg.Provider,
+			"model":        execCfg.Model,
+			"runtime_type": runtimeType,
 		})
 
 	agentCtx := &genTestToolCallContext{
@@ -205,7 +225,12 @@ func (r *EinoGenTestRuntime) Generate(
 		MCP:        mcpRuntime,
 		RAGContext: ragContext,
 	}
-	output, err := r.runAgentLoop(ctx, execCfg, agentCtx, promptCtx)
+	var output *GenTestOutput
+	if adkCfg.Enabled {
+		output, err = r.runADKAgentLoop(ctx, execCfg, agentCtx, promptCtx, adkCfg)
+	} else {
+		output, err = r.runAgentLoop(ctx, execCfg, agentCtx, promptCtx)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -310,13 +335,13 @@ func (r *EinoGenTestRuntime) buildPrompt(
 - 你必须通过可用工具真实地探索仓库和运行命令，不要凭空假设项目结构。
 - 如果是 Web UI 测试且有 Chrome MCP，优先用 Chrome MCP 通过data-testid确认 DOM、交互和选择器。
 - 生成的测试脚本必须包含至少一个可执行断言。
-- 必须把实际文件写入仓库目录。
+- 必须把实际文件写入仓库目录；测试脚本必须使用 WriteTestScript 写入，测试文档必须使用 WriteTestDoc 写入，以便运行时同步结果草稿。
 - 完成后必须调用 SubmitGenTestResult 工具提交结构化结果，而不是只输出自然语言。
 - 自测完成后，将 Playwright 报告路径写入 self_test.playwright.report_path（例如 "playwright-report/index.html"）。
 - SubmitGenTestResult 必须严格使用标准字段名，禁止使用 path、case_name、prerequisites、module、status、expected_result 等别名字段。
 - 若关键信息缺失，可调用 AskUserQuestion；若需要人工许可，可调用 RequestPermission。
 - 必须根据当前运行平台选择命令工具；当前平台: %s；可用命令工具: %s。
-- 在创建文件/编辑文件后，必须实时更新结果文件，不要等最后一步才写入结果文件。
+- WriteTestScript 和 WriteTestDoc 会自动更新结果草稿；编辑已登记的测试脚本或文档后运行时也会刷新草稿。
 
 ## SubmitGenTestResult 标准示例
 你最终调用 SubmitGenTestResult 时，参数必须遵循下面的结构；字段名必须完全一致：
@@ -448,7 +473,23 @@ func (r *EinoGenTestRuntime) runAgentLoop(
 		{Role: "system", Text: systemPrompt},
 		{Role: "user", Text: userPrompt},
 	}
+	if estimateRuntimeHistoryBytes(history) > defaultGenTestHistoryMaxBytes {
+		compactedPrompt := compactInitialUserPrompt(userPrompt, defaultGenTestInitialPromptBytes)
+		if compactedPrompt != userPrompt {
+			history[1].Text = compactedPrompt
+			r.publish(toolCtx.Task.ID, taskEventTypeLog, "initial_context_compacted", model.TaskStatusRunning,
+				fmt.Sprintf("初始 Prompt 已裁剪以避免首轮模型上下文过大，当前估算大小 %d bytes", estimateRuntimeHistoryBytes(history)),
+				map[string]any{
+					"estimated_bytes": estimateRuntimeHistoryBytes(history),
+					"limit_bytes":     defaultGenTestInitialPromptBytes,
+				})
+		}
+	}
 	toolSpecs := r.baseToolSpecs()
+	toolNames := make(map[string]struct{}, len(toolSpecs))
+	for _, tool := range toolSpecs {
+		toolNames[tool.Name] = struct{}{}
+	}
 	if toolCtx.MCP != nil {
 		for _, tool := range toolCtx.MCP.OpenAITools() {
 			fn, ok := tool["function"].(map[string]any)
@@ -458,6 +499,15 @@ func (r *EinoGenTestRuntime) runAgentLoop(
 			name, _ := fn["name"].(string)
 			description, _ := fn["description"].(string)
 			parameters, _ := fn["parameters"].(map[string]any)
+			if strings.TrimSpace(name) == "" {
+				continue
+			}
+			if _, exists := toolNames[name]; exists {
+				r.publish(toolCtx.Task.ID, taskEventTypeLog, "mcp_tool_skipped", model.TaskStatusRunning,
+					fmt.Sprintf("MCP 工具 %s 与内置工具重名，已跳过以保证内置工具优先", name), nil)
+				continue
+			}
+			toolNames[name] = struct{}{}
 			toolSpecs = append(toolSpecs, genTestToolSpec{
 				Name:        name,
 				Description: description,
@@ -466,11 +516,25 @@ func (r *EinoGenTestRuntime) runAgentLoop(
 		}
 	}
 
+	repairAttempts := 0
 	for turn := 1; turn <= defaultGenTestTurnLimit; turn++ {
 		r.publish(toolCtx.Task.ID, taskEventTypeLog, "cli_output_raw", model.TaskStatusRunning, marshalTaskEventJSON(map[string]any{
 			"type":    "system",
 			"message": fmt.Sprintf("模型回合 %d", turn),
 		}), nil)
+
+		var compacted bool
+		var compactedCount int
+		history, compacted, compactedCount = compactRuntimeHistory(ctx, history, defaultGenTestHistoryMaxBytes, defaultGenTestRecentMessageKeep)
+		if compacted {
+			r.publish(toolCtx.Task.ID, taskEventTypeLog, "context_compacted", model.TaskStatusRunning,
+				fmt.Sprintf("已通过 Eino reduction 自动压缩历史上下文，处理旧消息 %d 条，当前估算大小 %d bytes", compactedCount, estimateRuntimeHistoryBytes(history)),
+				map[string]any{
+					"compacted_messages": compactedCount,
+					"estimated_bytes":    estimateRuntimeHistoryBytes(history),
+					"engine":             "eino_reduction",
+				})
+		}
 
 		resp, err := r.callModelWithConnectionRetry(ctx, cfg, history, toolSpecs, toolCtx.Task.ID, turn)
 		if err != nil {
@@ -492,9 +556,6 @@ func (r *EinoGenTestRuntime) runAgentLoop(
 
 		if text := strings.TrimSpace(resp.Text); text != "" {
 			r.publishAssistantText(toolCtx.Task.ID, cfg.Model, text)
-			if output, parseErr := parseGenTestOutputFromText(text); parseErr == nil && output != nil {
-				return output, nil
-			}
 		}
 
 		if len(resp.ToolCalls) == 0 {
@@ -533,7 +594,27 @@ func (r *EinoGenTestRuntime) runAgentLoop(
 			r.publishToolResult(toolCtx.Task.ID, result.Content, result.IsError)
 		}
 		if finalOutput != nil {
-			return finalOutput, nil
+			report := r.runGeneratedSelfTest(ctx, toolCtx, finalOutput)
+			finalOutput.SelfTest = report
+			_ = r.workspace.WriteResultFile(toolCtx.Workspace, finalOutput)
+			if report.Passed {
+				return finalOutput, nil
+			}
+			if report.Command == "" || repairAttempts >= defaultGenTestRepairLimit {
+				return finalOutput, nil
+			}
+			repairAttempts++
+			history = append(history, runtimeMessage{
+				Role: "user",
+				Text: buildSelfTestRepairPrompt(report, repairAttempts, defaultGenTestRepairLimit),
+			})
+			r.publish(toolCtx.Task.ID, taskEventTypeLog, "self_test_repair", model.TaskStatusRunning,
+				fmt.Sprintf("生成脚本真实自测失败，已请求模型修复 (%d/%d)", repairAttempts, defaultGenTestRepairLimit),
+				map[string]any{
+					"command":  report.Command,
+					"exitCode": report.ExitCode,
+				})
+			continue
 		}
 	}
 
@@ -546,14 +627,15 @@ func (r *EinoGenTestRuntime) callModel(
 	history []runtimeMessage,
 	tools []genTestToolSpec,
 ) (*runtimeModelResponse, error) {
-	switch strings.ToLower(strings.TrimSpace(cfg.Provider)) {
-	case "claude":
-		return r.callAnthropic(ctx, cfg, history, tools)
-	case "openai", "zhipu", "custom":
-		return r.callOpenAICompatible(ctx, cfg, history, tools)
-	default:
-		return nil, fmt.Errorf("不支持的模型提供商: %s", cfg.Provider)
+	chatModel, err := r.newEinoChatModel(ctx, cfg, tools)
+	if err != nil {
+		return nil, err
 	}
+	msg, err := chatModel.Generate(ctx, runtimeHistoryToEinoMessages(history))
+	if err != nil {
+		return nil, fmt.Errorf("Eino ChatModel 调用失败: %w", err)
+	}
+	return runtimeModelResponseFromEinoMessage(msg)
 }
 
 func (r *EinoGenTestRuntime) callModelWithConnectionRetry(
@@ -594,66 +676,56 @@ func (r *EinoGenTestRuntime) callModelWithConnectionRetry(
 	return nil, lastErr
 }
 
-func (r *EinoGenTestRuntime) callOpenAICompatible(
+func (r *EinoGenTestRuntime) newEinoChatModel(
 	ctx context.Context,
 	cfg AgentExecutionConfig,
-	history []runtimeMessage,
 	tools []genTestToolSpec,
-) (*runtimeModelResponse, error) {
-	endpoint := resolveOpenAICompatibleEndpoint(cfg.BaseURL)
-
-	reqBody := map[string]any{
-		"model":       cfg.Model,
-		"messages":    buildOpenAIHistory(history),
-		"tools":       buildOpenAIToolPayloads(tools),
-		"tool_choice": "auto",
-		"temperature": cfg.Temperature,
-		"max_tokens":  cfg.MaxTokens,
+) (einomodel.ToolCallingChatModel, error) {
+	var base einomodel.ToolCallingChatModel
+	switch strings.ToLower(strings.TrimSpace(cfg.Provider)) {
+	case "openai", "zhipu", "custom":
+		temperature := float32(cfg.Temperature)
+		client, err := openaiacl.NewClient(ctx, &openaiacl.Config{
+			APIKey:      cfg.APIKey,
+			BaseURL:     normalizeOpenAICompatibleBaseURL(cfg.BaseURL),
+			Model:       cfg.Model,
+			MaxTokens:   &cfg.MaxTokens,
+			Temperature: &temperature,
+			HTTPClient:  r.httpClient,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("初始化 Eino OpenAI ChatModel 失败: %w", err)
+		}
+		base = client
+	case "claude":
+		base = &anthropicEinoChatModel{
+			cfg:        cfg,
+			httpClient: r.httpClient,
+		}
+	default:
+		return nil, fmt.Errorf("不支持的模型提供商: %s", cfg.Provider)
 	}
-	body, _ := json.Marshal(reqBody)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+
+	toolInfos, err := buildEinoToolInfos(tools)
 	if err != nil {
-		return nil, fmt.Errorf("构建 OpenAI 请求失败: %w", err)
+		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+cfg.APIKey)
-
-	resp, err := r.httpClient.Do(req)
+	if len(toolInfos) == 0 {
+		return base, nil
+	}
+	chatModel, err := base.WithTools(toolInfos)
 	if err != nil {
-		return nil, fmt.Errorf("请求模型服务失败: %w", err)
+		return nil, fmt.Errorf("绑定 Eino 工具失败: %w", err)
 	}
-	defer resp.Body.Close()
+	return chatModel, nil
+}
 
-	respBody, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("模型服务返回错误 %d: %s", resp.StatusCode, truncateText(string(respBody), 400))
-	}
-
-	var result struct {
-		Choices []struct {
-			Message struct {
-				Content   string `json:"content"`
-				ToolCalls []struct {
-					ID       string `json:"id"`
-					Type     string `json:"type"`
-					Function struct {
-						Name      string `json:"name"`
-						Arguments string `json:"arguments"`
-					} `json:"function"`
-				} `json:"tool_calls"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		return nil, fmt.Errorf("解析模型响应失败: %w", err)
-	}
-	if len(result.Choices) == 0 {
+func runtimeModelResponseFromEinoMessage(msg *schema.Message) (*runtimeModelResponse, error) {
+	if msg == nil {
 		return nil, fmt.Errorf("模型服务返回空响应")
 	}
-
-	choice := result.Choices[0].Message
-	output := &runtimeModelResponse{Text: strings.TrimSpace(choice.Content)}
-	for _, call := range choice.ToolCalls {
+	output := &runtimeModelResponse{Text: strings.TrimSpace(msg.Content)}
+	for _, call := range msg.ToolCalls {
 		args := make(map[string]any)
 		if strings.TrimSpace(call.Function.Arguments) != "" {
 			if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
@@ -669,25 +741,90 @@ func (r *EinoGenTestRuntime) callOpenAICompatible(
 	return output, nil
 }
 
-func (r *EinoGenTestRuntime) callAnthropic(
-	ctx context.Context,
-	cfg AgentExecutionConfig,
-	history []runtimeMessage,
-	tools []genTestToolSpec,
-) (*runtimeModelResponse, error) {
-	endpoint := resolveAnthropicMessagesEndpoint(cfg.BaseURL)
+func buildEinoToolInfos(tools []genTestToolSpec) ([]*schema.ToolInfo, error) {
+	toolInfos := make([]*schema.ToolInfo, 0, len(tools))
+	seen := make(map[string]struct{}, len(tools))
+	for _, tool := range tools {
+		name := strings.TrimSpace(tool.Name)
+		if name == "" {
+			continue
+		}
+		if _, exists := seen[name]; exists {
+			continue
+		}
+		seen[name] = struct{}{}
+		info := &schema.ToolInfo{
+			Name: name,
+			Desc: strings.TrimSpace(tool.Description),
+		}
+		if len(tool.Schema) > 0 {
+			schemaBytes, err := json.Marshal(tool.Schema)
+			if err != nil {
+				return nil, fmt.Errorf("序列化工具 schema 失败 (%s): %w", tool.Name, err)
+			}
+			var js einojsonschema.Schema
+			if err := json.Unmarshal(schemaBytes, &js); err != nil {
+				return nil, fmt.Errorf("解析工具 schema 失败 (%s): %w", tool.Name, err)
+			}
+			info.ParamsOneOf = schema.NewParamsOneOfByJSONSchema(&js)
+		}
+		toolInfos = append(toolInfos, info)
+	}
+	return toolInfos, nil
+}
 
-	systemText, messages := buildAnthropicHistory(history)
+func normalizeOpenAICompatibleBaseURL(baseURL string) string {
+	endpoint := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if endpoint == "" {
+		return endpoint
+	}
+	lower := strings.ToLower(endpoint)
+	trimmedChatCompletions := false
+	if strings.HasSuffix(lower, "/chat/completions") {
+		endpoint = strings.TrimRight(endpoint[:len(endpoint)-len("/chat/completions")], "/")
+		lower = strings.ToLower(endpoint)
+		trimmedChatCompletions = true
+	}
+	if trimmedChatCompletions || strings.HasSuffix(lower, "/v1") || strings.HasSuffix(lower, "/api/paas/v4") {
+		return endpoint
+	}
+	return endpoint + "/v1"
+}
+
+type anthropicEinoChatModel struct {
+	cfg        AgentExecutionConfig
+	httpClient *http.Client
+	tools      []*schema.ToolInfo
+}
+
+func (m *anthropicEinoChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...einomodel.Option) (*schema.Message, error) {
+	options := einomodel.GetCommonOptions(&einomodel.Options{}, opts...)
+	cfg := m.cfg
+	if options.Model != nil {
+		cfg.Model = *options.Model
+	}
+	if options.MaxTokens != nil {
+		cfg.MaxTokens = *options.MaxTokens
+	}
+	if options.Temperature != nil {
+		cfg.Temperature = float64(*options.Temperature)
+	}
+	tools := m.tools
+	if options.Tools != nil {
+		tools = options.Tools
+	}
+
+	systemText, messages := buildAnthropicHistory(einoMessagesToRuntimeHistory(input))
 	reqBody := map[string]any{
 		"model":       cfg.Model,
 		"system":      systemText,
 		"messages":    messages,
-		"tools":       buildAnthropicToolPayloads(tools),
+		"tools":       buildAnthropicToolInfoPayloads(tools),
 		"temperature": cfg.Temperature,
 		"max_tokens":  cfg.MaxTokens,
 	}
 	body, _ := json.Marshal(reqBody)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, resolveAnthropicMessagesEndpoint(cfg.BaseURL), bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("构建 Anthropic 请求失败: %w", err)
 	}
@@ -695,7 +832,11 @@ func (r *EinoGenTestRuntime) callAnthropic(
 	req.Header.Set("x-api-key", cfg.APIKey)
 	req.Header.Set("anthropic-version", "2023-06-01")
 
-	resp, err := r.httpClient.Do(req)
+	httpClient := m.httpClient
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("请求 Anthropic 失败: %w", err)
 	}
@@ -719,34 +860,61 @@ func (r *EinoGenTestRuntime) callAnthropic(
 		return nil, fmt.Errorf("解析 Anthropic 响应失败: %w", err)
 	}
 
-	output := &runtimeModelResponse{}
+	out := &schema.Message{Role: schema.Assistant}
 	for _, block := range result.Content {
 		switch block.Type {
 		case "text":
 			if strings.TrimSpace(block.Text) != "" {
-				if output.Text != "" {
-					output.Text += "\n"
+				if out.Content != "" {
+					out.Content += "\n"
 				}
-				output.Text += strings.TrimSpace(block.Text)
+				out.Content += strings.TrimSpace(block.Text)
 			}
 		case "tool_use":
-			output.ToolCalls = append(output.ToolCalls, runtimeToolCall{
-				ID:        strings.TrimSpace(block.ID),
-				Name:      strings.TrimSpace(block.Name),
-				Arguments: normalizeToolArguments(block.Input),
+			argBytes, _ := json.Marshal(normalizeToolArguments(block.Input))
+			out.ToolCalls = append(out.ToolCalls, schema.ToolCall{
+				ID:   strings.TrimSpace(block.ID),
+				Type: "function",
+				Function: schema.FunctionCall{
+					Name:      strings.TrimSpace(block.Name),
+					Arguments: string(argBytes),
+				},
 			})
 		}
 	}
-	return output, nil
+	return out, nil
+}
+
+func (m *anthropicEinoChatModel) Stream(ctx context.Context, input []*schema.Message, opts ...einomodel.Option) (*schema.StreamReader[*schema.Message], error) {
+	return nil, fmt.Errorf("Anthropic Eino ChatModel 暂不支持流式调用")
+}
+
+func (m *anthropicEinoChatModel) WithTools(tools []*schema.ToolInfo) (einomodel.ToolCallingChatModel, error) {
+	next := *m
+	next.tools = append([]*schema.ToolInfo(nil), tools...)
+	return &next, nil
+}
+
+func buildAnthropicToolInfoPayloads(tools []*schema.ToolInfo) []map[string]any {
+	payloads := make([]map[string]any, 0, len(tools))
+	for _, tool := range tools {
+		if tool == nil {
+			continue
+		}
+		inputSchema, err := tool.ToJSONSchema()
+		if err != nil {
+			inputSchema = nil
+		}
+		payloads = append(payloads, map[string]any{
+			"name":         tool.Name,
+			"description":  tool.Desc,
+			"input_schema": inputSchema,
+		})
+	}
+	return payloads
 }
 
 func (r *EinoGenTestRuntime) executeTool(ctx context.Context, toolCtx *genTestToolCallContext, call runtimeToolCall) (*genTestToolResult, error) {
-	if toolCtx.MCP != nil {
-		if result, ok := toolCtx.MCP.Invoke(ctx, call.Name, call.Arguments); ok {
-			return &genTestToolResult{Content: result}, nil
-		}
-	}
-
 	switch call.Name {
 	case "Read":
 		path, err := requiredString(call.Arguments, "path")
@@ -782,6 +950,68 @@ func (r *EinoGenTestRuntime) executeTool(ctx context.Context, toolCtx *genTestTo
 			return nil, err
 		}
 		return &genTestToolResult{Content: fmt.Sprintf("wrote %s (%d bytes)", relativePath, len(content))}, nil
+	case "WriteTestScript":
+		path, err := requiredString(call.Arguments, "path")
+		if err != nil {
+			return nil, err
+		}
+		content, err := requiredString(call.Arguments, "content")
+		if err != nil {
+			return nil, err
+		}
+		relativePath := normalizeRepoRelativePath(path)
+		if err := writeRepoFile(toolCtx.Workspace.RepoDir, relativePath, content); err != nil {
+			return nil, err
+		}
+		draft, err := readGenTestDraft(toolCtx.Workspace)
+		if err != nil {
+			return nil, err
+		}
+		draft.TestScript = GenTestScript{
+			FilePath:    relativePath,
+			FileContent: content,
+			Language:    normalizeScriptLanguage(stringArg(call.Arguments, "language", ""), relativePath),
+		}
+		if strings.TrimSpace(draft.Summary) == "" {
+			draft.Summary = "测试脚本草稿已更新"
+		}
+		if err := writeGenTestDraft(toolCtx.Workspace, draft); err != nil {
+			return nil, err
+		}
+		return &genTestToolResult{Content: fmt.Sprintf("wrote test script %s and updated result draft", relativePath)}, nil
+	case "WriteTestDoc":
+		path, err := requiredString(call.Arguments, "path")
+		if err != nil {
+			return nil, err
+		}
+		content, err := requiredString(call.Arguments, "content")
+		if err != nil {
+			return nil, err
+		}
+		relativePath := normalizeRepoRelativePath(path)
+		if err := writeRepoFile(toolCtx.Workspace.RepoDir, relativePath, content); err != nil {
+			return nil, err
+		}
+		draft, err := readGenTestDraft(toolCtx.Workspace)
+		if err != nil {
+			return nil, err
+		}
+		title := strings.TrimSpace(stringArg(call.Arguments, "title", ""))
+		if title == "" && toolCtx.Input != nil {
+			title = fmt.Sprintf("测试文档 - %s", toolCtx.Input.IssueTitle)
+		}
+		draft.TestDoc = GenTestDoc{
+			Title:    title,
+			FilePath: relativePath,
+			Content:  content,
+		}
+		if strings.TrimSpace(draft.Summary) == "" {
+			draft.Summary = "测试文档草稿已更新"
+		}
+		if err := writeGenTestDraft(toolCtx.Workspace, draft); err != nil {
+			return nil, err
+		}
+		return &genTestToolResult{Content: fmt.Sprintf("wrote test doc %s and updated result draft", relativePath)}, nil
 	case "Edit":
 		return r.runEdit(toolCtx, call.Arguments)
 	case "PowerShell":
@@ -824,7 +1054,7 @@ func (r *EinoGenTestRuntime) executeTool(ctx context.Context, toolCtx *genTestTo
 		}
 		return &genTestToolResult{Content: reply}, nil
 	case "SubmitGenTestResult":
-		output, err := buildGenTestOutput(call.Arguments)
+		output, err := r.buildSubmittedGenTestOutput(toolCtx, call.Arguments)
 		if err != nil {
 			return nil, err
 		}
@@ -833,6 +1063,11 @@ func (r *EinoGenTestRuntime) executeTool(ctx context.Context, toolCtx *genTestTo
 			FinalOutput: output,
 		}, nil
 	default:
+		if toolCtx.MCP != nil {
+			if result, ok := toolCtx.MCP.Invoke(ctx, call.Name, call.Arguments); ok {
+				return &genTestToolResult{Content: result}, nil
+			}
+		}
 		return nil, fmt.Errorf("未知工具: %s", call.Name)
 	}
 }
@@ -1145,6 +1380,9 @@ func (r *EinoGenTestRuntime) runEdit(toolCtx *genTestToolCallContext, args map[s
 	if err := writeRepoFile(toolCtx.Workspace.RepoDir, relativePath, updated); err != nil {
 		return nil, err
 	}
+	if err := syncEditedArtifactDraft(toolCtx.Workspace, relativePath, updated); err != nil {
+		return nil, err
+	}
 	return &genTestToolResult{Content: fmt.Sprintf("edited %s", relativePath)}, nil
 }
 
@@ -1307,6 +1545,32 @@ func (r *EinoGenTestRuntime) baseToolSpecs() []genTestToolSpec {
 			},
 		},
 		{
+			Name:        "WriteTestScript",
+			Description: "Write the generated test script and update the structured result draft.",
+			Schema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path":     map[string]any{"type": "string"},
+					"content":  map[string]any{"type": "string"},
+					"language": map[string]any{"type": "string"},
+				},
+				"required": []string{"path", "content"},
+			},
+		},
+		{
+			Name:        "WriteTestDoc",
+			Description: "Write the generated test document and update the structured result draft.",
+			Schema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path":    map[string]any{"type": "string"},
+					"title":   map[string]any{"type": "string"},
+					"content": map[string]any{"type": "string"},
+				},
+				"required": []string{"path", "content"},
+			},
+		},
+		{
 			Name:        "Edit",
 			Description: "Replace one snippet in a repository file.",
 			Schema: map[string]any{
@@ -1366,45 +1630,371 @@ func (r *EinoGenTestRuntime) baseToolSpecs() []genTestToolSpec {
 	return specs
 }
 
-func buildOpenAIHistory(history []runtimeMessage) []map[string]any {
-	result := make([]map[string]any, 0, len(history))
-	for _, msg := range history {
-		switch msg.Role {
-		case "system", "user":
-			result = append(result, map[string]any{
-				"role":    msg.Role,
-				"content": msg.Text,
-			})
-		case "assistant":
-			item := map[string]any{
-				"role":    "assistant",
-				"content": msg.Text,
+func compactRuntimeHistory(ctx context.Context, history []runtimeMessage, maxBytes, recentKeep int) ([]runtimeMessage, bool, int) {
+	if maxBytes <= 0 || estimateRuntimeHistoryBytes(history) <= maxBytes {
+		return history, false, 0
+	}
+	if len(history) <= 3 {
+		next := append([]runtimeMessage(nil), history...)
+		changed := false
+		for index := range next {
+			if next[index].Role != "user" {
+				continue
 			}
-			if len(msg.ToolCalls) > 0 {
-				toolCalls := make([]map[string]any, 0, len(msg.ToolCalls))
-				for _, call := range msg.ToolCalls {
-					argBytes, _ := json.Marshal(call.Arguments)
-					toolCalls = append(toolCalls, map[string]any{
-						"id":   call.ID,
-						"type": "function",
-						"function": map[string]any{
-							"name":      call.Name,
-							"arguments": string(argBytes),
-						},
-					})
-				}
-				item["tool_calls"] = toolCalls
+			trimmed := compactInitialUserPrompt(next[index].Text, minRuntimeInt(maxBytes, defaultGenTestInitialPromptBytes))
+			if trimmed != next[index].Text {
+				next[index].Text = trimmed
+				changed = true
 			}
-			result = append(result, item)
-		case "tool":
-			result = append(result, map[string]any{
-				"role":         "tool",
-				"tool_call_id": msg.ToolCallID,
-				"content":      msg.ToolResult,
-			})
+			break
+		}
+		if changed {
+			return next, true, 1
+		}
+		return history, false, 0
+	}
+	if recentKeep < 4 {
+		recentKeep = 4
+	}
+
+	reduced, reductionChanged, reductionCount := reduceRuntimeHistoryWithEino(ctx, history, maxBytes)
+	if reductionChanged {
+		history = reduced
+		if estimateRuntimeHistoryBytes(history) <= maxBytes {
+			return history, true, reductionCount
 		}
 	}
-	return result
+
+	head := append([]runtimeMessage(nil), history[:minRuntimeInt(2, len(history))]...)
+	body := append([]runtimeMessage(nil), history[len(head):]...)
+	existingSummary := ""
+	filteredBody := make([]runtimeMessage, 0, len(body))
+	for _, msg := range body {
+		if msg.Role == "user" && strings.HasPrefix(strings.TrimSpace(msg.Text), genTestContextSummaryPrefix) {
+			existingSummary = strings.TrimSpace(msg.Text)
+			continue
+		}
+		filteredBody = append(filteredBody, msg)
+	}
+
+	tailStart := len(filteredBody) - recentKeep
+	if tailStart < 0 {
+		tailStart = 0
+	}
+	for tailStart > 0 && filteredBody[tailStart].Role == "tool" {
+		tailStart--
+	}
+	compactable := filteredBody[:tailStart]
+	tail := filteredBody[tailStart:]
+	if len(compactable) == 0 {
+		return history, false, 0
+	}
+
+	summary := buildRuntimeContextSummary(existingSummary, compactable)
+	next := make([]runtimeMessage, 0, len(head)+1+len(tail))
+	next = append(next, head...)
+	next = append(next, runtimeMessage{Role: "user", Text: summary})
+	next = append(next, tail...)
+
+	for estimateRuntimeHistoryBytes(next) > maxBytes && len(tail) > 4 {
+		compactable = append(compactable, tail[0])
+		tail = tail[1:]
+		for len(tail) > 0 && tail[0].Role == "tool" {
+			compactable = append(compactable, tail[0])
+			tail = tail[1:]
+		}
+		summary = buildRuntimeContextSummary(existingSummary, compactable)
+		next = append(next[:0], head...)
+		next = append(next, runtimeMessage{Role: "user", Text: summary})
+		next = append(next, tail...)
+	}
+
+	return next, true, reductionCount + len(compactable)
+}
+
+func reduceRuntimeHistoryWithEino(ctx context.Context, history []runtimeMessage, maxBytes int) ([]runtimeMessage, bool, int) {
+	messages := runtimeHistoryToEinoMessages(history)
+	state := &adk.ChatModelAgentState{Messages: messages}
+	placeholder := "[工具输出结果已由 Eino reduction 中间件清理；如需完整内容，请重新调用 Read/Grep/Glob/命令工具获取。]"
+	middleware, err := reduction.NewClearToolResult(ctx, &reduction.ClearToolResultConfig{
+		ToolResultTokenThreshold:   maxRuntimeInt(maxBytes/4, 1),
+		KeepRecentTokens:           maxRuntimeInt(maxBytes/8, 1),
+		ClearToolResultPlaceholder: placeholder,
+		TokenCounter:               countEinoMessageTokens,
+	})
+	if err != nil || middleware.BeforeChatModel == nil {
+		return history, false, 0
+	}
+	before := make([]string, len(state.Messages))
+	for i, msg := range state.Messages {
+		if msg != nil {
+			before[i] = msg.Content
+		}
+	}
+	if err := middleware.BeforeChatModel(ctx, state); err != nil {
+		return history, false, 0
+	}
+	changedCount := 0
+	for i, msg := range state.Messages {
+		if msg != nil && i < len(before) && msg.Content != before[i] {
+			changedCount++
+		}
+	}
+	if changedCount == 0 {
+		return history, false, 0
+	}
+	return einoMessagesToRuntimeHistory(state.Messages), true, changedCount
+}
+
+func runtimeHistoryToEinoMessages(history []runtimeMessage) []adk.Message {
+	messages := make([]adk.Message, 0, len(history))
+	toolNamesByID := make(map[string]string)
+	for _, msg := range history {
+		switch msg.Role {
+		case "system":
+			messages = append(messages, schema.SystemMessage(msg.Text))
+		case "user":
+			messages = append(messages, schema.UserMessage(msg.Text))
+		case "assistant":
+			toolCalls := make([]schema.ToolCall, 0, len(msg.ToolCalls))
+			for _, call := range msg.ToolCalls {
+				argBytes, _ := json.Marshal(call.Arguments)
+				toolCalls = append(toolCalls, schema.ToolCall{
+					ID:   call.ID,
+					Type: "function",
+					Function: schema.FunctionCall{
+						Name:      call.Name,
+						Arguments: string(argBytes),
+					},
+				})
+				if call.ID != "" {
+					toolNamesByID[call.ID] = call.Name
+				}
+			}
+			messages = append(messages, schema.AssistantMessage(msg.Text, toolCalls))
+		case "tool":
+			toolMsg := schema.ToolMessage(msg.ToolResult, msg.ToolCallID, schema.WithToolName(toolNamesByID[msg.ToolCallID]))
+			toolMsg.Extra = map[string]any{"tool_error": msg.ToolError}
+			messages = append(messages, toolMsg)
+		}
+	}
+	return messages
+}
+
+func einoMessagesToRuntimeHistory(messages []adk.Message) []runtimeMessage {
+	history := make([]runtimeMessage, 0, len(messages))
+	for _, msg := range messages {
+		if msg == nil {
+			continue
+		}
+		switch msg.Role {
+		case schema.System:
+			history = append(history, runtimeMessage{Role: "system", Text: msg.Content})
+		case schema.User:
+			history = append(history, runtimeMessage{Role: "user", Text: msg.Content})
+		case schema.Assistant:
+			toolCalls := make([]runtimeToolCall, 0, len(msg.ToolCalls))
+			for _, call := range msg.ToolCalls {
+				args := make(map[string]any)
+				if strings.TrimSpace(call.Function.Arguments) != "" {
+					_ = json.Unmarshal([]byte(call.Function.Arguments), &args)
+				}
+				toolCalls = append(toolCalls, runtimeToolCall{
+					ID:        call.ID,
+					Name:      call.Function.Name,
+					Arguments: args,
+				})
+			}
+			history = append(history, runtimeMessage{Role: "assistant", Text: msg.Content, ToolCalls: toolCalls})
+		case schema.Tool:
+			toolError, _ := msg.Extra["tool_error"].(bool)
+			history = append(history, runtimeMessage{Role: "tool", ToolCallID: msg.ToolCallID, ToolResult: msg.Content, ToolError: toolError})
+		}
+	}
+	return history
+}
+
+func countEinoMessageTokens(msg *schema.Message) int {
+	if msg == nil {
+		return 0
+	}
+	count := len(msg.Content) + len(msg.ToolCallID) + len(msg.ToolName)
+	for _, call := range msg.ToolCalls {
+		count += len(call.ID) + len(call.Type) + len(call.Function.Name) + len(call.Function.Arguments)
+	}
+	return (count + 3) / 4
+}
+
+func estimateRuntimeHistoryBytes(history []runtimeMessage) int {
+	total := 0
+	for _, msg := range history {
+		total += len(msg.Role) + len(msg.Text) + len(msg.ToolCallID) + len(msg.ToolResult) + 32
+		for _, call := range msg.ToolCalls {
+			total += len(call.ID) + len(call.Name) + 32
+			if data, err := json.Marshal(call.Arguments); err == nil {
+				total += len(data)
+			}
+		}
+	}
+	return total
+}
+
+func buildRuntimeContextSummary(existingSummary string, messages []runtimeMessage) string {
+	actions := make([]string, 0, 20)
+	toolResults := make([]string, 0, 20)
+	for _, msg := range messages {
+		switch msg.Role {
+		case "assistant":
+			if text := strings.TrimSpace(msg.Text); text != "" {
+				actions = append(actions, "assistant: "+truncateTextForSummary(text, 220))
+			}
+			for _, call := range msg.ToolCalls {
+				args := summarizeToolArguments(call.Arguments)
+				if args != "" {
+					actions = append(actions, fmt.Sprintf("tool call: %s(%s)", call.Name, args))
+				} else {
+					actions = append(actions, fmt.Sprintf("tool call: %s", call.Name))
+				}
+			}
+		case "tool":
+			status := "ok"
+			if msg.ToolError {
+				status = "error"
+			}
+			toolResults = append(toolResults, fmt.Sprintf("%s result: %s", status, truncateTextForSummary(msg.ToolResult, 260)))
+		case "user":
+			if text := strings.TrimSpace(msg.Text); text != "" {
+				actions = append(actions, "user: "+truncateTextForSummary(text, 180))
+			}
+		}
+	}
+
+	var b strings.Builder
+	b.WriteString(genTestContextSummaryPrefix)
+	b.WriteString("\n以下内容由运行时自动生成，用于降低后续模型请求上下文体积。请继续遵循初始任务和最近消息，必要时重新使用工具读取文件获取完整细节。\n")
+	if existingSummary != "" {
+		b.WriteString("\n### 既有摘要\n")
+		b.WriteString(truncateTextForSummary(strings.TrimPrefix(existingSummary, genTestContextSummaryPrefix), 3000))
+		b.WriteString("\n")
+	}
+	if len(actions) > 0 {
+		b.WriteString("\n### 已完成动作\n")
+		for _, line := range lastRuntimeStrings(actions, 24) {
+			b.WriteString("- ")
+			b.WriteString(line)
+			b.WriteString("\n")
+		}
+	}
+	if len(toolResults) > 0 {
+		b.WriteString("\n### 工具结果要点\n")
+		for _, line := range lastRuntimeStrings(toolResults, 24) {
+			b.WriteString("- ")
+			b.WriteString(line)
+			b.WriteString("\n")
+		}
+	}
+	return truncateByBytes(b.String(), 12_000)
+}
+
+func summarizeToolArguments(args map[string]any) string {
+	if len(args) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, 4)
+	for _, key := range []string{"path", "pattern", "command", "question", "action"} {
+		if value := strings.TrimSpace(stringArg(args, key, "")); value != "" {
+			parts = append(parts, fmt.Sprintf("%s=%q", key, truncateTextForSummary(value, 120)))
+		}
+	}
+	if len(parts) > 0 {
+		return strings.Join(parts, ", ")
+	}
+	data, err := json.Marshal(args)
+	if err != nil {
+		return ""
+	}
+	return truncateTextForSummary(string(data), 160)
+}
+
+func truncateTextForSummary(value string, limit int) string {
+	value = strings.Join(compactLines(value, 20), " ")
+	return truncateText(value, limit)
+}
+
+func lastRuntimeStrings(values []string, limit int) []string {
+	if limit <= 0 || len(values) <= limit {
+		return values
+	}
+	return values[len(values)-limit:]
+}
+
+func compactInitialUserPrompt(prompt string, maxBytes int) string {
+	if maxBytes <= 0 || len(prompt) <= maxBytes {
+		return prompt
+	}
+	sections := splitMarkdownSections(prompt)
+	for _, sectionName := range []string{
+		"## Workflow Prompt Template",
+		"## 输入上下文 JSON",
+		"## AutoTestFlow 历史上下文压缩摘要",
+		"## RAG",
+		"## 知识库",
+	} {
+		sections = trimPromptSection(sections, sectionName, maxRuntimeInt(maxBytes/8, 2000))
+		if joined := joinMarkdownSections(sections); len(joined) <= maxBytes {
+			return joined
+		}
+	}
+	return truncateByBytes(joinMarkdownSections(sections), maxBytes)
+}
+
+type promptSection struct {
+	Title string
+	Text  string
+}
+
+func splitMarkdownSections(prompt string) []promptSection {
+	lines := strings.Split(strings.ReplaceAll(prompt, "\r\n", "\n"), "\n")
+	sections := make([]promptSection, 0, 12)
+	current := promptSection{}
+	for _, line := range lines {
+		if strings.HasPrefix(line, "## ") {
+			if current.Text != "" || current.Title != "" {
+				sections = append(sections, current)
+			}
+			current = promptSection{Title: strings.TrimSpace(line), Text: line + "\n"}
+			continue
+		}
+		current.Text += line + "\n"
+	}
+	if current.Text != "" || current.Title != "" {
+		sections = append(sections, current)
+	}
+	return sections
+}
+
+func trimPromptSection(sections []promptSection, titlePrefix string, limit int) []promptSection {
+	for index := range sections {
+		if !strings.HasPrefix(sections[index].Title, titlePrefix) {
+			continue
+		}
+		if len(sections[index].Text) <= limit {
+			continue
+		}
+		sections[index].Text = truncateByBytes(sections[index].Text, limit) + "\n[该段已由运行时裁剪，必要时请使用 Read/Grep/Glob 重新获取完整上下文。]\n"
+	}
+	return sections
+}
+
+func joinMarkdownSections(sections []promptSection) string {
+	var b strings.Builder
+	for _, section := range sections {
+		b.WriteString(section.Text)
+		if !strings.HasSuffix(section.Text, "\n") {
+			b.WriteString("\n")
+		}
+	}
+	return b.String()
 }
 
 func buildAnthropicHistory(history []runtimeMessage) (string, []map[string]any) {
@@ -1460,31 +2050,350 @@ func buildAnthropicHistory(history []runtimeMessage) (string, []map[string]any) 
 	return strings.Join(systemParts, "\n\n"), messages
 }
 
-func buildOpenAIToolPayloads(tools []genTestToolSpec) []map[string]any {
-	payloads := make([]map[string]any, 0, len(tools))
-	for _, tool := range tools {
-		payloads = append(payloads, map[string]any{
-			"type": "function",
-			"function": map[string]any{
-				"name":        tool.Name,
-				"description": tool.Description,
-				"parameters":  tool.Schema,
-			},
-		})
+func readGenTestDraft(workspace *RuntimeWorkspace) (*GenTestOutput, error) {
+	if workspace == nil || strings.TrimSpace(workspace.ResultFile) == "" {
+		return &GenTestOutput{}, nil
 	}
-	return payloads
+	data, err := os.ReadFile(workspace.ResultFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return &GenTestOutput{}, nil
+		}
+		return nil, fmt.Errorf("读取结果草稿失败: %w", err)
+	}
+	if len(bytes.TrimSpace(data)) == 0 {
+		return &GenTestOutput{}, nil
+	}
+	var draft GenTestOutput
+	if err := json.Unmarshal(data, &draft); err != nil {
+		return nil, fmt.Errorf("解析结果草稿失败: %w", err)
+	}
+	return &draft, nil
 }
 
-func buildAnthropicToolPayloads(tools []genTestToolSpec) []map[string]any {
-	payloads := make([]map[string]any, 0, len(tools))
-	for _, tool := range tools {
-		payloads = append(payloads, map[string]any{
-			"name":         tool.Name,
-			"description":  tool.Description,
-			"input_schema": tool.Schema,
-		})
+func writeGenTestDraft(workspace *RuntimeWorkspace, draft *GenTestOutput) error {
+	if workspace == nil || strings.TrimSpace(workspace.ResultFile) == "" {
+		return nil
 	}
-	return payloads
+	return writeJSONFile(workspace.ResultFile, draft)
+}
+
+func syncEditedArtifactDraft(workspace *RuntimeWorkspace, relativePath, updated string) error {
+	draft, err := readGenTestDraft(workspace)
+	if err != nil {
+		return err
+	}
+	changed := false
+	if normalizeRepoRelativePath(draft.TestScript.FilePath) == relativePath {
+		draft.TestScript.FilePath = relativePath
+		draft.TestScript.FileContent = updated
+		if strings.TrimSpace(draft.TestScript.Language) == "" {
+			draft.TestScript.Language = normalizeScriptLanguage("", relativePath)
+		}
+		changed = true
+	}
+	if normalizeRepoRelativePath(draft.TestDoc.FilePath) == relativePath {
+		draft.TestDoc.FilePath = relativePath
+		draft.TestDoc.Content = updated
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
+	return writeGenTestDraft(workspace, draft)
+}
+
+func (r *EinoGenTestRuntime) buildSubmittedGenTestOutput(toolCtx *genTestToolCallContext, args map[string]any) (*GenTestOutput, error) {
+	draft, err := readGenTestDraft(toolCtx.Workspace)
+	if err != nil {
+		return nil, err
+	}
+	mergedArgs := mergeSubmittedArgsWithDraft(args, draft)
+	output, err := buildGenTestOutput(mergedArgs)
+	if err != nil {
+		return nil, err
+	}
+	mergeGenTestOutputFromDraft(output, draft)
+	if err := hydrateSubmittedArtifacts(toolCtx.Workspace, output); err != nil {
+		return nil, err
+	}
+	if err := writeGenTestDraft(toolCtx.Workspace, output); err != nil {
+		return nil, err
+	}
+	return output, nil
+}
+
+func mergeSubmittedArgsWithDraft(args map[string]any, draft *GenTestOutput) map[string]any {
+	merged := make(map[string]any)
+	if draft != nil {
+		data, err := json.Marshal(draft)
+		if err == nil {
+			_ = json.Unmarshal(data, &merged)
+		}
+	}
+	for key, value := range args {
+		merged[key] = value
+	}
+	return merged
+}
+
+func mergeGenTestOutputFromDraft(output, draft *GenTestOutput) {
+	if output == nil || draft == nil {
+		return
+	}
+	if len(output.TestCases) == 0 && len(draft.TestCases) > 0 {
+		output.TestCases = draft.TestCases
+	}
+	if strings.TrimSpace(output.TestScript.FilePath) == "" {
+		output.TestScript.FilePath = draft.TestScript.FilePath
+	}
+	if strings.TrimSpace(output.TestScript.FileContent) == "" {
+		output.TestScript.FileContent = draft.TestScript.FileContent
+	}
+	if strings.TrimSpace(output.TestScript.Language) == "" {
+		output.TestScript.Language = draft.TestScript.Language
+	}
+	if strings.TrimSpace(output.TestDoc.FilePath) == "" {
+		output.TestDoc.FilePath = draft.TestDoc.FilePath
+	}
+	if strings.TrimSpace(output.TestDoc.Content) == "" {
+		output.TestDoc.Content = draft.TestDoc.Content
+	}
+	if strings.TrimSpace(output.TestDoc.Title) == "" {
+		output.TestDoc.Title = draft.TestDoc.Title
+	}
+	if output.SelfTest == nil {
+		output.SelfTest = draft.SelfTest
+	}
+	if strings.TrimSpace(output.Summary) == "" {
+		output.Summary = draft.Summary
+	}
+}
+
+func hydrateSubmittedArtifacts(workspace *RuntimeWorkspace, output *GenTestOutput) error {
+	if workspace == nil || output == nil {
+		return nil
+	}
+	if path := strings.TrimSpace(output.TestScript.FilePath); path != "" {
+		relativePath := normalizeRepoRelativePath(path)
+		output.TestScript.FilePath = relativePath
+		if strings.TrimSpace(output.TestScript.Language) == "" {
+			output.TestScript.Language = normalizeScriptLanguage("", relativePath)
+		}
+		if strings.TrimSpace(output.TestScript.FileContent) == "" {
+			content, err := readRepoFile(workspace.RepoDir, relativePath)
+			if err != nil {
+				return fmt.Errorf("test_script.file_path 无法读取: %w", err)
+			}
+			output.TestScript.FileContent = content
+		} else if err := writeRepoFile(workspace.RepoDir, relativePath, output.TestScript.FileContent); err != nil {
+			return err
+		}
+	}
+	if path := strings.TrimSpace(output.TestDoc.FilePath); path != "" {
+		relativePath := normalizeRepoRelativePath(path)
+		output.TestDoc.FilePath = relativePath
+		if strings.TrimSpace(output.TestDoc.Content) == "" {
+			content, err := readRepoFile(workspace.RepoDir, relativePath)
+			if err != nil {
+				return fmt.Errorf("test_doc.file_path 无法读取: %w", err)
+			}
+			output.TestDoc.Content = content
+		} else if err := writeRepoFile(workspace.RepoDir, relativePath, output.TestDoc.Content); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type generatedTestCommand struct {
+	Display string
+	Program string
+	Args    []string
+}
+
+func (r *EinoGenTestRuntime) runGeneratedSelfTest(ctx context.Context, toolCtx *genTestToolCallContext, output *GenTestOutput) *SelfTestReport {
+	report := &SelfTestReport{Passed: true, Checks: make([]string, 0, 4)}
+	if output == nil {
+		report.Passed = false
+		report.Summary = "运行时输出为空，无法执行真实自测"
+		return report
+	}
+	if err := hydrateSubmittedArtifacts(toolCtx.Workspace, output); err != nil {
+		report.Passed = false
+		report.Summary = err.Error()
+		report.Checks = append(report.Checks, err.Error())
+		return report
+	}
+	cmdSpec, err := detectGeneratedTestCommand(toolCtx.Workspace.RepoDir, output.TestScript)
+	if err != nil {
+		report.Passed = false
+		report.Summary = err.Error()
+		report.Checks = append(report.Checks, err.Error())
+		return report
+	}
+	report.Command = cmdSpec.Display
+	r.publish(toolCtx.Task.ID, taskEventTypeStage, "generated_self_test_started", model.TaskStatusRunning,
+		fmt.Sprintf("开始真实执行生成脚本自测: %s", cmdSpec.Display), nil)
+	attempt := runGeneratedTestCommand(ctx, toolCtx.Workspace.RepoDir, cmdSpec)
+	report.Attempts = append(report.Attempts, attempt)
+	report.Passed = attempt.Passed
+	report.ExitCode = attempt.ExitCode
+	report.Output = attempt.Output
+	report.Checks = append(report.Checks, fmt.Sprintf("真实自测命令: %s", cmdSpec.Display))
+	if attempt.Passed {
+		report.Summary = "真实自测通过"
+		report.ReportPath = detectPlaywrightReportPath(toolCtx.Workspace.RepoDir)
+		if report.ReportPath != "" {
+			report.Checks = append(report.Checks, "Playwright 报告: "+report.ReportPath)
+		}
+		r.publish(toolCtx.Task.ID, taskEventTypeStage, "generated_self_test_passed", model.TaskStatusRunning,
+			report.Summary, map[string]any{"command": report.Command})
+		return report
+	}
+	report.Summary = fmt.Sprintf("真实自测失败: %s exited with %d", cmdSpec.Display, attempt.ExitCode)
+	if attempt.Output != "" {
+		report.Checks = append(report.Checks, truncateTextForSummary(attempt.Output, 600))
+	}
+	r.publish(toolCtx.Task.ID, taskEventTypeLog, "generated_self_test_failed", model.TaskStatusRunning,
+		report.Summary, map[string]any{"command": report.Command, "exit_code": report.ExitCode})
+	return report
+}
+
+func runPersistedGeneratedSelfTest(ctx context.Context, workspace *RuntimeWorkspace, script GenTestScript) *SelfTestReport {
+	report := &SelfTestReport{Passed: true, Checks: make([]string, 0, 4)}
+	if workspace == nil {
+		report.Passed = false
+		report.Summary = "运行时工作区为空，无法执行真实自测"
+		return report
+	}
+	cmdSpec, err := detectGeneratedTestCommand(workspace.RepoDir, script)
+	if err != nil {
+		report.Passed = false
+		report.Summary = err.Error()
+		report.Checks = append(report.Checks, err.Error())
+		return report
+	}
+	attempt := runGeneratedTestCommand(ctx, workspace.RepoDir, cmdSpec)
+	report.Attempts = append(report.Attempts, attempt)
+	report.Command = cmdSpec.Display
+	report.Passed = attempt.Passed
+	report.ExitCode = attempt.ExitCode
+	report.Output = attempt.Output
+	if attempt.Passed {
+		report.Summary = "真实自测通过"
+		report.ReportPath = detectPlaywrightReportPath(workspace.RepoDir)
+		return report
+	}
+	report.Summary = fmt.Sprintf("真实自测失败: %s exited with %d", cmdSpec.Display, attempt.ExitCode)
+	return report
+}
+
+func detectGeneratedTestCommand(repoDir string, script GenTestScript) (generatedTestCommand, error) {
+	path := normalizeRepoRelativePath(script.FilePath)
+	if strings.TrimSpace(path) == "" {
+		return generatedTestCommand{}, fmt.Errorf("无法执行真实自测: test_script.file_path 为空")
+	}
+	if _, err := readRepoFile(repoDir, path); err != nil {
+		return generatedTestCommand{}, fmt.Errorf("无法执行真实自测: %w", err)
+	}
+	lang := normalizeScriptLanguage(script.Language, path)
+	lowerPath := strings.ToLower(path)
+	switch {
+	case lang == "typescript" || lang == "javascript" || strings.HasSuffix(lowerPath, ".spec.ts") || strings.HasSuffix(lowerPath, ".spec.js"):
+		program := executableName("npx")
+		args := []string{"playwright", "test", filepath.ToSlash(path), "--reporter=list"}
+		return generatedTestCommand{
+			Display: "npx playwright test " + quoteCommandArg(filepath.ToSlash(path)) + " --reporter=list",
+			Program: program,
+			Args:    args,
+		}, nil
+	case lang == "python" || strings.HasSuffix(lowerPath, ".py"):
+		program := executableName("python")
+		return generatedTestCommand{
+			Display: "python -m pytest " + quoteCommandArg(filepath.ToSlash(path)),
+			Program: program,
+			Args:    []string{"-m", "pytest", filepath.ToSlash(path)},
+		}, nil
+	default:
+		return generatedTestCommand{}, fmt.Errorf("无法识别生成脚本测试命令: %s", path)
+	}
+}
+
+func runGeneratedTestCommand(ctx context.Context, repoDir string, cmdSpec generatedTestCommand) SelfTestAttempt {
+	start := time.Now()
+	attempt := SelfTestAttempt{Command: cmdSpec.Display}
+	callCtx, cancel := context.WithTimeout(ctx, defaultGenTestSelfTestTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(callCtx, cmdSpec.Program, cmdSpec.Args...)
+	cmd.Dir = repoDir
+	output, err := cmd.CombinedOutput()
+	attempt.DurationMS = time.Since(start).Milliseconds()
+	attempt.Output = truncateByBytes(strings.TrimSpace(string(output)), defaultGenTestToolResultMaxBytes)
+	if err == nil {
+		attempt.Passed = true
+		return attempt
+	}
+	attempt.Passed = false
+	attempt.ExitCode = 1
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		attempt.ExitCode = exitErr.ExitCode()
+	}
+	if callCtx.Err() == context.DeadlineExceeded {
+		attempt.ExitCode = -1
+		if attempt.Output != "" {
+			attempt.Output += "\n"
+		}
+		attempt.Output += "command timed out"
+	} else if attempt.Output == "" {
+		attempt.Output = err.Error()
+	}
+	return attempt
+}
+
+func buildSelfTestRepairPrompt(report *SelfTestReport, attempt, limit int) string {
+	if report == nil {
+		return "真实自测失败。请检查已写入的测试脚本和文档，修复后再次调用 SubmitGenTestResult。"
+	}
+	return fmt.Sprintf(`真实执行生成脚本自测失败，需要修复后重新提交。
+
+修复轮次: %d/%d
+命令: %s
+退出码: %d
+摘要: %s
+关键日志:
+%s
+
+请使用 Read/Grep/Glob/WriteTestScript/WriteTestDoc/Edit 等工具修复仓库中的测试脚本和文档，然后再次调用 SubmitGenTestResult。`,
+		attempt,
+		limit,
+		report.Command,
+		report.ExitCode,
+		report.Summary,
+		truncateByBytes(report.Output, 6000),
+	)
+}
+
+func detectPlaywrightReportPath(repoDir string) string {
+	reportPath := filepath.Join(repoDir, "playwright-report", "index.html")
+	if _, err := os.Stat(reportPath); err == nil {
+		return "playwright-report/index.html"
+	}
+	return ""
+}
+
+func executableName(name string) string {
+	if runtime.GOOS == "windows" && name == "npx" {
+		return "npx.cmd"
+	}
+	return name
+}
+
+func quoteCommandArg(value string) string {
+	if strings.ContainsAny(value, " \t\"'") {
+		return strconv.Quote(value)
+	}
+	return value
 }
 
 func buildGenTestOutput(args map[string]any) (*GenTestOutput, error) {
@@ -1672,23 +2581,6 @@ func deepCloneAny(value any) any {
 	return cloned
 }
 
-func parseGenTestOutputFromText(text string) (*GenTestOutput, error) {
-	candidate := extractJSONObject(text)
-	if candidate == "" {
-		return nil, fmt.Errorf("未找到 JSON 对象")
-	}
-	var output GenTestOutput
-	if err := json.Unmarshal([]byte(candidate), &output); err != nil {
-		return nil, err
-	}
-	return &output, nil
-}
-
-func extractJSONObject(text string) string {
-	re := regexp.MustCompile(`(?s)\{.*\}`)
-	return strings.TrimSpace(re.FindString(text))
-}
-
 func requiredString(args map[string]any, key string) (string, error) {
 	value := strings.TrimSpace(stringArg(args, key, ""))
 	if value == "" {
@@ -1871,6 +2763,13 @@ func (r *EinoGenTestRuntime) publishToolResult(taskID uint64, content string, is
 
 func minRuntimeInt(a, b int) int {
 	if a < b {
+		return a
+	}
+	return b
+}
+
+func maxRuntimeInt(a, b int) int {
+	if a > b {
 		return a
 	}
 	return b

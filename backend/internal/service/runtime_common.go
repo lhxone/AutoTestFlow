@@ -69,7 +69,10 @@ func parseAgentRuntimeSettings(agent *model.Agent) (*agentRuntimeSettings, error
 }
 
 func writeRepoFile(repoDir, relativePath, content string) error {
-	fullPath := filepath.Join(repoDir, filepath.FromSlash(relativePath))
+	fullPath, err := resolveRepoToolPath(repoDir, normalizeRepoRelativePath(relativePath))
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
 		return fmt.Errorf("创建产物目录失败: %w", err)
 	}
@@ -80,7 +83,10 @@ func writeRepoFile(repoDir, relativePath, content string) error {
 }
 
 func readRepoFile(repoDir, relativePath string) (string, error) {
-	fullPath := filepath.Join(repoDir, filepath.FromSlash(relativePath))
+	fullPath, pathErr := resolveRepoToolPath(repoDir, normalizeRepoRelativePath(relativePath))
+	if pathErr != nil {
+		return "", pathErr
+	}
 	data, err := os.ReadFile(fullPath)
 	if err != nil {
 		if os.IsNotExist(err) {

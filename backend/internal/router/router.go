@@ -246,6 +246,7 @@ func Setup(logger *zap.Logger) *gin.Engine {
 	{
 		integration.POST("/devflow-submit", integrationH.DevFlowSubmit)
 		integration.POST("/cicd-deploy", integrationH.CICDDeploy)
+		integration.GET("/project-metrics", integrationH.GetProjectMetrics)
 	}
 
 	// 健康检查

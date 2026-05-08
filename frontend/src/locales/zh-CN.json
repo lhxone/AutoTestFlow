@@ -858,6 +858,7 @@
       "events": "事件",
       "nodeOutput": "节点输出",
       "autoScrollOutput": "自动滚动到底部",
+      "agentMarkdownOutput": "Agent 输出 Markdown",
       "rawEvents": "原始事件",
       "interactions": "待处理交互",
       "noNodeOutput": "当前节点暂无详细输出",
@@ -913,12 +914,12 @@
         "answered": "已回复"
       },
       "nodes": {
-        "prepareContext": "prepare_context",
-        "mcpPreflight": "mcp_preflight",
-        "prepareWorkspace": "prepare_workspace",
-        "generateAssets": "generate_assets",
-        "selfTest": "self_test",
-        "finalizeTask": "finalize_task"
+        "prepareContext": "准备上下文",
+        "mcpPreflight": "MCP 预检",
+        "prepareWorkspace": "准备工作区",
+        "generateAssets": "生成资产",
+        "selfTest": "自测校验",
+        "finalizeTask": "完成任务"
       },
       "nodeHints": {
         "prepareContext": "加载任务、输入上下文和运行配置",

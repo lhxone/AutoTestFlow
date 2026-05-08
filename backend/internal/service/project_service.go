@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"math"
 
 	"auto-test-flow/internal/dto"
 	"auto-test-flow/internal/model"
@@ -117,6 +118,49 @@ func (s *ProjectService) List(req *dto.ProjectListQuery) ([]model.Project, int64
 	}
 	offset := (req.Page - 1) * req.PageSize
 	return s.projectRepo.List(req.Keyword, req.Status, offset, req.PageSize)
+}
+
+func (s *ProjectService) GetProjectMetrics(req *dto.ProjectMetricsQuery) ([]dto.ProjectMetricVO, error) {
+	if req.ProjectID > 0 {
+		if _, err := s.projectRepo.GetByID(req.ProjectID); err != nil {
+			return nil, errors.New("项目不存在")
+		}
+	}
+
+	projects, err := s.projectRepo.ListMetricProjects(req.ProjectID, req.IncludeDisabled)
+	if err != nil {
+		return nil, err
+	}
+
+	projectIDs := make([]uint64, 0, len(projects))
+	for _, project := range projects {
+		projectIDs = append(projectIDs, project.ProjectID)
+	}
+
+	countMap, err := s.projectRepo.GetMetricCounts(projectIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]dto.ProjectMetricVO, 0, len(projects))
+	for _, project := range projects {
+		counts := countMap[project.ProjectID]
+		rate := 0.0
+		if counts.ClosedCount > 0 {
+			rate = math.Round(float64(counts.AIResolvedCount)/float64(counts.ClosedCount)*10000) / 100
+		}
+		items = append(items, dto.ProjectMetricVO{
+			ProjectID:          project.ProjectID,
+			ProjectName:        project.ProjectName,
+			ClosedCount:        counts.ClosedCount,
+			AIResolvedCount:    counts.AIResolvedCount,
+			AIResolvedRate:     rate,
+			ProcessingCount:    counts.ProcessingCount,
+			PendingReviewCount: counts.PendingReviewCount,
+		})
+	}
+
+	return items, nil
 }
 
 func (s *ProjectService) ListIssueSyncLogs(projectID uint64, req *dto.ProjectIssueSyncLogQuery) ([]model.IssueSyncLog, int64, error) {

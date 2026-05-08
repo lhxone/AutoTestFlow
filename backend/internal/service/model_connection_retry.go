@@ -18,6 +18,10 @@ func isModelConnectionError(err error) bool {
 	if err == nil {
 		return false
 	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "client.timeout exceeded") || strings.Contains(msg, "client timeout exceeded") {
+		return true
+	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
 	}
@@ -30,7 +34,6 @@ func isModelConnectionError(err error) bool {
 		return true
 	}
 
-	msg := strings.ToLower(err.Error())
 	connectionTokens := []string{
 		"connection reset",
 		"connection refused",

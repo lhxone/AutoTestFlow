@@ -112,9 +112,22 @@ type WorkflowRuntimeConfig struct {
 }
 
 type SelfTestReport struct {
-	Passed  bool     `json:"passed"`
-	Summary string   `json:"summary"`
-	Checks  []string `json:"checks,omitempty"`
+	Passed     bool              `json:"passed"`
+	Summary    string            `json:"summary"`
+	Checks     []string          `json:"checks,omitempty"`
+	Command    string            `json:"command,omitempty"`
+	ExitCode   int               `json:"exit_code,omitempty"`
+	Output     string            `json:"output,omitempty"`
+	ReportPath string            `json:"report_path,omitempty"`
+	Attempts   []SelfTestAttempt `json:"attempts,omitempty"`
+}
+
+type SelfTestAttempt struct {
+	Command    string `json:"command"`
+	Passed     bool   `json:"passed"`
+	ExitCode   int    `json:"exit_code"`
+	Output     string `json:"output,omitempty"`
+	DurationMS int64  `json:"duration_ms"`
 }
 
 // Execute 执行gen-test任务
@@ -370,7 +383,11 @@ func (s *GenTestService) SelfTestTask(ctx context.Context, taskID uint64) (*Self
 		return nil, err
 	}
 
-	report := extractSelfTestReport(task.AIOutput)
+	var aiOutput GenTestOutput
+	if len(task.AIOutput) > 0 {
+		_ = json.Unmarshal(task.AIOutput, &aiOutput)
+	}
+	report := aiOutput.SelfTest
 	if report == nil {
 		report = &SelfTestReport{
 			Passed: true,
@@ -410,6 +427,30 @@ func (s *GenTestService) SelfTestTask(ctx context.Context, taskID uint64) (*Self
 		if err := validateGeneratedScript(script); err != nil {
 			report.Passed = false
 			report.Checks = append(report.Checks, fmt.Sprintf("%s 自测失败: %s", script.FilePath, err.Error()))
+		}
+	}
+	if len(scripts) > 0 && aiOutput.Workspace != nil {
+		script := NormalizeTestScripts(scripts)[0]
+		if strings.TrimSpace(aiOutput.TestScript.FilePath) == "" {
+			aiOutput.TestScript.FilePath = script.FilePath
+		}
+		if strings.TrimSpace(aiOutput.TestScript.FileContent) == "" {
+			aiOutput.TestScript.FileContent = script.FileContent
+		}
+		if strings.TrimSpace(aiOutput.TestScript.Language) == "" {
+			aiOutput.TestScript.Language = script.Language
+		}
+		actualReport := runPersistedGeneratedSelfTest(ctx, aiOutput.Workspace, aiOutput.TestScript)
+		report.Command = actualReport.Command
+		report.ExitCode = actualReport.ExitCode
+		report.Output = actualReport.Output
+		report.ReportPath = actualReport.ReportPath
+		report.Attempts = append(report.Attempts, actualReport.Attempts...)
+		if !actualReport.Passed {
+			report.Passed = false
+			report.Checks = append(report.Checks, actualReport.Summary)
+		} else {
+			report.Checks = append(report.Checks, actualReport.Summary)
 		}
 	}
 
@@ -634,11 +675,18 @@ func cloneSelfTestReport(report *SelfTestReport) *SelfTestReport {
 		return nil
 	}
 	cloned := &SelfTestReport{
-		Passed:  report.Passed,
-		Summary: report.Summary,
+		Passed:     report.Passed,
+		Summary:    report.Summary,
+		Command:    report.Command,
+		ExitCode:   report.ExitCode,
+		Output:     report.Output,
+		ReportPath: report.ReportPath,
 	}
 	if len(report.Checks) > 0 {
 		cloned.Checks = append([]string(nil), report.Checks...)
+	}
+	if len(report.Attempts) > 0 {
+		cloned.Attempts = append([]SelfTestAttempt(nil), report.Attempts...)
 	}
 	return cloned
 }

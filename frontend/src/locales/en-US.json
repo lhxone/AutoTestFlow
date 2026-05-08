@@ -858,6 +858,7 @@
       "events": "events",
       "nodeOutput": "Node Output",
       "autoScrollOutput": "Auto-scroll to bottom",
+      "agentMarkdownOutput": "Agent Markdown",
       "rawEvents": "Raw Events",
       "interactions": "Pending Interactions",
       "noNodeOutput": "No detailed output for this node yet",
@@ -913,12 +914,12 @@
         "answered": "Answered"
       },
       "nodes": {
-        "prepareContext": "prepare_context",
-        "mcpPreflight": "mcp_preflight",
-        "prepareWorkspace": "prepare_workspace",
-        "generateAssets": "generate_assets",
-        "selfTest": "self_test",
-        "finalizeTask": "finalize_task"
+        "prepareContext": "Prepare Context",
+        "mcpPreflight": "MCP Preflight",
+        "prepareWorkspace": "Prepare Workspace",
+        "generateAssets": "Generate Assets",
+        "selfTest": "Self Test",
+        "finalizeTask": "Finalize"
       },
       "nodeHints": {
         "prepareContext": "Load task, inputs, workflow and runtime config",

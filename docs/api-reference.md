@@ -2,6 +2,7 @@
 
 > Base URL: `http://localhost:8080/api`
 > 认证方式: Bearer Token (JWT)，在请求头中添加 `Authorization: Bearer <access_token>`
+> 三方集成接口认证方式: Header Token，在请求头中添加 `X-ATF-Token: <integration_api_token>`
 
 ---
 
@@ -729,9 +730,28 @@
 
 ---
 
-## 14. 健康检查
+## 14. 三方集成接口 `/integration`
 
-### 14.1 GET /health — 服务健康检查
+### 14.1 GET /integration/project-metrics — 项目维度指标
+
+- **权限**: 三方 Header Token
+- **独立文档**: [项目维度指标 API](api-project-metrics.md)
+
+### 14.2 POST /integration/devflow-submit — DevFlow 提交通知
+
+- **权限**: 三方 Header Token
+- **说明**: 请求与响应历史会记录到 `api_exchange_log`，`api_name = devflow_submit`
+
+### 14.3 POST /integration/cicd-deploy — CI/CD 部署通知
+
+- **权限**: 三方 Header Token
+- **说明**: 请求与响应历史会记录到 `api_exchange_log`，`api_name = cicd_deploy`
+
+---
+
+## 15. 健康检查
+
+### 15.1 GET /health — 服务健康检查
 
 - **权限**: 公开
 - **请求体**: 无

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"auto-test-flow/internal/dto"
 	"auto-test-flow/internal/model"
 	"auto-test-flow/internal/repository"
 	"auto-test-flow/internal/service"
@@ -25,6 +26,7 @@ type IntegrationHandler struct {
 	settingRepo    *repository.SettingRepo
 	apiLogRepo     *repository.APIExchangeLogRepo
 	genTestService *service.GenTestService
+	projectService *service.ProjectService
 	logger         *zap.Logger
 }
 
@@ -36,6 +38,7 @@ func NewIntegrationHandler(logger *zap.Logger) *IntegrationHandler {
 		settingRepo:    repository.NewSettingRepo(),
 		apiLogRepo:     repository.NewAPIExchangeLogRepo(),
 		genTestService: service.NewGenTestService(logger),
+		projectService: service.NewProjectService(),
 		logger:         logger,
 	}
 }
@@ -134,6 +137,12 @@ type CICDDeployResponse struct {
 	TestTriggered bool   `json:"test_triggered,omitempty"`
 }
 
+type ProjectMetricsResponse struct {
+	Code    uint64 `json:"code"`
+	Message string `json:"message"`
+	Data    gin.H  `json:"data,omitempty"`
+}
+
 // CICDDeploy CI/CD部署通知接口
 // POST /api/integration/cicd-deploy
 func (h *IntegrationHandler) CICDDeploy(c *gin.Context) {
@@ -159,6 +168,39 @@ func (h *IntegrationHandler) CICDDeploy(c *gin.Context) {
 
 	// 有ci_end_time，表示部署完成
 	h.handleDeployComplete(c, start, rawBody, req)
+}
+
+// GetProjectMetrics 查询项目维度指标
+// GET /api/integration/project-metrics
+func (h *IntegrationHandler) GetProjectMetrics(c *gin.Context) {
+	start := time.Now()
+	rawBody, bodyErr := readRequestBody(c)
+	var query dto.ProjectMetricsQuery
+	if bodyErr != nil {
+		resp := ProjectMetricsResponse{Code: 1, Message: "读取请求体失败: " + bodyErr.Error()}
+		h.respondProjectMetrics(c, start, rawBody, query, resp, model.APIExchangeStatusFailed, bodyErr.Error())
+		return
+	}
+	if err := c.ShouldBindQuery(&query); err != nil {
+		resp := ProjectMetricsResponse{Code: 1, Message: "参数错误: " + err.Error()}
+		h.respondProjectMetrics(c, start, rawBody, query, resp, model.APIExchangeStatusFailed, err.Error())
+		return
+	}
+
+	items, err := h.projectService.GetProjectMetrics(&query)
+	if err != nil {
+		resp := ProjectMetricsResponse{Code: 1, Message: err.Error()}
+		status := model.APIExchangeStatusFailed
+		h.respondProjectMetrics(c, start, rawBody, query, resp, status, err.Error())
+		return
+	}
+
+	resp := ProjectMetricsResponse{
+		Code:    0,
+		Message: "success",
+		Data:    gin.H{"list": items},
+	}
+	h.respondProjectMetrics(c, start, rawBody, query, resp, model.APIExchangeStatusSuccess, "")
 }
 
 // handleDeployStart 处理部署开始通知
@@ -272,6 +314,11 @@ func (h *IntegrationHandler) respondCICDDeploy(c *gin.Context, start time.Time, 
 		issueID = &issueIDs[0]
 	}
 	h.recordInboundAPI(c, start, "cicd_deploy", rawBody, req, resp, resultStatus, errMsg, issueID, nil, "")
+	c.JSON(200, resp)
+}
+
+func (h *IntegrationHandler) respondProjectMetrics(c *gin.Context, start time.Time, rawBody string, req dto.ProjectMetricsQuery, resp ProjectMetricsResponse, resultStatus, errMsg string) {
+	h.recordInboundAPI(c, start, "project_metrics", rawBody, req, resp, resultStatus, errMsg, nil, nil, "")
 	c.JSON(200, resp)
 }
 

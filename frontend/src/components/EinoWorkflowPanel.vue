@@ -13,7 +13,6 @@
       <div class="workflow-panel__summary">
         <div>
           <div class="workflow-panel__name">{{ workflowName }}</div>
-          <div class="workflow-panel__meta">{{ workflowSummary }}</div>
         </div>
         <a-tag v-if="selectedNode" :color="nodeStatusColor(selectedNode.status)">
           {{ selectedNode.label }}
@@ -22,23 +21,29 @@
 
       <div class="workflow-graph" role="tablist" :aria-label="t('taskRun.workflow.title')">
         <template v-for="(node, index) in workflowNodes" :key="node.key">
-          <button
-            type="button"
-            class="workflow-node"
-            :class="[
-              `workflow-node--${node.status}`,
-              { 'workflow-node--selected': node.key === selectedNodeKey },
-            ]"
-            @click="handleSelectNode(node.key)"
-          >
-            <span class="workflow-node__badge">{{ index + 1 }}</span>
-            <span class="workflow-node__title">{{ node.label }}</span>
-            <span class="workflow-node__desc">{{ node.shortDescription }}</span>
-            <span class="workflow-node__footer">
-              <span>{{ t(`taskRun.workflow.status.${node.status}`) }}</span>
-              <span>{{ node.events.length }} {{ t('taskRun.workflow.events') }}</span>
-            </span>
-          </button>
+          <a-tooltip placement="bottom">
+            <template #title>
+              <div class="workflow-node-tooltip">
+                <div class="workflow-node-tooltip__title">{{ node.label }}</div>
+                <div>{{ node.shortDescription }}</div>
+                <div class="workflow-node-tooltip__meta">
+                  {{ t(`taskRun.workflow.status.${node.status}`) }} · {{ node.events.length }} {{ t('taskRun.workflow.events') }}
+                </div>
+              </div>
+            </template>
+            <button
+              type="button"
+              class="workflow-node"
+              :class="[
+                `workflow-node--${node.status}`,
+                { 'workflow-node--selected': node.key === selectedNodeKey },
+              ]"
+              @click="handleSelectNode(node.key)"
+            >
+              <span class="workflow-node__badge">{{ index + 1 }}</span>
+              <span class="workflow-node__title">{{ node.label }}</span>
+            </button>
+          </a-tooltip>
           <div v-if="index < workflowNodes.length - 1" class="workflow-graph__arrow" aria-hidden="true">
             <span></span>
           </div>
@@ -46,7 +51,7 @@
       </div>
 
       <a-row :gutter="16" class="workflow-panel__body">
-        <a-col :xs="24" :xl="16">
+        <a-col :span="24">
           <a-card v-if="selectedNode" size="small" class="workflow-detail" :bordered="false">
             <template #title>
               <div class="workflow-detail__title-row">
@@ -62,9 +67,15 @@
             <a-tabs size="small">
               <a-tab-pane key="output" :tab="t('taskRun.workflow.nodeOutput')">
                 <div class="workflow-output-toolbar">
-                  <a-space :size="8">
-                    <span class="workflow-output-toolbar__label">{{ t('taskRun.workflow.autoScrollOutput') }}</span>
-                    <a-switch v-model:checked="autoScrollOutput" size="small" />
+                  <a-space :size="12" wrap>
+                    <a-space :size="8">
+                      <span class="workflow-output-toolbar__label">{{ t('taskRun.workflow.agentMarkdownOutput') }}</span>
+                      <a-switch v-model:checked="renderAgentMarkdown" size="small" />
+                    </a-space>
+                    <a-space :size="8">
+                      <span class="workflow-output-toolbar__label">{{ t('taskRun.workflow.autoScrollOutput') }}</span>
+                      <a-switch v-model:checked="autoScrollOutput" size="small" />
+                    </a-space>
                   </a-space>
                 </div>
                 <div
@@ -92,18 +103,26 @@
                       >
                         <details v-if="isCollapsibleOutput(entry)" class="workflow-output__collapse">
                           <summary class="workflow-output__summary">
-                            <div class="workflow-output__header">
-                              <a-space :size="8" wrap>
+                            <div class="workflow-output__summary-main">
+                              <span class="workflow-output__summary-meta">
                                 <a-tag size="small" :color="entryRoleColor(entry.role)">
                                   {{ entry.title }}
                                 </a-tag>
+                                <a-tag v-if="entry.agentName" size="small" color="geekblue">
+                                  Agent: {{ entry.agentName }}
+                                </a-tag>
                                 <span class="workflow-output__time">{{ formatTime(entry.timestamp) }}</span>
-                              </a-space>
+                              </span>
+                              <span class="workflow-output__preview">{{ outputPreview(entry) }}</span>
                             </div>
-                            <div class="workflow-output__preview">{{ outputPreview(entry) }}</div>
                           </summary>
                           <div class="workflow-output__body">
-                            <div class="workflow-output__text">{{ entry.text }}</div>
+                            <div
+                              v-if="shouldRenderAgentMarkdown(entry)"
+                              class="workflow-output__markdown"
+                              v-html="renderMarkdown(entry.text)"
+                            ></div>
+                            <div v-else class="workflow-output__text">{{ entry.text }}</div>
                             <pre v-if="entry.detail" class="workflow-output__detail">{{ entry.detail }}</pre>
                           </div>
                         </details>
@@ -113,10 +132,18 @@
                               <a-tag size="small" :color="entryRoleColor(entry.role)">
                                 {{ entry.title }}
                               </a-tag>
+                              <a-tag v-if="entry.agentName" size="small" color="geekblue">
+                                Agent: {{ entry.agentName }}
+                              </a-tag>
                               <span class="workflow-output__time">{{ formatTime(entry.timestamp) }}</span>
                             </a-space>
                           </div>
-                          <div class="workflow-output__text">{{ entry.text }}</div>
+                          <div
+                            v-if="shouldRenderAgentMarkdown(entry)"
+                            class="workflow-output__markdown"
+                            v-html="renderMarkdown(entry.text)"
+                          ></div>
+                          <div v-else class="workflow-output__text">{{ entry.text }}</div>
                           <pre v-if="entry.detail" class="workflow-output__detail">{{ entry.detail }}</pre>
                         </template>
                       </div>
@@ -197,37 +224,6 @@
             </a-tabs>
           </a-card>
         </a-col>
-
-        <a-col :xs="24" :xl="8">
-          <a-card size="small" class="workflow-sidecard" :title="t('taskRun.workflow.overview')">
-            <a-descriptions size="small" :column="1">
-              <a-descriptions-item :label="t('taskRun.workflow.engine')">
-                {{ workflowEngine }}
-              </a-descriptions-item>
-              <a-descriptions-item :label="t('taskRun.workflow.currentNode')">
-                {{ selectedNode?.label || '-' }}
-              </a-descriptions-item>
-              <a-descriptions-item :label="t('taskRun.workflow.taskStatus')">
-                {{ props.taskInfo?.status || '-' }}
-              </a-descriptions-item>
-              <a-descriptions-item :label="t('taskRun.workflow.retryCount')">
-                {{ props.taskInfo?.retry_count ?? 0 }}
-              </a-descriptions-item>
-              <a-descriptions-item :label="t('taskRun.workflow.chromeMcp')">
-                {{ chromeMCPText }}
-              </a-descriptions-item>
-            </a-descriptions>
-          </a-card>
-
-          <a-card size="small" class="workflow-sidecard" :title="t('taskRun.workflow.legend')">
-            <div class="workflow-legend">
-              <div v-for="status in legendStatuses" :key="status" class="workflow-legend__item">
-                <span class="workflow-legend__dot" :class="`workflow-legend__dot--${status}`"></span>
-                <span>{{ t(`taskRun.workflow.status.${status}`) }}</span>
-              </div>
-            </div>
-          </a-card>
-        </a-col>
       </a-row>
     </a-spin>
   </a-card>
@@ -236,6 +232,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
+import DOMPurify from 'dompurify'
+import MarkdownIt from 'markdown-it'
 import { useI18n } from 'vue-i18n'
 import {
   approveInteraction,
@@ -267,6 +265,7 @@ interface OutputEntry {
   title: string
   text: string
   detail?: string
+  agentName?: string
   timestamp: string
 }
 
@@ -330,6 +329,7 @@ const GENERATE_ASSET_STAGES = new Set([
   'runtime_start',
   'mcp_runtime',
   'runtime_started',
+  'adk_runtime_started',
   'cli_output',
   'cli_output_raw',
   'artifacts_synced',
@@ -360,8 +360,6 @@ const WORKSPACE_PREPARE_STAGES = new Set([
   'chrome_profile_cleanup',
 ])
 
-const legendStatuses: WorkflowNodeStatus[] = ['wait', 'running', 'completed', 'failed']
-
 const props = defineProps<{
   taskId: number
   taskEvents?: TestTaskEvent[]
@@ -369,6 +367,11 @@ const props = defineProps<{
 }>()
 
 const { t } = useI18n()
+const markdownRenderer = new MarkdownIt({
+  html: false,
+  linkify: true,
+  breaks: true,
+})
 
 const loading = ref(false)
 const interactions = ref<CLIInteraction[]>([])
@@ -379,6 +382,7 @@ const responses = ref<Record<number, string>>({})
 const selectedNodeKey = ref<WorkflowNodeKey>('prepare_context')
 const userSelectedNode = ref(false)
 const autoScrollOutput = ref(true)
+const renderAgentMarkdown = ref(true)
 const outputScrollRef = ref<HTMLDivElement | null>(null)
 let interactionRefreshTimer: number | null = null
 
@@ -398,27 +402,6 @@ const workflowMeta = computed<Record<string, any> | null>(() => {
 const workflowName = computed(() => {
   const raw = workflowMeta.value?.name
   return typeof raw === 'string' && raw.trim() ? raw : 'gen-test-eino-workflow'
-})
-
-const workflowEngine = computed(() => {
-  const raw = workflowMeta.value?.engine
-  return typeof raw === 'string' && raw.trim() ? raw : 'eino'
-})
-
-const workflowSummary = computed(() => {
-  const raw = workflowMeta.value?.mcp_capability_summary
-  if (typeof raw === 'string' && raw.trim()) {
-    return raw.trim()
-  }
-  return t('taskRun.workflow.defaultSummary')
-})
-
-const chromeMCPText = computed(() => {
-  const servers = workflowMeta.value?.chrome_mcp_servers
-  if (Array.isArray(servers) && servers.length > 0) {
-    return servers.join(', ')
-  }
-  return t('taskRun.workflow.notEnabled')
 })
 
 const workflowNodes = computed<WorkflowNodeViewModel[]>(() => {
@@ -586,7 +569,7 @@ function belongsToNode(event: TestTaskEvent, nodeKey: WorkflowNodeKey): boolean 
     case 'prepare_workspace':
       return WORKSPACE_PREPARE_STAGES.has(stage)
     case 'generate_assets':
-      return GENERATE_ASSET_STAGES.has(stage)
+      return GENERATE_ASSET_STAGES.has(stage) || stage.startsWith('adk_')
     case 'self_test':
       return stage === 'self_test_started' || stage === 'self_test_completed' || stage === 'self_test'
     case 'finalize_task':
@@ -661,7 +644,7 @@ function resolveNodeStatus(
 }
 
 function buildOutputEntries(events: TestTaskEvent[]): OutputEntry[] {
-  return events.flatMap((event) => parseStructuredEvent(event)).slice(-80)
+  return compactToolOutputEntries(events.flatMap((event) => parseStructuredEvent(event))).slice(-80)
 }
 
 function parseStructuredEvent(event: TestTaskEvent): OutputEntry[] {
@@ -670,7 +653,7 @@ function parseStructuredEvent(event: TestTaskEvent): OutputEntry[] {
   }
 
   const raw = event.message.trim()
-  if ((event.stage === 'cli_output' || event.stage === 'cli_output_raw') && raw.startsWith('{')) {
+  if ((event.stage === 'cli_output' || event.stage === 'cli_output_raw' || String(event.stage || '').startsWith('adk_')) && raw.startsWith('{')) {
     try {
       const payload = JSON.parse(raw) as Record<string, any>
       return parseRuntimePayload(event, payload)
@@ -689,6 +672,7 @@ function parseRuntimePayload(event: TestTaskEvent, payload: Record<string, any>)
 
   if (payloadType === 'assistant') {
     const content = Array.isArray(payload.message?.content) ? payload.message.content : []
+    const agentName = typeof payload.agent_name === 'string' && payload.agent_name.trim() ? payload.agent_name.trim() : ''
     const entries: OutputEntry[] = []
     for (let index = 0; index < content.length; index += 1) {
       const block = content[index]
@@ -698,6 +682,7 @@ function parseRuntimePayload(event: TestTaskEvent, payload: Record<string, any>)
           role: 'assistant',
           title: t('taskRun.workflow.roles.assistant'),
           text: String(block.text || '').trim(),
+          agentName,
           timestamp,
         })
       }
@@ -708,6 +693,7 @@ function parseRuntimePayload(event: TestTaskEvent, payload: Record<string, any>)
           title: String(block.name || t('taskRun.workflow.roles.tool')),
           text: t('taskRun.workflow.toolCall'),
           detail: formatJSON(block.input),
+          agentName,
           timestamp,
         })
       }
@@ -716,12 +702,14 @@ function parseRuntimePayload(event: TestTaskEvent, payload: Record<string, any>)
   }
 
   if (payloadType === 'user') {
+    const agentName = typeof payload.agent_name === 'string' && payload.agent_name.trim() ? payload.agent_name.trim() : ''
     const content = Array.isArray(payload.message?.content) ? payload.message.content : []
     const entries = content.map((block: any, index: number) => ({
       id: `${baseId}-result-${index}`,
       role: block?.is_error ? 'error' as const : 'tool' as const,
-      title: block?.is_error ? t('taskRun.workflow.roles.error') : t('taskRun.workflow.roles.toolResult'),
+      title: block?.is_error ? t('taskRun.workflow.roles.error') : String(block?.tool_name || t('taskRun.workflow.roles.toolResult')),
       text: String(block?.content || '').trim(),
+      agentName,
       timestamp,
     }))
     return entries.length ? entries : [buildPlainEventEntry(event)]
@@ -733,6 +721,7 @@ function parseRuntimePayload(event: TestTaskEvent, payload: Record<string, any>)
       role: 'system',
       title: t('taskRun.workflow.roles.system'),
       text: String(payload.message || t('taskRun.workflow.systemEvent')),
+      agentName: typeof payload.agent_name === 'string' ? payload.agent_name : '',
       timestamp,
     }]
   }
@@ -752,13 +741,72 @@ function parseRuntimePayload(event: TestTaskEvent, payload: Record<string, any>)
 }
 
 function buildPlainEventEntry(event: TestTaskEvent): OutputEntry {
+  const agentName = typeof event.data?.agent_name === 'string' && event.data.agent_name.trim() ? event.data.agent_name.trim() : ''
   return {
     id: `${event.id}-${event.timestamp}-${event.stage || event.type}`,
     role: event.type === 'error' || event.status === 'failed' ? 'error' : 'event',
     title: eventTitle(event),
     text: event.message || t('taskRun.workflow.noMessage'),
     detail: hasEventData(event) ? formatJSON(event.data) : undefined,
+    agentName,
     timestamp: event.timestamp,
+  }
+}
+
+function compactToolOutputEntries(entries: OutputEntry[]): OutputEntry[] {
+  const compacted: OutputEntry[] = []
+  let buffer: OutputEntry[] = []
+
+  const flush = () => {
+    if (buffer.length === 0) return
+    if (buffer.length === 1) {
+      compacted.push(buffer[0])
+    } else {
+      compacted.push(buildToolBundleEntry(buffer))
+    }
+    buffer = []
+  }
+
+  for (const entry of entries) {
+    if (isCollapsibleOutput(entry)) {
+      buffer.push(entry)
+      continue
+    }
+    flush()
+    compacted.push(entry)
+  }
+  flush()
+
+  return compacted
+}
+
+function buildToolBundleEntry(entries: OutputEntry[]): OutputEntry {
+  const agents = Array.from(new Set(entries.map((entry) => entry.agentName).filter(Boolean) as string[]))
+  const first = entries[0]
+  const preview = entries
+    .map((entry) => `${entry.agentName ? `${entry.agentName}: ` : ''}${entry.title}`)
+    .join(' / ')
+  const detail = entries
+    .map((entry, index) => {
+      const header = [
+        `#${index + 1}`,
+        entry.title,
+        entry.agentName ? `Agent: ${entry.agentName}` : '',
+        entry.timestamp ? formatTime(entry.timestamp) : '',
+      ].filter(Boolean).join(' | ')
+      const body = [entry.text, entry.detail].filter(Boolean).join('\n\n')
+      return `${header}\n${body}`
+    })
+    .join('\n\n---\n\n')
+
+  return {
+    id: `tool-bundle-${first.id}-${entries.length}`,
+    role: 'tool',
+    title: `${t('taskRun.workflow.toolCall')} x${entries.length}`,
+    text: preview,
+    detail,
+    agentName: agents.length === 1 ? agents[0] : (agents.length > 1 ? `${agents.length} Agents` : ''),
+    timestamp: first.timestamp,
   }
 }
 
@@ -814,6 +862,14 @@ function isCollapsibleOutput(entry: OutputEntry) {
 function outputPreview(entry: OutputEntry) {
   const preview = entry.detail || entry.text || ''
   return preview.length > 140 ? `${preview.slice(0, 140)}...` : preview
+}
+
+function shouldRenderAgentMarkdown(entry: OutputEntry) {
+  return renderAgentMarkdown.value && entry.role === 'assistant'
+}
+
+function renderMarkdown(text: string) {
+  return DOMPurify.sanitize(markdownRenderer.render(text || ''))
 }
 
 function groupOutputEntriesByTurn(entries: OutputEntry[]): OutputGroup[] {
@@ -988,9 +1044,10 @@ function getStatusLabel(status: string) {
 
 .workflow-panel__summary {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 16px;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 
 .workflow-panel__name {
@@ -999,23 +1056,17 @@ function getStatusLabel(status: string) {
   color: #1f2937;
 }
 
-.workflow-panel__meta {
-  margin-top: 4px;
-  color: #667085;
-  font-size: 12px;
-  white-space: pre-line;
-}
-
 .workflow-graph {
   display: flex;
-  align-items: stretch;
+  align-items: center;
   gap: 8px;
   overflow-x: auto;
-  padding-bottom: 8px;
+  padding: 2px 0 8px;
 }
 
 .workflow-graph__arrow {
-  min-width: 36px;
+  flex: 1 1 42px;
+  min-width: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1025,7 +1076,7 @@ function getStatusLabel(status: string) {
   position: relative;
   display: block;
   width: 100%;
-  height: 2px;
+  height: 1px;
   background: linear-gradient(90deg, #d1d5db, #94a3b8);
 }
 
@@ -1033,107 +1084,118 @@ function getStatusLabel(status: string) {
   content: '';
   position: absolute;
   right: -1px;
-  top: -4px;
-  border-left: 8px solid #94a3b8;
-  border-top: 5px solid transparent;
-  border-bottom: 5px solid transparent;
+  top: -3px;
+  border-left: 6px solid #94a3b8;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
 }
 
 .workflow-node {
-  min-width: 180px;
-  border: 1px solid #d8e2f1;
-  border-radius: 18px;
-  padding: 14px 14px 12px;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  width: 76px;
+  min-width: 76px;
+  flex: 0 0 76px;
+  border: 0;
+  padding: 0;
+  background: transparent;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  text-align: left;
+  align-items: center;
+  gap: 5px;
+  text-align: center;
   cursor: pointer;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  transition: transform 0.2s ease;
 }
 
 .workflow-node:hover {
   transform: translateY(-1px);
-  border-color: #91caff;
 }
 
 .workflow-node--selected {
-  border-color: #1677ff;
-  box-shadow: 0 10px 24px rgba(22, 119, 255, 0.14);
+  color: #1677ff;
 }
 
 .workflow-node__badge {
-  width: 28px;
-  height: 28px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   background: #e6f4ff;
   color: #1677ff;
-  font-size: 12px;
+  border: 1px solid transparent;
+  font-size: 13px;
   font-weight: 700;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
 }
 
 .workflow-node__title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #111827;
-}
-
-.workflow-node__desc {
-  min-height: 34px;
-  color: #667085;
-  font-size: 12px;
-  line-height: 1.45;
-}
-
-.workflow-node__footer {
-  margin-top: auto;
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
+  width: 100%;
   color: #475467;
   font-size: 11px;
+  font-weight: 600;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.workflow-node--wait .workflow-node__badge,
-.workflow-legend__dot--wait {
+.workflow-node--wait .workflow-node__badge {
   background: #f2f4f7;
   color: #667085;
+  border-color: #e5e7eb;
 }
 
-.workflow-node--running .workflow-node__badge,
-.workflow-legend__dot--running {
+.workflow-node--running .workflow-node__badge {
   background: #e6f4ff;
+  color: #1677ff;
+  border-color: #91caff;
+}
+
+.workflow-node--completed .workflow-node__badge {
+  background: #f6ffed;
+  color: #389e0d;
+  border-color: #b7eb8f;
+}
+
+.workflow-node--failed .workflow-node__badge {
+  background: #fff1f0;
+  color: #cf1322;
+  border-color: #ffa39e;
+}
+
+.workflow-node--selected .workflow-node__badge {
+  border-color: #1677ff;
+  box-shadow: 0 0 0 3px rgba(22, 119, 255, 0.12);
+}
+
+.workflow-node--selected .workflow-node__title {
   color: #1677ff;
 }
 
-.workflow-node--completed .workflow-node__badge,
-.workflow-legend__dot--completed {
-  background: #f6ffed;
-  color: #389e0d;
+.workflow-node-tooltip {
+  max-width: 240px;
+  font-size: 12px;
+  line-height: 1.55;
 }
 
-.workflow-node--failed .workflow-node__badge,
-.workflow-legend__dot--failed {
-  background: #fff1f0;
-  color: #cf1322;
+.workflow-node-tooltip__title {
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.workflow-node-tooltip__meta {
+  margin-top: 6px;
+  color: rgba(255, 255, 255, 0.72);
 }
 
 .workflow-panel__body {
   margin-top: 12px;
 }
 
-.workflow-detail,
-.workflow-sidecard {
+.workflow-detail {
   border-radius: 16px;
   background: #fbfdff;
-}
-
-.workflow-sidecard + .workflow-sidecard {
-  margin-top: 12px;
 }
 
 .workflow-detail__title-row {
@@ -1181,7 +1243,7 @@ function getStatusLabel(status: string) {
 }
 
 .workflow-output-scroll {
-  max-height: 560px;
+  max-height: 720px;
   overflow-y: auto;
   padding-right: 4px;
 }
@@ -1199,6 +1261,7 @@ function getStatusLabel(status: string) {
 
 .workflow-output--tool {
   border-color: #d9f7be;
+  padding: 8px 10px;
 }
 
 .workflow-output--system {
@@ -1226,10 +1289,33 @@ function getStatusLabel(status: string) {
   display: none;
 }
 
+.workflow-output__summary-main {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.workflow-output__summary-meta {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  max-width: 62%;
+  overflow: hidden;
+}
+
+.workflow-output__summary-meta :deep(.ant-tag) {
+  margin-inline-end: 0;
+}
+
 .workflow-output__preview {
+  flex: 1 1 auto;
+  min-width: 0;
   color: #667085;
   font-size: 12px;
-  line-height: 1.5;
+  line-height: 22px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1252,6 +1338,90 @@ function getStatusLabel(status: string) {
   white-space: pre-line;
   color: #111827;
   line-height: 1.6;
+}
+
+.workflow-output__markdown {
+  color: #111827;
+  line-height: 1.68;
+  word-break: break-word;
+}
+
+.workflow-output__markdown :deep(p),
+.workflow-output__markdown :deep(ul),
+.workflow-output__markdown :deep(ol),
+.workflow-output__markdown :deep(blockquote) {
+  margin: 0.45em 0;
+}
+
+.workflow-output__markdown :deep(h1),
+.workflow-output__markdown :deep(h2),
+.workflow-output__markdown :deep(h3),
+.workflow-output__markdown :deep(h4) {
+  margin: 0.85em 0 0.45em;
+  color: #111827;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.workflow-output__markdown :deep(h1) {
+  font-size: 18px;
+}
+
+.workflow-output__markdown :deep(h2) {
+  font-size: 16px;
+}
+
+.workflow-output__markdown :deep(h3),
+.workflow-output__markdown :deep(h4) {
+  font-size: 14px;
+}
+
+.workflow-output__markdown :deep(code) {
+  padding: 0.12em 0.35em;
+  border-radius: 4px;
+  background: #f2f4f7;
+  color: #b42318;
+  font-size: 12px;
+}
+
+.workflow-output__markdown :deep(pre) {
+  margin: 0.65em 0;
+  padding: 12px;
+  border-radius: 10px;
+  overflow: auto;
+  background: #0f172a;
+}
+
+.workflow-output__markdown :deep(pre code) {
+  padding: 0;
+  background: transparent;
+  color: #e2e8f0;
+}
+
+.workflow-output__markdown :deep(blockquote) {
+  padding: 8px 12px;
+  border-left: 3px solid #84caff;
+  background: #eff8ff;
+  color: #1849a9;
+}
+
+.workflow-output__markdown :deep(table) {
+  width: 100%;
+  margin: 0.65em 0;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.workflow-output__markdown :deep(th),
+.workflow-output__markdown :deep(td) {
+  padding: 7px 9px;
+  border: 1px solid #e5e7eb;
+}
+
+.workflow-output__markdown :deep(th) {
+  background: #f9fafb;
+  font-weight: 600;
+  text-align: left;
 }
 
 .workflow-output__detail,
@@ -1293,25 +1463,6 @@ function getStatusLabel(status: string) {
   margin-bottom: 4px;
   font-size: 12px;
   color: #667085;
-}
-
-.workflow-legend {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.workflow-legend__item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.workflow-legend__dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 999px;
-  display: inline-block;
 }
 
 @media (max-width: 1199px) {

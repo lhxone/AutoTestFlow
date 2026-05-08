@@ -45,6 +45,23 @@ type ProjectListQuery struct {
 	Status   *int8  `form:"status"`
 }
 
+// ProjectMetricsQuery 项目维度指标查询
+type ProjectMetricsQuery struct {
+	ProjectID       uint64 `form:"project_id"`
+	IncludeDisabled bool   `form:"include_disabled"`
+}
+
+// ProjectMetricVO 项目维度指标
+type ProjectMetricVO struct {
+	ProjectID          uint64  `json:"project_id"`
+	ProjectName        string  `json:"project_name"`
+	ClosedCount        int64   `json:"closed_count"`
+	AIResolvedCount    int64   `json:"ai_resolved_count"`
+	AIResolvedRate     float64 `json:"ai_resolved_rate"`
+	ProcessingCount    int64   `json:"processing_count"`
+	PendingReviewCount int64   `json:"pending_review_count"`
+}
+
 // ProjectIssueSyncLogQuery 项目问题单同步日志查询
 type ProjectIssueSyncLogQuery struct {
 	Page     int    `form:"page" binding:"omitempty,min=1"`
