@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"fmt"
 	"time"
 
 	"auto-test-flow/internal/model"
@@ -14,14 +15,17 @@ type ProjectMetricProject struct {
 }
 
 type ProjectMetricCounts struct {
-	ProjectID          uint64
-	ClosedCount        int64
-	AIResolvedCount    int64
-	ProcessingCount    int64
-	PendingReviewCount int64
+	Date                string
+	ProjectID           uint64
+	TestIssueTotalCount int64
+	ClosedCount         int64
+	AIResolvedCount     int64
+	ProcessingCount     int64
+	PendingReviewCount  int64
 }
 
 type projectMetricCountRow struct {
+	Date      string `gorm:"column:metric_date"`
 	ProjectID uint64
 	Count     int64
 }
@@ -104,40 +108,46 @@ func (r *ProjectRepo) ListMetricProjects(projectID uint64, includeDisabled bool)
 	return projects, nil
 }
 
-func (r *ProjectRepo) GetMetricCounts(projectIDs []uint64, startAt, endBefore *time.Time) (map[uint64]ProjectMetricCounts, error) {
-	result := make(map[uint64]ProjectMetricCounts, len(projectIDs))
+func (r *ProjectRepo) GetMetricCounts(projectIDs []uint64, startAt, endBefore time.Time) (map[string]ProjectMetricCounts, error) {
+	result := make(map[string]ProjectMetricCounts)
 	if len(projectIDs) == 0 {
 		return result, nil
 	}
 
-	for _, projectID := range projectIDs {
-		result[projectID] = ProjectMetricCounts{ProjectID: projectID}
-	}
-
 	merge := func(rows []projectMetricCountRow, apply func(*ProjectMetricCounts, int64)) {
 		for _, row := range rows {
-			counts := result[row.ProjectID]
+			metricDate := normalizeMetricDate(row.Date)
+			key := projectMetricKey(metricDate, row.ProjectID)
+			counts := result[key]
+			counts.Date = metricDate
+			counts.ProjectID = row.ProjectID
 			apply(&counts, row.Count)
-			result[row.ProjectID] = counts
+			result[key] = counts
 		}
 	}
 
 	applyIssueDateRange := func(query *gorm.DB, column string) *gorm.DB {
-		if startAt != nil {
-			query = query.Where(column+" >= ?", *startAt)
-		}
-		if endBefore != nil {
-			query = query.Where(column+" < ?", *endBefore)
-		}
-		return query
+		return query.Where(column+" >= ? AND "+column+" < ?", startAt, endBefore)
 	}
+
+	var totalRows []projectMetricCountRow
+	totalQuery := r.db.Table("issue").
+		Select("DATE(created_at) AS metric_date, project_id, COUNT(*) AS count").
+		Where("project_id IN ?", projectIDs)
+	totalQuery = applyIssueDateRange(totalQuery, "created_at")
+	if err := totalQuery.Group("metric_date, project_id").Scan(&totalRows).Error; err != nil {
+		return nil, err
+	}
+	merge(totalRows, func(counts *ProjectMetricCounts, count int64) {
+		counts.TestIssueTotalCount = count
+	})
 
 	var closedRows []projectMetricCountRow
 	closedQuery := r.db.Table("issue").
-		Select("project_id, COUNT(*) AS count").
+		Select("DATE(created_at) AS metric_date, project_id, COUNT(*) AS count").
 		Where("project_id IN ? AND zentao_status = ?", projectIDs, "closed")
 	closedQuery = applyIssueDateRange(closedQuery, "created_at")
-	if err := closedQuery.Group("project_id").Scan(&closedRows).Error; err != nil {
+	if err := closedQuery.Group("metric_date, project_id").Scan(&closedRows).Error; err != nil {
 		return nil, err
 	}
 	merge(closedRows, func(counts *ProjectMetricCounts, count int64) {
@@ -156,10 +166,10 @@ func (r *ProjectRepo) GetMetricCounts(projectIDs []uint64, startAt, endBefore *t
 	}
 	var processingRows []projectMetricCountRow
 	processingQuery := r.db.Table("issue").
-		Select("project_id, COUNT(*) AS count").
+		Select("DATE(created_at) AS metric_date, project_id, COUNT(*) AS count").
 		Where("project_id IN ? AND test_status IN ?", projectIDs, processingStatuses)
 	processingQuery = applyIssueDateRange(processingQuery, "created_at")
-	if err := processingQuery.Group("project_id").Scan(&processingRows).Error; err != nil {
+	if err := processingQuery.Group("metric_date, project_id").Scan(&processingRows).Error; err != nil {
 		return nil, err
 	}
 	merge(processingRows, func(counts *ProjectMetricCounts, count int64) {
@@ -168,11 +178,11 @@ func (r *ProjectRepo) GetMetricCounts(projectIDs []uint64, startAt, endBefore *t
 
 	var pendingReviewRows []projectMetricCountRow
 	pendingReviewQuery := r.db.Table("review_task").
-		Select("review_task.project_id, COUNT(DISTINCT review_task.issue_id) AS count").
+		Select("DATE(issue.created_at) AS metric_date, review_task.project_id, COUNT(DISTINCT review_task.issue_id) AS count").
 		Joins("JOIN issue ON issue.id = review_task.issue_id").
 		Where("review_task.project_id IN ? AND review_task.status = ?", projectIDs, model.ReviewStatusPending)
 	pendingReviewQuery = applyIssueDateRange(pendingReviewQuery, "issue.created_at")
-	if err := pendingReviewQuery.Group("review_task.project_id").Scan(&pendingReviewRows).Error; err != nil {
+	if err := pendingReviewQuery.Group("metric_date, review_task.project_id").Scan(&pendingReviewRows).Error; err != nil {
 		return nil, err
 	}
 	merge(pendingReviewRows, func(counts *ProjectMetricCounts, count int64) {
@@ -181,12 +191,12 @@ func (r *ProjectRepo) GetMetricCounts(projectIDs []uint64, startAt, endBefore *t
 
 	var aiResolvedRows []projectMetricCountRow
 	aiResolvedQuery := r.db.Table("issue").
-		Select("issue.project_id, COUNT(DISTINCT issue.id) AS count").
+		Select("DATE(issue.created_at) AS metric_date, issue.project_id, COUNT(DISTINCT issue.id) AS count").
 		Joins("LEFT JOIN review_task ON review_task.issue_id = issue.id AND review_task.status = ?", model.ReviewStatusApproved).
 		Where("issue.project_id IN ? AND issue.zentao_status = ? AND (issue.test_status = ? OR review_task.id IS NOT NULL)",
 			projectIDs, "closed", model.TestStatusReviewApproved)
 	aiResolvedQuery = applyIssueDateRange(aiResolvedQuery, "issue.created_at")
-	if err := aiResolvedQuery.Group("issue.project_id").Scan(&aiResolvedRows).Error; err != nil {
+	if err := aiResolvedQuery.Group("metric_date, issue.project_id").Scan(&aiResolvedRows).Error; err != nil {
 		return nil, err
 	}
 	merge(aiResolvedRows, func(counts *ProjectMetricCounts, count int64) {
@@ -194,4 +204,15 @@ func (r *ProjectRepo) GetMetricCounts(projectIDs []uint64, startAt, endBefore *t
 	})
 
 	return result, nil
+}
+
+func projectMetricKey(date string, projectID uint64) string {
+	return fmt.Sprintf("%s:%d", date, projectID)
+}
+
+func normalizeMetricDate(value string) string {
+	if len(value) >= len("2006-01-02") {
+		return value[:len("2006-01-02")]
+	}
+	return value
 }

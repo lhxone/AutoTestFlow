@@ -12,6 +12,8 @@ import (
 	"auto-test-flow/internal/repository"
 )
 
+const projectMetricsMaxDays = 366
+
 type ProjectService struct {
 	projectRepo *repository.ProjectRepo
 	syncLogRepo *repository.IssueSyncLogRepo
@@ -130,7 +132,7 @@ func (s *ProjectService) GetProjectMetrics(req *dto.ProjectMetricsQuery) ([]dto.
 		}
 	}
 
-	startAt, endBefore, err := parseProjectMetricsDateRange(req.StartDate, req.EndDate)
+	startAt, endBefore, dates, err := parseProjectMetricsDateRange(req.StartDate, req.EndDate)
 	if err != nil {
 		return nil, err
 	}
@@ -150,56 +152,74 @@ func (s *ProjectService) GetProjectMetrics(req *dto.ProjectMetricsQuery) ([]dto.
 		return nil, err
 	}
 
-	items := make([]dto.ProjectMetricVO, 0, len(projects))
-	for _, project := range projects {
-		counts := countMap[project.ProjectID]
-		rate := 0.0
-		if counts.ClosedCount > 0 {
-			rate = math.Round(float64(counts.AIResolvedCount)/float64(counts.ClosedCount)*10000) / 100
+	items := make([]dto.ProjectMetricVO, 0, len(dates)*len(projects))
+	for _, date := range dates {
+		for _, project := range projects {
+			counts := countMap[projectMetricKey(date, project.ProjectID)]
+			rate := 0.0
+			if counts.ClosedCount > 0 {
+				rate = math.Round(float64(counts.AIResolvedCount)/float64(counts.ClosedCount)*10000) / 100
+			}
+			items = append(items, dto.ProjectMetricVO{
+				Date:                date,
+				ProjectID:           project.ProjectID,
+				ProjectName:         project.ProjectName,
+				TestIssueTotalCount: counts.TestIssueTotalCount,
+				ClosedCount:         counts.ClosedCount,
+				AIResolvedCount:     counts.AIResolvedCount,
+				AIResolvedRate:      rate,
+				ProcessingCount:     counts.ProcessingCount,
+				PendingReviewCount:  counts.PendingReviewCount,
+			})
 		}
-		items = append(items, dto.ProjectMetricVO{
-			ProjectID:          project.ProjectID,
-			ProjectName:        project.ProjectName,
-			ClosedCount:        counts.ClosedCount,
-			AIResolvedCount:    counts.AIResolvedCount,
-			AIResolvedRate:     rate,
-			ProcessingCount:    counts.ProcessingCount,
-			PendingReviewCount: counts.PendingReviewCount,
-		})
 	}
 
 	return items, nil
 }
 
-func parseProjectMetricsDateRange(startDate, endDate string) (*time.Time, *time.Time, error) {
+func parseProjectMetricsDateRange(startDate, endDate string) (time.Time, time.Time, []string, error) {
 	startDate = strings.TrimSpace(startDate)
 	endDate = strings.TrimSpace(endDate)
 
-	var startAt *time.Time
-	var endBefore *time.Time
-
-	if startDate != "" {
-		parsed, err := time.ParseInLocation("2006-01-02", startDate, time.Local)
-		if err != nil {
-			return nil, nil, fmt.Errorf("startDate 格式错误，应为 YYYY-MM-DD")
-		}
-		startAt = &parsed
+	if startDate == "" && endDate == "" {
+		today := time.Now().In(time.Local).Format("2006-01-02")
+		startDate = today
+		endDate = today
+	} else if startDate == "" {
+		startDate = endDate
+	} else if endDate == "" {
+		endDate = startDate
 	}
 
-	if endDate != "" {
-		parsed, err := time.ParseInLocation("2006-01-02", endDate, time.Local)
-		if err != nil {
-			return nil, nil, fmt.Errorf("endDate 格式错误，应为 YYYY-MM-DD")
-		}
-		nextDay := parsed.AddDate(0, 0, 1)
-		endBefore = &nextDay
+	startAt, err := time.ParseInLocation("2006-01-02", startDate, time.Local)
+	if err != nil {
+		return time.Time{}, time.Time{}, nil, fmt.Errorf("startDate 格式错误，应为 YYYY-MM-DD")
 	}
 
-	if startAt != nil && endBefore != nil && !startAt.Before(*endBefore) {
-		return nil, nil, errors.New("startDate 不能晚于 endDate")
+	endAt, err := time.ParseInLocation("2006-01-02", endDate, time.Local)
+	if err != nil {
+		return time.Time{}, time.Time{}, nil, fmt.Errorf("endDate 格式错误，应为 YYYY-MM-DD")
 	}
 
-	return startAt, endBefore, nil
+	if endAt.Before(startAt) {
+		return time.Time{}, time.Time{}, nil, errors.New("startDate 不能晚于 endDate")
+	}
+
+	dayCount := int(endAt.Sub(startAt).Hours()/24) + 1
+	if dayCount > projectMetricsMaxDays {
+		return time.Time{}, time.Time{}, nil, fmt.Errorf("日期范围不能超过 %d 天", projectMetricsMaxDays)
+	}
+
+	dates := make([]string, 0, dayCount)
+	for day := startAt; !day.After(endAt); day = day.AddDate(0, 0, 1) {
+		dates = append(dates, day.Format("2006-01-02"))
+	}
+
+	return startAt, endAt.AddDate(0, 0, 1), dates, nil
+}
+
+func projectMetricKey(date string, projectID uint64) string {
+	return fmt.Sprintf("%s:%d", date, projectID)
 }
 
 func (s *ProjectService) ListIssueSyncLogs(projectID uint64, req *dto.ProjectIssueSyncLogQuery) ([]model.IssueSyncLog, int64, error) {

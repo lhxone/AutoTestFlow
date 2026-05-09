@@ -55,13 +55,15 @@ type ProjectMetricsQuery struct {
 
 // ProjectMetricVO 项目维度指标
 type ProjectMetricVO struct {
-	ProjectID          uint64  `json:"project_id"`
-	ProjectName        string  `json:"project_name"`
-	ClosedCount        int64   `json:"closed_count"`
-	AIResolvedCount    int64   `json:"ai_resolved_count"`
-	AIResolvedRate     float64 `json:"ai_resolved_rate"`
-	ProcessingCount    int64   `json:"processing_count"`
-	PendingReviewCount int64   `json:"pending_review_count"`
+	Date                string  `json:"date"`
+	ProjectID           uint64  `json:"project_id"`
+	ProjectName         string  `json:"project_name"`
+	TestIssueTotalCount int64   `json:"test_issue_total_count"`
+	ClosedCount         int64   `json:"closed_count"`
+	AIResolvedCount     int64   `json:"ai_resolved_count"`
+	AIResolvedRate      float64 `json:"ai_resolved_rate"`
+	ProcessingCount     int64   `json:"processing_count"`
+	PendingReviewCount  int64   `json:"pending_review_count"`
 }
 
 // ProjectIssueSyncLogQuery 项目问题单同步日志查询
