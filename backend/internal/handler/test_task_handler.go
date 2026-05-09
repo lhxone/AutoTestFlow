@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -440,8 +441,18 @@ func (h *TestTaskHandler) GetWorkspaceFile(c *gin.Context) {
 		}
 	}
 
+	serveWorkspaceFileContent(c, filepath.Base(cleanTarget), cleanTarget, contentType, data)
+}
+
+func serveWorkspaceFileContent(c *gin.Context, name, filePath, contentType string, data []byte) {
+	modTime := time.Time{}
+	if stat, err := os.Stat(filePath); err == nil {
+		modTime = stat.ModTime()
+	}
+
 	c.Header("Cache-Control", "public, max-age=3600")
-	c.Data(http.StatusOK, contentType, data)
+	c.Header("Content-Type", contentType)
+	http.ServeContent(c.Writer, c.Request, name, modTime, bytes.NewReader(data))
 }
 
 // assetMatcher 匹配 HTML 中的相对资源引用（src 和 href 属性）
@@ -688,6 +699,10 @@ func detectReportContentType(path string, data []byte) string {
 		return "application/json"
 	case ".txt", ".log":
 		return "text/plain"
+	case ".webm":
+		return "video/webm"
+	case ".mp4":
+		return "video/mp4"
 	}
 	if len(data) == 0 {
 		return "text/plain"

@@ -336,6 +336,8 @@ func (r *EinoGenTestRuntime) buildPrompt(
 - 如果是 Web UI 测试且有 Chrome MCP，优先用 Chrome MCP 通过data-testid确认 DOM、交互和选择器。
 - 生成的测试脚本必须包含至少一个可执行断言。
 - 必须把实际文件写入仓库目录；测试脚本必须使用 WriteTestScript 写入，测试文档必须使用 WriteTestDoc 写入，以便运行时同步结果草稿。
+- APP/H5/移动端用例（标题、描述或 URL 包含 APP、H5、mobile、#/pages、/pages/ 时）必须复用 test-cases/helpers/login-h5.ts 的 loginH5；登录和页面跳转必须使用完整绝对 URL（例如 http://host:port/#/pages/login/index），不要依赖相对 URL 或未配置的 BASE_URL，不要使用后台管理端 login helper 或 /admin 路径。
+- WriteTestScript 只能写入真实可执行测试脚本；.spec.ts/.spec.js 内容必须包含 test(...) 或 test.describe(...)。配置、环境变量、说明文本请使用 Write 写入对应文件，禁止写入 .spec 文件。
 - 完成后必须调用 SubmitGenTestResult 工具提交结构化结果，而不是只输出自然语言。
 - 自测完成后，将 Playwright 报告路径写入 self_test.playwright.report_path（例如 "playwright-report/index.html"）。
 - SubmitGenTestResult 必须严格使用标准字段名，禁止使用 path、case_name、prerequisites、module、status、expected_result 等别名字段。
@@ -917,13 +919,13 @@ func buildAnthropicToolInfoPayloads(tools []*schema.ToolInfo) []map[string]any {
 func (r *EinoGenTestRuntime) executeTool(ctx context.Context, toolCtx *genTestToolCallContext, call runtimeToolCall) (*genTestToolResult, error) {
 	switch call.Name {
 	case "Read":
-		path, err := requiredString(call.Arguments, "path")
+		path, err := requiredReadPath(call.Arguments)
 		if err != nil {
 			return nil, err
 		}
 		return r.runRead(toolCtx.Workspace, path)
 	case "Glob":
-		pattern, err := requiredString(call.Arguments, "pattern")
+		pattern, err := requiredStringWithAliases(call.Arguments, "pattern", "path")
 		if err != nil {
 			return nil, err
 		}
@@ -960,6 +962,9 @@ func (r *EinoGenTestRuntime) executeTool(ctx context.Context, toolCtx *genTestTo
 			return nil, err
 		}
 		relativePath := normalizeRepoRelativePath(path)
+		if err := validateTestScriptContent(relativePath, content); err != nil {
+			return nil, err
+		}
 		if err := writeRepoFile(toolCtx.Workspace.RepoDir, relativePath, content); err != nil {
 			return nil, err
 		}
@@ -2185,9 +2190,17 @@ func hydrateSubmittedArtifacts(workspace *RuntimeWorkspace, output *GenTestOutpu
 			if err != nil {
 				return fmt.Errorf("test_script.file_path 无法读取: %w", err)
 			}
+			if err := validateTestScriptContent(relativePath, content); err != nil {
+				return err
+			}
 			output.TestScript.FileContent = content
-		} else if err := writeRepoFile(workspace.RepoDir, relativePath, output.TestScript.FileContent); err != nil {
-			return err
+		} else {
+			if err := validateTestScriptContent(relativePath, output.TestScript.FileContent); err != nil {
+				return err
+			}
+			if err := writeRepoFile(workspace.RepoDir, relativePath, output.TestScript.FileContent); err != nil {
+				return err
+			}
 		}
 	}
 	if path := strings.TrimSpace(output.TestDoc.FilePath); path != "" {
@@ -2294,7 +2307,11 @@ func detectGeneratedTestCommand(repoDir string, script GenTestScript) (generated
 	if strings.TrimSpace(path) == "" {
 		return generatedTestCommand{}, fmt.Errorf("无法执行真实自测: test_script.file_path 为空")
 	}
-	if _, err := readRepoFile(repoDir, path); err != nil {
+	content, err := readRepoFile(repoDir, path)
+	if err != nil {
+		return generatedTestCommand{}, fmt.Errorf("无法执行真实自测: %w", err)
+	}
+	if err := validateTestScriptContent(path, content); err != nil {
 		return generatedTestCommand{}, fmt.Errorf("无法执行真实自测: %w", err)
 	}
 	lang := normalizeScriptLanguage(script.Language, path)
@@ -2318,6 +2335,25 @@ func detectGeneratedTestCommand(repoDir string, script GenTestScript) (generated
 	default:
 		return generatedTestCommand{}, fmt.Errorf("无法识别生成脚本测试命令: %s", path)
 	}
+}
+
+func validateTestScriptContent(path, content string) error {
+	lowerPath := strings.ToLower(normalizeRepoRelativePath(path))
+	if !strings.HasSuffix(lowerPath, ".spec.ts") && !strings.HasSuffix(lowerPath, ".spec.js") {
+		return nil
+	}
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
+		return fmt.Errorf("test_script.file_content 不能为空: %s", path)
+	}
+	if !containsPlaywrightTestDeclaration(trimmed) {
+		return fmt.Errorf("test_script.file_content 缺少可执行的 Playwright 测试声明 test(...) 或 test.describe(...): %s", path)
+	}
+	return nil
+}
+
+func containsPlaywrightTestDeclaration(content string) bool {
+	return strings.Contains(content, "test(") || strings.Contains(content, "test.describe(")
 }
 
 func runGeneratedTestCommand(ctx context.Context, repoDir string, cmdSpec generatedTestCommand) SelfTestAttempt {
@@ -2587,6 +2623,33 @@ func requiredString(args map[string]any, key string) (string, error) {
 		return "", fmt.Errorf("缺少参数: %s", key)
 	}
 	return value, nil
+}
+
+func requiredStringWithAliases(args map[string]any, key string, aliases ...string) (string, error) {
+	if value := strings.TrimSpace(stringArg(args, key, "")); value != "" {
+		return value, nil
+	}
+	for _, alias := range aliases {
+		if value := strings.TrimSpace(stringArg(args, alias, "")); value != "" {
+			return value, nil
+		}
+	}
+	return "", fmt.Errorf("缺少参数: %s", key)
+}
+
+func requiredReadPath(args map[string]any) (string, error) {
+	if value := strings.TrimSpace(stringArg(args, "path", "")); value != "" {
+		return value, nil
+	}
+	pattern := strings.TrimSpace(stringArg(args, "pattern", ""))
+	if pattern != "" && !containsGlobMeta(pattern) {
+		return pattern, nil
+	}
+	return "", fmt.Errorf("缺少参数: path")
+}
+
+func containsGlobMeta(value string) bool {
+	return strings.ContainsAny(value, "*?[")
 }
 
 func stringArg(args map[string]any, key, fallback string) string {

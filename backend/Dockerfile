@@ -1,4 +1,4 @@
-ARG RUNTIME_IMAGE=harbor.inspur.local/atf/auto-test-flow-backend-runtime:node20-bash-chromium
+ARG RUNTIME_IMAGE=harbor.inspur.local/atf/auto-test-flow-backend-runtime:node20-bash-playwright-deps
 
 FROM harbor.inspur.local/atf/golang:1.26.2 AS builder
 

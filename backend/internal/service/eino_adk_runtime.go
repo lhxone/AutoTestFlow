@@ -458,12 +458,18 @@ func (t *genTestADKTool) InvokableRun(ctx context.Context, argumentsInJSON strin
 	args := make(map[string]any)
 	if strings.TrimSpace(argumentsInJSON) != "" {
 		if err := json.Unmarshal([]byte(argumentsInJSON), &args); err != nil {
-			return "", fmt.Errorf("解析 ADK tool arguments 失败 (%s): %w", t.spec.Name, err)
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return "", ctxErr
+			}
+			return fmt.Sprintf("tool execution failed: 解析 ADK tool arguments 失败 (%s): %v", t.spec.Name, err), nil
 		}
 	}
 	result, err := t.runtime.executeTool(ctx, t.toolCtx, runtimeToolCall{Name: t.spec.Name, Arguments: args})
 	if err != nil {
-		return "", err
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return "", ctxErr
+		}
+		return truncateByBytes(fmt.Sprintf("tool execution failed: %v", err), defaultGenTestToolResultMaxBytes), nil
 	}
 	if result == nil {
 		return "", nil

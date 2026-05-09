@@ -90,7 +90,7 @@ build-backend-image:
       -u "$DOCKER_USERNAME" \
       -p "$DOCKER_PASSWORD"
     - docker pull harbor.inspur.local/atf/golang:1.26.2
-    - docker pull harbor.inspur.local/atf/auto-test-flow-backend-runtime:node20-bash-chromium
+    - docker pull harbor.inspur.local/atf/auto-test-flow-backend-runtime:node20-bash-playwright-deps
   script:
     - export BACKEND_IMAGE="${BACKEND_IMAGE_REPO}:${CI_COMMIT_SHORT_SHA}"
     - echo "BACKEND_IMAGE=${BACKEND_IMAGE}"

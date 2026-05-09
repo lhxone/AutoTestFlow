@@ -318,6 +318,36 @@ func TestEinoGenTestRuntimeWriteTestAssets_UpdateDraft(t *testing.T) {
 	}
 }
 
+func TestWriteTestScriptRejectsSpecWithoutTestDeclaration(t *testing.T) {
+	repoDir := t.TempDir()
+	controlDir := filepath.Join(repoDir, ".autotestflow")
+	if err := os.MkdirAll(controlDir, 0o755); err != nil {
+		t.Fatalf("mkdir control dir: %v", err)
+	}
+	runtime := NewEinoGenTestRuntime(zap.NewNop())
+	toolCtx := &genTestToolCallContext{
+		Workspace: &RuntimeWorkspace{
+			RepoDir:    repoDir,
+			ControlDir: controlDir,
+			ResultFile: filepath.Join(controlDir, "result.json"),
+		},
+	}
+
+	_, err := runtime.executeTool(context.Background(), toolCtx, runtimeToolCall{
+		Name: "WriteTestScript",
+		Arguments: map[string]any{
+			"path":    "tests/generated.spec.ts",
+			"content": "BASE_URL=http://example.test\n",
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "缺少可执行的 Playwright 测试声明") {
+		t.Fatalf("expected missing test declaration error, got %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(repoDir, "tests", "generated.spec.ts")); !os.IsNotExist(statErr) {
+		t.Fatalf("invalid spec should not be written, stat err: %v", statErr)
+	}
+}
+
 func TestBuildSubmittedGenTestOutput_MergesDraftAndRejectsTraversal(t *testing.T) {
 	repoDir := t.TempDir()
 	controlDir := filepath.Join(repoDir, ".autotestflow")
@@ -777,6 +807,54 @@ func TestADKToolCommandFailureReturnsObservation(t *testing.T) {
 	}
 }
 
+func TestADKToolValidationFailureReturnsObservation(t *testing.T) {
+	repoDir := t.TempDir()
+	runtimeSvc := NewEinoGenTestRuntime(zap.NewNop())
+	adkTool := &genTestADKTool{
+		spec: genTestToolSpec{
+			Name:        "Read",
+			Description: "read",
+			Schema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{"type": "string"},
+				},
+				"required": []string{"path"},
+			},
+		},
+		runtime: runtimeSvc,
+		toolCtx: &genTestToolCallContext{
+			Workspace: &RuntimeWorkspace{RepoDir: repoDir},
+		},
+	}
+
+	result, err := adkTool.InvokableRun(context.Background(), mustJSONString(t, map[string]any{"pattern": "**/*.ts"}))
+	if err != nil {
+		t.Fatalf("expected validation failure to be returned as tool observation, got error: %v", err)
+	}
+	if !strings.Contains(result, "tool execution failed") || !strings.Contains(result, "缺少参数: path") {
+		t.Fatalf("unexpected validation failure observation: %s", result)
+	}
+}
+
+func TestExecuteToolReadAcceptsPatternAliasForPlainPath(t *testing.T) {
+	repoDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repoDir, "playwright.config.ts"), []byte("export default {};"), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	runtimeSvc := NewEinoGenTestRuntime(zap.NewNop())
+
+	result, err := runtimeSvc.executeTool(context.Background(), &genTestToolCallContext{
+		Workspace: &RuntimeWorkspace{RepoDir: repoDir},
+	}, runtimeToolCall{Name: "Read", Arguments: map[string]any{"pattern": "playwright.config.ts"}})
+	if err != nil {
+		t.Fatalf("expected Read pattern alias to succeed, got error: %v", err)
+	}
+	if result == nil || !strings.Contains(result.Content, "export default") {
+		t.Fatalf("unexpected read result: %#v", result)
+	}
+}
+
 func TestRecoverADKDraftOutput_FromUnsubmittedDraft(t *testing.T) {
 	repoDir := t.TempDir()
 	controlDir := filepath.Join(repoDir, ".autotestflow")
@@ -789,7 +867,7 @@ func TestRecoverADKDraftOutput_FromUnsubmittedDraft(t *testing.T) {
 	if err := os.MkdirAll(controlDir, 0o755); err != nil {
 		t.Fatalf("mkdir control: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(repoDir, "tests", "fallback.spec.ts"), []byte("import { test } from '@playwright/test'\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repoDir, "tests", "fallback.spec.ts"), []byte("import { test, expect } from '@playwright/test'\n\ntest('fallback', async () => { expect(true).toBeTruthy() })\n"), 0o644); err != nil {
 		t.Fatalf("write script: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(repoDir, "docs", "fallback.md"), []byte("# fallback doc\n"), 0o644); err != nil {
