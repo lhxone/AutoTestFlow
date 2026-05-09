@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -139,12 +141,75 @@ func (s *MilvusVectorStore) Store(ctx context.Context, projectID, kbID uint64, d
 	}
 	flushTask, err := s.client.Flush(ctx, milvusclient.NewFlushOption(s.cfg.VectorStoreCollection))
 	if err != nil {
-		return ids, fmt.Errorf("flush Milvus collection 失败: %w", err)
+		flushTask, err = s.retryFlush(ctx)
+		if err != nil {
+			return ids, fmt.Errorf("flush Milvus collection 失败: %w", err)
+		}
 	}
 	if err := flushTask.Await(ctx); err != nil {
 		return ids, fmt.Errorf("等待 Milvus flush 完成失败: %w", err)
 	}
 	return ids, nil
+}
+
+func (s *MilvusVectorStore) retryFlush(ctx context.Context) (*milvusclient.FlushTask, error) {
+	const maxRetries = 6
+	delay := 2 * time.Second
+	lastErr := error(nil)
+	for i := 0; i < maxRetries; i++ {
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+		task, err := s.client.Flush(ctx, milvusclient.NewFlushOption(s.cfg.VectorStoreCollection))
+		if err == nil {
+			return task, nil
+		}
+		lastErr = err
+		if !isMilvusRateLimitError(err) {
+			return nil, err
+		}
+		delay = nextMilvusFlushRetryDelay(err, delay)
+	}
+	return nil, lastErr
+}
+
+func isMilvusRateLimitError(err error) bool {
+	if err == nil {
+		return false
+	}
+	lower := strings.ToLower(err.Error())
+	return strings.Contains(lower, "ratelimiter") || strings.Contains(lower, "rate limit exceeded")
+}
+
+func nextMilvusFlushRetryDelay(err error, fallback time.Duration) time.Duration {
+	if err == nil {
+		return fallback
+	}
+	re := regexp.MustCompile(`rate=([0-9]+(?:\.[0-9]+)?)`)
+	matches := re.FindStringSubmatch(strings.ToLower(err.Error()))
+	if len(matches) < 2 {
+		if fallback < 20*time.Second {
+			return fallback * 2
+		}
+		return fallback
+	}
+	rate, parseErr := strconv.ParseFloat(matches[1], 64)
+	if parseErr != nil || rate <= 0 {
+		return fallback
+	}
+	waitSeconds := int(1.0/rate) + 1
+	wait := time.Duration(waitSeconds) * time.Second
+	if wait < 3*time.Second {
+		wait = 3 * time.Second
+	}
+	if wait > 30*time.Second {
+		wait = 30 * time.Second
+	}
+	return wait
 }
 
 func (s *MilvusVectorStore) Search(ctx context.Context, query string, opts VectorSearchOptions) ([]VectorSearchResult, error) {

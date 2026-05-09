@@ -259,6 +259,9 @@ func (s *KnowledgeService) ListDocuments(projectID, kbID uint64, offset, limit i
 }
 
 func (s *KnowledgeService) RebuildDocument(ctx context.Context, projectID, kbID, docID uint64) error {
+	if err := s.ensureVectorStore(ctx); err != nil {
+		return err
+	}
 	kb, err := s.repo.GetKB(projectID, kbID)
 	if err != nil {
 		return err
@@ -322,6 +325,9 @@ func (s *KnowledgeService) DeleteDocument(ctx context.Context, projectID, kbID, 
 }
 
 func (s *KnowledgeService) RebuildKB(ctx context.Context, projectID, kbID uint64) error {
+	if err := s.ensureVectorStore(ctx); err != nil {
+		return err
+	}
 	if _, err := s.repo.GetKB(projectID, kbID); err != nil {
 		return err
 	}
@@ -338,6 +344,9 @@ func (s *KnowledgeService) RebuildKB(ctx context.Context, projectID, kbID uint64
 }
 
 func (s *KnowledgeService) Query(ctx context.Context, kbID uint64, req KnowledgeQueryRequest) ([]VectorSearchResult, error) {
+	if err := s.ensureVectorStore(ctx); err != nil {
+		return nil, err
+	}
 	if _, err := s.repo.GetKB(req.ProjectID, kbID); err != nil {
 		return nil, err
 	}
@@ -418,6 +427,9 @@ func truncateGraphText(text string, limit int) string {
 }
 
 func (s *KnowledgeService) RetrieveContextForGeneration(ctx context.Context, projectID uint64, query string, workflow *model.Skill) (string, error) {
+	if err := s.ensureVectorStore(ctx); err != nil {
+		return "", err
+	}
 	if !s.configService.Current().Enabled || s.vectorStore == nil || !workflowRAGEnabled(workflow) {
 		return "", nil
 	}
@@ -494,4 +506,23 @@ func firstDocString(value, fallback string) string {
 
 func isRecordNotFound(err error) bool {
 	return err == gorm.ErrRecordNotFound
+}
+
+func (s *KnowledgeService) ensureVectorStore(ctx context.Context) error {
+	cfg := s.configService.Current()
+	if !cfg.Enabled || s.vectorStore != nil {
+		return nil
+	}
+	initCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	store, err := NewVectorStore(initCtx, cfg)
+	if err != nil {
+		if s.logger != nil {
+			s.logger.Warn("按需初始化知识库向量存储失败", zap.Error(err))
+		}
+		return err
+	}
+	s.vectorStore = store
+	s.pipeline = NewRAGPipeline(s.configService, store)
+	return nil
 }

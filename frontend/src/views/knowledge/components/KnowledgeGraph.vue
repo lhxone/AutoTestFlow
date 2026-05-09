@@ -118,10 +118,14 @@ function scheduleRender() {
 
 function buildNodeObject(node: GraphNode) {
   const sprite = new SpriteText(node.name)
+  const spriteAny = sprite as any
   sprite.color = node.color
-  sprite.textHeight = node.type === 'document' ? 8 : 5
-  sprite.backgroundColor = 'rgba(255,255,255,0.72)'
-  sprite.padding = 2
+  sprite.textHeight = node.type === 'document' ? 11 : 8
+  spriteAny.backgroundColor = 'rgba(255,255,255,0.84)'
+  spriteAny.borderColor = 'rgba(15,23,42,0.2)'
+  spriteAny.borderWidth = 1
+  spriteAny.borderRadius = 6
+  sprite.padding = 3
   return sprite
 }
 
@@ -224,16 +228,18 @@ onBeforeUnmount(() => {
 .toolbar-label,
 .graph-count {
   color: #667085;
-  font-size: 13px;
+  font-size: 15px;
+  font-weight: 500;
 }
 .graph-stage {
   position: relative;
   height: calc(100vh - 320px);
   min-height: 600px;
   border: 1px solid #eaecf0;
-  border-radius: 6px;
+  border-radius: 10px;
   overflow: hidden;
   background: #fff;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
 }
 .graph-canvas {
   width: 100%;
@@ -245,18 +251,21 @@ onBeforeUnmount(() => {
   left: 12px;
   bottom: 12px;
   max-width: 320px;
-  padding: 10px 12px;
+  padding: 12px 14px;
   color: #475467;
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.96);
   border: 1px solid #eaecf0;
-  border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  border-radius: 10px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
   pointer-events: none;
+  font-size: 15px;
+  line-height: 1.6;
 }
 .tooltip-title {
   margin-bottom: 4px;
   color: #101828;
-  font-weight: 600;
+  font-weight: 700;
+  font-size: 17px;
 }
 .graph-shell :deep(.ant-spin-nested-loading),
 .graph-shell :deep(.ant-spin-container) {
