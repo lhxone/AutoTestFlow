@@ -1,8 +1,10 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"auto-test-flow/internal/dto"
@@ -15,24 +17,26 @@ import (
 const gitApproveTimeout = 20 * time.Second
 
 type ReviewService struct {
-	reviewRepo      *repository.ReviewRepo
-	testTaskRepo    *repository.TestTaskRepo
-	issueRepo       *repository.IssueRepo
-	gitOpsService   *GitOpsService
-	notifyService   *NotificationService
-	zentaoProxy     *ZentaoProxyService
-	logger          *zap.Logger
+	reviewRepo     *repository.ReviewRepo
+	testTaskRepo   *repository.TestTaskRepo
+	issueRepo      *repository.IssueRepo
+	gitOpsService  *GitOpsService
+	notifyService  *NotificationService
+	zentaoProxy    *ZentaoProxyService
+	genTestService *GenTestService
+	logger         *zap.Logger
 }
 
 func NewReviewService(logger *zap.Logger) *ReviewService {
 	return &ReviewService{
-		reviewRepo:    repository.NewReviewRepo(),
-		testTaskRepo:  repository.NewTestTaskRepo(),
-		issueRepo:     repository.NewIssueRepo(),
-		gitOpsService: NewGitOpsService(logger),
-		notifyService: NewNotificationService(logger),
-		zentaoProxy:   NewZentaoProxyService(logger),
-		logger:        logger,
+		reviewRepo:     repository.NewReviewRepo(),
+		testTaskRepo:   repository.NewTestTaskRepo(),
+		issueRepo:      repository.NewIssueRepo(),
+		gitOpsService:  NewGitOpsService(logger),
+		notifyService:  NewNotificationService(logger),
+		zentaoProxy:    NewZentaoProxyService(logger),
+		genTestService: NewGenTestService(logger),
+		logger:         logger,
 	}
 }
 
@@ -138,6 +142,10 @@ func (s *ReviewService) DoReview(reviewID, reviewerID uint64, req *dto.ReviewAct
 		return errors.New("Review任务当前状态不允许审核")
 	}
 
+	if (req.Action == "fail_regression" || req.Action == "request_changes") && strings.TrimSpace(req.Comment) == "" {
+		return errors.New("审核意见不能为空")
+	}
+
 	// 创建审核记录
 	now := time.Now()
 	rt.ReviewerID = &reviewerID
@@ -182,12 +190,8 @@ func (s *ReviewService) DoReview(reviewID, reviewerID uint64, req *dto.ReviewAct
 		gitSummary = "要求修改，未推送"
 		_ = s.issueRepo.ForceUpdateTestStatus(rt.IssueID, model.TestStatusReviewRejected)
 		s.logStatusChange(rt.IssueID, model.TestStatusReviewPending, model.TestStatusReviewRejected, "manual", &reviewerID, fmt.Sprintf("Review驳回(需修改): %s", req.Comment))
-		// 通知研发流水线
-		if issue, err := s.issueRepo.GetByID(rt.IssueID); err == nil && issue.DevTaskID != "" {
-			if err := s.notifyService.NotifyDevFlowFailure(issue.DevTaskID, issue, "review_rejected", req.Comment); err != nil {
-				s.logger.Warn("通知研发流水线失败", zap.Error(err), zap.Uint64("issueID", rt.IssueID))
-			}
-		}
+		// 驳回后自动重新生成测试，不通知研发流水线。
+		go s.regenerateTestAsync(rt.TestTaskID)
 
 	case "fail_regression":
 		if err := s.pushReviewedContentWithTimeout(rt); err != nil {
@@ -235,6 +239,15 @@ func (s *ReviewService) DoReview(reviewID, reviewerID uint64, req *dto.ReviewAct
 	}
 
 	return nil
+}
+
+func (s *ReviewService) regenerateTestAsync(taskID uint64) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+
+	if err := s.genTestService.RunTask(ctx, taskID); err != nil {
+		s.logger.Error("驳回后重新生成测试失败", zap.Uint64("task_id", taskID), zap.Error(err))
+	}
 }
 
 func (s *ReviewService) logStatusChange(issueID uint64, oldStatus, newStatus, triggerType string, operatorID *uint64, remark string) {

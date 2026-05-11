@@ -998,19 +998,21 @@
       "noRecords": "暂无审核记录",
       "comment": "审核意见",
       "commentPlaceholder": "填写审核意见...",
+      "commentRequired": "回归测试失败或驳回并重新生成时，审核意见必填",
       "confirmSuccess": "确认回归测试成功",
       "failRegression": "回归测试失败",
       "reject": "驳回",
+      "rejectAndRegenerate": "驳回并重新生成",
       "approveSuccess": "回归测试已确认成功",
       "failSuccess": "回归测试失败，问题单已重新激活",
-      "rejectSuccess": "已驳回，测试用例/脚本需重新生成",
+      "rejectSuccess": "已驳回并触发重新生成测试",
       "actionSuccess": "操作成功",
       "actionFailed": "操作失败",
       "execute": "执行审批",
       "actions": {
         "approve": "确认回归测试成功",
         "fail_regression": "回归测试失败",
-        "request_changes": "驳回了回归测试",
+        "request_changes": "驳回并重新生成了测试",
         "comment": "发表了评论"
       }
     }

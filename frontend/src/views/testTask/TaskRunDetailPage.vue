@@ -155,7 +155,7 @@
             <a-timeline-item
               v-for="record in reviewDetail.records"
               :key="record.id"
-              :color="record.action === 'approve' || record.action === 'fail_regression' ? 'green' : record.action === 'reject' ? 'red' : 'blue'"
+              :color="record.action === 'approve' || record.action === 'fail_regression' ? 'green' : (record.action === 'reject' || record.action === 'request_changes') ? 'red' : 'blue'"
             >
               <strong>{{ record.reviewer_name }}</strong> {{ regressionActionLabel(record.action) }}
               <span style="color: #999; margin-left: 8px">{{ record.created_at }}</span>
@@ -171,7 +171,7 @@
             <a-space>
               <a-button type="primary" @click="submitRegression('approve')" :loading="regressionSubmitting">{{ t('taskRun.regression.confirmSuccess') }}</a-button>
               <a-button danger @click="submitRegression('fail_regression')" :loading="regressionSubmitting">{{ t('taskRun.regression.failRegression') }}</a-button>
-              <a-button @click="submitRegression('request_changes')" :loading="regressionSubmitting">{{ t('taskRun.regression.reject') }}</a-button>
+              <a-button @click="submitRegression('request_changes')" :loading="regressionSubmitting">{{ t('taskRun.regression.rejectAndRegenerate') }}</a-button>
             </a-space>
           </a-form>
         </a-card>
@@ -802,6 +802,10 @@ function regressionActionLabel(action: string) {
 
 async function submitRegression(action: string) {
   if (!reviewInfo.value) return
+  if ((action === 'fail_regression' || action === 'request_changes') && !regressionComment.value.trim()) {
+    message.warning(t('taskRun.regression.commentRequired'))
+    return
+  }
   regressionSubmitting.value = true
   try {
     await doReview(reviewInfo.value.id, { action, comment: regressionComment.value })

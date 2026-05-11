@@ -998,19 +998,21 @@
       "noRecords": "No review records",
       "comment": "Review Comment",
       "commentPlaceholder": "Enter your review comment...",
+      "commentRequired": "Comment is required when selecting Regression Failed or Reject and Regenerate",
       "confirmSuccess": "Confirm Regression Success",
       "failRegression": "Regression Failed",
       "reject": "Reject",
+      "rejectAndRegenerate": "Reject and Regenerate",
       "approveSuccess": "Regression confirmed successful",
       "failSuccess": "Regression failed, issue reactivated",
-      "rejectSuccess": "Rejected, test case/script needs regeneration",
+      "rejectSuccess": "Rejected and regeneration has been triggered",
       "actionSuccess": "Operation succeeded",
       "actionFailed": "Operation failed",
       "execute": "Execute Approval",
       "actions": {
         "approve": "Confirmed regression success",
         "fail_regression": "Regression failed",
-        "request_changes": "Rejected regression",
+        "request_changes": "Rejected and regenerated tests",
         "comment": "Left a comment"
       }
     }
