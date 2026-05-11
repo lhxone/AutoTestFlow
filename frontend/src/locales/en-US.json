@@ -154,7 +154,7 @@
         "title": "Bug Flow Board",
         "subtitle": "A fixed-stage layout for test generation, review, execution, and exception handling with per-column search and card actions.",
         "total": "Total Bugs",
-        "currentPage": "{count} on current page",
+        "currentPage": "{count} loaded on board",
         "inProgress": "In Progress",
         "needFollow": "Needs follow-up",
         "snapshot": "Snapshot",

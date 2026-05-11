@@ -154,7 +154,7 @@
         "title": "Bug 流转看板",
         "subtitle": "按测试生成、审核、执行和异常阶段固定分列展示，支持列内搜索和卡片操作。",
         "total": "Bug 总数",
-        "currentPage": "当前页 {count} 条",
+        "currentPage": "看板已加载 {count} 条",
         "inProgress": "处理中",
         "needFollow": "需要持续跟进",
         "snapshot": "快照时间",

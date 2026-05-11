@@ -10,7 +10,7 @@
 
     <a-row :gutter="16" class="issue-filter-bar">
       <a-col :span="5">
-        <a-input v-model:value="query.keyword" :placeholder="$t('issue.list.search')" allowClear @pressEnter="fetchData" />
+        <a-input v-model:value="query.keyword" :placeholder="$t('issue.list.search')" allowClear @pressEnter="handleQuery" />
       </a-col>
       <a-col :span="4">
         <a-select v-model:value="query.zentao_status" :placeholder="$t('issue.list.zentaoStatus')" allowClear style="width: 100%">
@@ -35,7 +35,7 @@
         </a-select>
       </a-col>
       <a-col>
-        <a-button type="primary" @click="fetchData">{{ $t('common.query') }}</a-button>
+        <a-button type="primary" @click="handleQuery">{{ $t('common.query') }}</a-button>
         <a-button style="margin-left: 8px" @click="handleSync">{{ $t('issue.list.sync') }}</a-button>
       </a-col>
     </a-row>
@@ -86,7 +86,7 @@
       </template>
     </a-table>
 
-    <a-spin v-else :spinning="loading">
+    <a-spin v-else :spinning="boardLoading">
       <section class="bug-board">
         <div class="board-hero">
           <div>
@@ -97,8 +97,8 @@
           <div class="board-stats">
             <div class="board-stat-card board-stat-card--total">
               <span>{{ $t('issue.list.board.total') }}</span>
-              <strong>{{ pagination.total }}</strong>
-              <small>{{ $t('issue.list.board.currentPage', { count: list.length }) }}</small>
+              <strong>{{ boardVisibleTotal }}</strong>
+              <small>{{ $t('issue.list.board.currentPage', { count: boardVisibleTotal }) }}</small>
             </div>
             <div class="board-stat-card board-stat-card--running">
               <span>{{ $t('issue.list.board.inProgress') }}</span>
@@ -313,7 +313,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, reactive, onMounted } from 'vue'
+import { computed, ref, reactive, onMounted, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { useRouter } from 'vue-router'
 import dayjs from 'dayjs'
@@ -330,6 +330,10 @@ const router = useRouter()
 
 const list = ref<Issue[]>([])
 const loading = ref(false)
+const boardList = ref<Issue[]>([])
+const boardLoading = ref(false)
+let boardRequestSeq = 0
+let boardDirty = true
 const viewMode = ref<'table' | 'board'>('table')
 const query = reactive({ keyword: '', zentao_status: undefined, test_status: undefined, project_id: undefined as number | undefined, branch: undefined as string | undefined })
 const pagination = reactive({ current: 1, pageSize: 20, total: 0, showTotal: (total: number) => `共 ${total} 条` })
@@ -431,7 +435,7 @@ const boardStageConfig = computed(() => [
 
 const boardColumns = computed(() => {
   return boardStageConfig.value.map((stage) => {
-    const items = list.value.filter((issue) => stage.statuses.includes(issue.test_status))
+    const items = boardList.value.filter((issue) => stage.statuses.includes(issue.test_status))
     const keyword = (boardSearch[stage.key] || '').trim().toLowerCase()
     const filteredItems = keyword
       ? items.filter((issue) => {
@@ -459,8 +463,16 @@ const boardColumns = computed(() => {
   })
 })
 
+const boardVisibleStatuses = computed(() => new Set(boardStageConfig.value.flatMap((stage) => stage.statuses)))
+
+const boardVisibleTotal = computed(() =>
+  boardList.value.filter((issue) => boardVisibleStatuses.value.has(issue.test_status)).length
+)
+
 const activeIssueCount = computed(() =>
-  list.value.filter((issue) => !['pending', 'review_approved', 'passed'].includes(issue.test_status)).length
+  boardList.value.filter((issue) =>
+    boardVisibleStatuses.value.has(issue.test_status) && !['pending', 'review_approved'].includes(issue.test_status)
+  ).length
 )
 
 const snapshotTime = computed(() => dayjs().format('YYYY/MM/DD HH:mm'))
@@ -470,6 +482,19 @@ onMounted(() => {
   fetchProjects()
 })
 
+watch(viewMode, (mode) => {
+  if (mode === 'board' && boardDirty) {
+    fetchBoardData()
+  }
+})
+
+watch(
+  () => [query.keyword, query.zentao_status, query.test_status, query.project_id, query.branch],
+  () => {
+    boardDirty = true
+  }
+)
+
 async function fetchData() {
   loading.value = true
   try {
@@ -478,15 +503,48 @@ async function fetchData() {
     list.value = data.list || []
     pagination.total = data.total
 
-    const allBranches = new Set<string>()
-    list.value.forEach(issue => {
-      if (issue.branch) {
-        allBranches.add(issue.branch)
-      }
-    })
-    branches.value = Array.from(allBranches)
+    updateBranches()
   } finally {
     loading.value = false
+  }
+}
+
+async function fetchBoardData() {
+  const requestSeq = ++boardRequestSeq
+  const pageSize = 100
+  const merged: Issue[] = []
+  boardLoading.value = true
+  try {
+    const firstRes = await getIssueList({ ...query, page: 1, page_size: pageSize })
+    if (requestSeq !== boardRequestSeq) return
+
+    const firstData = firstRes.data.data
+    const total = firstData.total || 0
+    merged.push(...(firstData.list || []))
+
+    const totalPages = Math.ceil(total / pageSize)
+    for (let page = 2; page <= totalPages; page += 1) {
+      const res = await getIssueList({ ...query, page, page_size: pageSize })
+      if (requestSeq !== boardRequestSeq) return
+      merged.push(...(res.data.data?.list || []))
+    }
+
+    boardList.value = merged
+    boardDirty = false
+    updateBranches()
+  } finally {
+    if (requestSeq === boardRequestSeq) {
+      boardLoading.value = false
+    }
+  }
+}
+
+async function handleQuery() {
+  pagination.current = 1
+  boardDirty = true
+  await fetchData()
+  if (viewMode.value === 'board') {
+    await fetchBoardData()
   }
 }
 
@@ -531,7 +589,11 @@ async function handleProjectChange(value: number | undefined) {
   query.project_id = value
   query.branch = undefined
   pagination.current = 1
+  boardDirty = true
   await fetchData()
+  if (viewMode.value === 'board') {
+    await fetchBoardData()
+  }
 }
 
 async function doSync() {
@@ -594,7 +656,11 @@ async function doGenTest() {
     if (task?.id) {
       router.push({ name: 'TaskRunDetail', params: { id: String(task.id) } })
     }
-    fetchData()
+    await fetchData()
+    boardDirty = true
+    if (viewMode.value === 'board') {
+      await fetchBoardData()
+    }
   } finally {
     genTestLoading.value = false
   }
@@ -691,6 +757,21 @@ function canGenerateTest(issue: Issue) {
   return true
 }
 
+function updateBranches() {
+  const allBranches = new Set<string>()
+  list.value.forEach(issue => {
+    if (issue.branch) {
+      allBranches.add(issue.branch)
+    }
+  })
+  boardList.value.forEach(issue => {
+    if (issue.branch) {
+      allBranches.add(issue.branch)
+    }
+  })
+  branches.value = Array.from(allBranches)
+}
+
 function toggleColumn(key: string) {
   collapsedColumns[key] = !collapsedColumns[key]
 }
@@ -778,9 +859,7 @@ function summarizeDescription(value?: string) {
 .bug-board {
   padding: 22px 0 8px;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 12% 10%, rgba(65, 120, 255, 0.12), transparent 26%),
-    linear-gradient(180deg, #f8fbff 0%, #f5f1e9 100%);
+  background: transparent;
   border-radius: 20px;
 }
 
