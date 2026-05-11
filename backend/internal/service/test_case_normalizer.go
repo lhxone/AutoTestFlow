@@ -103,6 +103,12 @@ func parseMarkdownTestCases(content string) []markdownTestCase {
 			section = ""
 		}
 		if current == nil {
+			if cells, ok := parseMarkdownTableRow(line); ok && !isMarkdownTableSeparator(cells) {
+				current = &markdownTestCase{Title: pendingTitle}
+				section = ""
+				currentTable = &markdownTable{Section: section}
+				currentTable.Rows = append(currentTable.Rows, cells)
+			}
 			continue
 		}
 		if strings.HasPrefix(line, "##") {

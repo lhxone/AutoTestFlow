@@ -32,6 +32,7 @@ const (
 	genTestADKExplorerAgentName = "repo_explorer"
 	genTestADKWriterAgentName   = "test_writer"
 	genTestADKReviewerAgentName = "self_reviewer"
+	adkWriterContextPackMarker  = "[AUTO_CONTEXT_PACK]"
 )
 
 type genTestADKConfig struct {
@@ -54,6 +55,88 @@ type genTestADKTool struct {
 	toolCtx  *genTestToolCallContext
 	finalMu  *sync.Mutex
 	finalOut **GenTestOutput
+}
+
+type adkDelegationContextBridge struct {
+	mu             sync.RWMutex
+	workflowPrompt string
+	repoSummary    string
+}
+
+func newADKDelegationContextBridge(workflowPrompt string) *adkDelegationContextBridge {
+	return &adkDelegationContextBridge{workflowPrompt: strings.TrimSpace(workflowPrompt)}
+}
+
+func (b *adkDelegationContextBridge) setRepoSummary(summary string) {
+	if b == nil {
+		return
+	}
+	summary = strings.TrimSpace(summary)
+	if summary == "" {
+		return
+	}
+	b.mu.Lock()
+	b.repoSummary = summary
+	b.mu.Unlock()
+}
+
+func (b *adkDelegationContextBridge) snapshot() (string, string) {
+	if b == nil {
+		return "", ""
+	}
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.workflowPrompt, b.repoSummary
+}
+
+type adkWriterContextInjector struct {
+	adk.BaseChatModelAgentMiddleware
+	bridge *adkDelegationContextBridge
+	role   string
+}
+
+func (m *adkWriterContextInjector) BeforeModelRewriteState(
+	ctx context.Context,
+	state *adk.ChatModelAgentState,
+	_ *adk.ModelContext,
+) (context.Context, *adk.ChatModelAgentState, error) {
+	if m == nil || m.bridge == nil || state == nil {
+		return ctx, state, nil
+	}
+	for _, msg := range state.Messages {
+		if msg != nil && msg.Role == schema.User && strings.Contains(msg.Content, adkWriterContextPackMarker) {
+			return ctx, state, nil
+		}
+	}
+
+	workflowPrompt, repoSummary := m.bridge.snapshot()
+	if strings.TrimSpace(repoSummary) == "" {
+		role := strings.TrimSpace(m.role)
+		if role == "" {
+			role = "sub_agent"
+		}
+		return ctx, state, fmt.Errorf("阻断 %s: 缺少 repo_explorer 结论，禁止继续执行", role)
+	}
+
+	contextPack := adkWriterContextPackMarker + `
+你正在执行 ` + strings.TrimSpace(m.role) + ` 子任务。以下上下文由运行时自动注入，必须严格遵循。
+
+## Main Workflow Context
+` + truncateByBytes(strings.TrimSpace(workflowPrompt), 12000) + `
+
+## Repo Explorer Findings
+` + truncateByBytes(strings.TrimSpace(repoSummary), 8000) + `
+
+要求：
+1. 生成与写入必须基于上述探索结论与主流程约束。
+2. 若发现上下文冲突，优先遵循 Main Workflow Context。
+3. 仅使用当前可用工具写入测试资产，不得提交最终结果。`
+
+	nextState := *state
+	nextState.Messages = make([]adk.Message, 0, len(state.Messages)+1)
+	nextState.Messages = append(nextState.Messages, schema.UserMessage(contextPack))
+	nextState.Messages = append(nextState.Messages, state.Messages...)
+	return ctx, &nextState, nil
 }
 
 func resolveGenTestADKConfig(workflow *model.Skill, agent *model.Agent) genTestADKConfig {
@@ -147,15 +230,16 @@ func (r *EinoGenTestRuntime) runADKAgentLoop(
 		return nil, err
 	}
 
+	systemPrompt := "你是 AutoTestFlow 的测试生成主代理。你可以使用 task 工具委派 repo_explorer、test_writer、self_reviewer 三个子代理，但最终必须由你调用 SubmitGenTestResult 提交结构化结果。"
+	userPrompt := r.buildPrompt(toolCtx.Workspace, toolCtx.Task, toolCtx.Input, toolCtx.Workflow, toolCtx.Agent, promptCtx, toolCtx.RAGContext)
+	contextBridge := newADKDelegationContextBridge(userPrompt)
+
 	adkHandlers := r.buildADKReductionHandlers(ctx, toolCtx)
 
-	subAgents, err := r.buildADKSubAgents(ctx, baseModel, adkCfg, adkHandlers, explorerTools, writerTools, reviewerTools)
+	subAgents, err := r.buildADKSubAgents(ctx, baseModel, adkCfg, adkHandlers, explorerTools, writerTools, reviewerTools, contextBridge)
 	if err != nil {
 		return nil, err
 	}
-
-	systemPrompt := "你是 AutoTestFlow 的测试生成主代理。你可以使用 task 工具委派 repo_explorer、test_writer、self_reviewer 三个子代理，但最终必须由你调用 SubmitGenTestResult 提交结构化结果。"
-	userPrompt := r.buildPrompt(toolCtx.Workspace, toolCtx.Task, toolCtx.Input, toolCtx.Workflow, toolCtx.Agent, promptCtx, toolCtx.RAGContext)
 
 	mainAgent, err := deepadk.New(ctx, &deepadk.Config{
 		Name:                   genTestADKMainAgentName,
@@ -188,6 +272,9 @@ func (r *EinoGenTestRuntime) runADKAgentLoop(
 		}
 		if event == nil {
 			continue
+		}
+		if summary := extractADKRepoExplorerSummary(event); summary != "" {
+			contextBridge.setRepoSummary(summary)
 		}
 		r.publishADKEvent(toolCtx.Task.ID, event)
 		if event.Err != nil {
@@ -372,6 +459,7 @@ func (r *EinoGenTestRuntime) buildADKSubAgents(
 	explorerTools []einotool.BaseTool,
 	writerTools []einotool.BaseTool,
 	reviewerTools []einotool.BaseTool,
+	contextBridge *adkDelegationContextBridge,
 ) ([]adk.Agent, error) {
 	explorer, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name:             genTestADKExplorerAgentName,
@@ -386,26 +474,30 @@ func (r *EinoGenTestRuntime) buildADKSubAgents(
 	if err != nil {
 		return nil, err
 	}
+	writerHandlers := append([]adk.ChatModelAgentMiddleware{}, handlers...)
+	writerHandlers = append(writerHandlers, &adkWriterContextInjector{bridge: contextBridge, role: genTestADKWriterAgentName})
 	writer, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name:             genTestADKWriterAgentName,
 		Description:      "根据已知事实生成或修订测试脚本和测试文档，负责写入测试资产草稿。",
 		Instruction:      "你是测试资产写入子代理。使用 WriteTestScript 和 WriteTestDoc 写入测试脚本与文档；不要调用 SubmitGenTestResult。",
 		Model:            baseModel,
 		ToolsConfig:      adk.ToolsConfig{ToolsNodeConfig: toolsNodeConfig(writerTools), EmitInternalEvents: adkCfg.EmitInternalEvents},
-		Handlers:         handlers,
+		Handlers:         writerHandlers,
 		MaxIterations:    adkCfg.MaxIterations,
 		ModelRetryConfig: genTestADKModelRetryConfig(),
 	})
 	if err != nil {
 		return nil, err
 	}
+	reviewerHandlers := append([]adk.ChatModelAgentMiddleware{}, handlers...)
+	reviewerHandlers = append(reviewerHandlers, &adkWriterContextInjector{bridge: contextBridge, role: genTestADKReviewerAgentName})
 	reviewer, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name:             genTestADKReviewerAgentName,
 		Description:      "审查已生成测试资产，运行允许的平台命令完成自测并输出修复建议。",
 		Instruction:      "你是测试资产审查子代理。只运行主代理指定的目标测试命令并分析当前测试的 stdout/stderr、截图、HTML 报告或 error-context；不要创建、编辑、删除文件，不要探索无关 test-results，不要运行无关测试，不要调用 SubmitGenTestResult。失败时用不超过 1200 个中文字符返回失败原因、已检查证据和修复建议。",
 		Model:            baseModel,
 		ToolsConfig:      adk.ToolsConfig{ToolsNodeConfig: toolsNodeConfig(reviewerTools), EmitInternalEvents: adkCfg.EmitInternalEvents},
-		Handlers:         handlers,
+		Handlers:         reviewerHandlers,
 		MaxIterations:    adkCfg.MaxIterations,
 		ModelRetryConfig: genTestADKModelRetryConfig(),
 	})
@@ -591,4 +683,18 @@ func genTestReviewerToolSet() map[string]struct{} {
 		allow[spec.Name] = struct{}{}
 	}
 	return allow
+}
+
+func extractADKRepoExplorerSummary(event *adk.AgentEvent) string {
+	if event == nil || event.Output == nil || event.Output.MessageOutput == nil {
+		return ""
+	}
+	if !strings.EqualFold(strings.TrimSpace(event.AgentName), genTestADKExplorerAgentName) {
+		return ""
+	}
+	msg, err := event.Output.MessageOutput.GetMessage()
+	if err != nil || msg == nil || msg.Role != schema.Assistant {
+		return ""
+	}
+	return strings.TrimSpace(msg.Content)
 }
