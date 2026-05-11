@@ -334,7 +334,8 @@ const boardList = ref<Issue[]>([])
 const boardLoading = ref(false)
 let boardRequestSeq = 0
 let boardDirty = true
-const viewMode = ref<'table' | 'board'>('table')
+const ISSUE_VIEW_MODE_STORAGE_KEY = 'atf.issue.list.viewMode'
+const viewMode = ref<'table' | 'board'>(getInitialViewMode())
 const query = reactive({ keyword: '', zentao_status: undefined, test_status: undefined, project_id: undefined as number | undefined, branch: undefined as string | undefined })
 const pagination = reactive({ current: 1, pageSize: 20, total: 0, showTotal: (total: number) => `共 ${total} 条` })
 const boardSearch = reactive<Record<string, string>>({})
@@ -483,6 +484,7 @@ onMounted(() => {
 })
 
 watch(viewMode, (mode) => {
+  localStorage.setItem(ISSUE_VIEW_MODE_STORAGE_KEY, mode)
   if (mode === 'board' && boardDirty) {
     fetchBoardData()
   }
@@ -755,6 +757,11 @@ function formatDateTime(value?: string | null) {
 function canGenerateTest(issue: Issue) {
   // 允许对任意状态的Bug单生成测试，不限制禅道状态或测试状态
   return true
+}
+
+function getInitialViewMode(): 'table' | 'board' {
+  const savedMode = localStorage.getItem(ISSUE_VIEW_MODE_STORAGE_KEY)
+  return savedMode === 'board' ? 'board' : 'table'
 }
 
 function updateBranches() {
