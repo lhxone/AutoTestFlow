@@ -162,17 +162,30 @@ deploy-production:
     - export MYSQL_PASSWORD_VALUE="${MYSQL_ROOT_PASSWORD:-root}"
     - export MYSQL_DATABASE_VALUE="${MYSQL_DATABASE:-auto_test_flow}"
     - export MYSQL_IMAGE_VALUE="${MYSQL_IMAGE:-mysql:8.0}"
+    - export MILVUS_IMAGE_VALUE="${MILVUS_IMAGE:-milvusdb/milvus:latest}"
+    - export ETCD_IMAGE_VALUE="${ETCD_IMAGE:-quay.io/coreos/etcd:v3.5.18}"
+    - export MINIO_IMAGE_VALUE="${MINIO_IMAGE:-minio/minio:RELEASE.2025-09-07T16-13-09Z}"
+    - export MINIO_ROOT_USER_VALUE="${MINIO_ROOT_USER:-minioadmin}"
+    - export MINIO_ROOT_PASSWORD_VALUE="${MINIO_ROOT_PASSWORD:-minioadmin}"
     - export FRONTEND_PORT_VALUE="${FRONTEND_PORT:-80}"
     - export BACKEND_PORT_VALUE="${BACKEND_PORT:-8080}"
     - export MYSQL_PORT_VALUE="${MYSQL_PORT:-3306}"
     - export JWT_SECRET_VALUE="${ATF_JWT_SECRET:-change-me-jwt-secret-in-production}"
     - export RUNTIME_HOST_DIR_VALUE="${ATF_RUNTIME_HOST_DIR:-/data2/auto-test-flow}"
+    - export MILVUS_ETCD_DIR_VALUE="${ATF_MILVUS_ETCD_DIR:-${DEPLOY_BASE_DIR}/milvus/etcd}"
+    - export MILVUS_MINIO_DIR_VALUE="${ATF_MILVUS_MINIO_DIR:-${DEPLOY_BASE_DIR}/milvus/minio}"
+    - export MILVUS_DATA_DIR_VALUE="${ATF_MILVUS_DATA_DIR:-${DEPLOY_BASE_DIR}/milvus/data}"
     - mkdir -p .deploy
     - |
       cat > .deploy/.env.deploy <<EOF
       MYSQL_ROOT_PASSWORD=${MYSQL_PASSWORD_VALUE}
       MYSQL_DATABASE=${MYSQL_DATABASE_VALUE}
       MYSQL_IMAGE=${MYSQL_IMAGE_VALUE}
+      MILVUS_IMAGE=${MILVUS_IMAGE_VALUE}
+      ETCD_IMAGE=${ETCD_IMAGE_VALUE}
+      MINIO_IMAGE=${MINIO_IMAGE_VALUE}
+      MINIO_ROOT_USER=${MINIO_ROOT_USER_VALUE}
+      MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD_VALUE}
       BACKEND_IMAGE=${BACKEND_IMAGE_VALUE}
       FRONTEND_IMAGE=${FRONTEND_IMAGE_VALUE}
       FRONTEND_PORT=${FRONTEND_PORT_VALUE}
@@ -180,6 +193,9 @@ deploy-production:
       MYSQL_PORT=${MYSQL_PORT_VALUE}
       ATF_MYSQL_DATA_DIR=${DEPLOY_BASE_DIR}/mysql
       ATF_RUNTIME_HOST_DIR=${RUNTIME_HOST_DIR_VALUE}
+      ATF_MILVUS_ETCD_DIR=${MILVUS_ETCD_DIR_VALUE}
+      ATF_MILVUS_MINIO_DIR=${MILVUS_MINIO_DIR_VALUE}
+      ATF_MILVUS_DATA_DIR=${MILVUS_DATA_DIR_VALUE}
       ATF_JWT_SECRET=${JWT_SECRET_VALUE}
       ATF_ZENTAO_BASE_URL=${ATF_ZENTAO_BASE_URL}
       ATF_ZENTAO_API_TOKEN=${ATF_ZENTAO_API_TOKEN}
@@ -189,7 +205,7 @@ deploy-production:
       ATF_MAIL_PASSWORD=${ATF_MAIL_PASSWORD}
       ATF_MAIL_FROM=${ATF_MAIL_FROM:-autotest@example.com}
       EOF
-    - ssh -i ~/.ssh/deploy_key.pem -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "sudo -n mkdir -p '$APP_DIR' '${DEPLOY_BASE_DIR}/mysql' '${RUNTIME_HOST_DIR_VALUE}/repos' '${RUNTIME_HOST_DIR_VALUE}/cli-runtime' '${RUNTIME_HOST_DIR_VALUE}/logs'"
+    - ssh -i ~/.ssh/deploy_key.pem -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "sudo -n mkdir -p '$APP_DIR' '${DEPLOY_BASE_DIR}/mysql' '${DEPLOY_BASE_DIR}/milvus/etcd' '${DEPLOY_BASE_DIR}/milvus/minio' '${DEPLOY_BASE_DIR}/milvus/data' '${RUNTIME_HOST_DIR_VALUE}/repos' '${RUNTIME_HOST_DIR_VALUE}/cli-runtime' '${RUNTIME_HOST_DIR_VALUE}/logs'"
     - rsync -az --delete --rsync-path="sudo -n rsync" -e "ssh -i ~/.ssh/deploy_key.pem -p $DEPLOY_PORT" --exclude '.git/' --exclude '.deploy/' --exclude 'frontend/node_modules/' --exclude 'backend/bin/' --exclude 'logs/' ./ "$DEPLOY_USER@$DEPLOY_HOST:$APP_DIR/"
     - rsync -az --rsync-path="sudo -n rsync" -e "ssh -i ~/.ssh/deploy_key.pem -p $DEPLOY_PORT" .deploy/.env.deploy "$DEPLOY_USER@$DEPLOY_HOST:$APP_DIR/.env.deploy"
     - |
@@ -224,6 +240,9 @@ deploy-production:
         if ! \${COMPOSE_CMD} -p auto-test-flow --env-file .env.deploy -f docker-compose.prod.yml up -d --remove-orphans; then
           \${COMPOSE_CMD} -p auto-test-flow --env-file .env.deploy -f docker-compose.prod.yml ps || true
           \${COMPOSE_CMD} -p auto-test-flow --env-file .env.deploy -f docker-compose.prod.yml logs --tail=200 mysql || true
+          \${COMPOSE_CMD} -p auto-test-flow --env-file .env.deploy -f docker-compose.prod.yml logs --tail=200 etcd || true
+          \${COMPOSE_CMD} -p auto-test-flow --env-file .env.deploy -f docker-compose.prod.yml logs --tail=200 minio || true
+          \${COMPOSE_CMD} -p auto-test-flow --env-file .env.deploy -f docker-compose.prod.yml logs --tail=200 milvus-standalone || true
           \${COMPOSE_CMD} -p auto-test-flow --env-file .env.deploy -f docker-compose.prod.yml logs --tail=200 backend || true
           \${COMPOSE_CMD} -p auto-test-flow --env-file .env.deploy -f docker-compose.prod.yml logs --tail=200 frontend || true
           exit 1

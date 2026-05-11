@@ -23,6 +23,66 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  etcd:
+    image: ${ETCD_IMAGE:-quay.io/coreos/etcd:v3.5.18}
+    container_name: atf-milvus-etcd
+    environment:
+      ETCD_AUTO_COMPACTION_MODE: revision
+      ETCD_AUTO_COMPACTION_RETENTION: "1000"
+      ETCD_QUOTA_BACKEND_BYTES: "4294967296"
+      ETCD_SNAPSHOT_COUNT: "50000"
+    command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+    volumes:
+      - ${ATF_MILVUS_ETCD_DIR:-/data2/AutoTestFlow/milvus/etcd}:/etcd
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  minio:
+    image: ${MINIO_IMAGE:-minio/minio:RELEASE.2025-09-07T16-13-09Z}
+    container_name: atf-milvus-minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    command: minio server /minio_data --console-address ":9001"
+    volumes:
+      - ${ATF_MILVUS_MINIO_DIR:-/data2/AutoTestFlow/milvus/minio}:/minio_data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  milvus-standalone:
+    image: ${MILVUS_IMAGE:-milvusdb/milvus:latest}
+    container_name: atf-milvus-standalone
+    command: ["milvus", "run", "standalone"]
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    volumes:
+      - ${ATF_MILVUS_DATA_DIR:-/data2/AutoTestFlow/milvus/data}:/var/lib/milvus
+    depends_on:
+      etcd:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9091/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+
   backend:
     image: ${BACKEND_IMAGE:?BACKEND_IMAGE is required}
     container_name: atf-backend
@@ -59,6 +119,8 @@ services:
       - ${ATF_RUNTIME_HOST_DIR:-/data2/auto-test-flow}:/tmp/auto-test-flow
     depends_on:
       mysql:
+        condition: service_healthy
+      milvus-standalone:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/health || exit 1"]

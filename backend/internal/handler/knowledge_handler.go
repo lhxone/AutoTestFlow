@@ -228,6 +228,20 @@ func (h *KnowledgeHandler) Query(c *gin.Context) {
 	h.writeResult(c, results, err)
 }
 
+func (h *KnowledgeHandler) Chat(c *gin.Context) {
+	kbID, ok := parsePathUint64(c, "id")
+	if !ok {
+		return
+	}
+	var req service.KnowledgeChatRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.CodeParamError, "参数错误: "+err.Error())
+		return
+	}
+	result, err := h.service.Chat(c.Request.Context(), kbID, req)
+	h.writeResult(c, result, err)
+}
+
 func (h *KnowledgeHandler) Graph(c *gin.Context) {
 	projectID, ok := parseRequiredUint64(c, "project_id")
 	if !ok {

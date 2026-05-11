@@ -93,7 +93,7 @@ const saving = ref(false)
 const form = reactive<KnowledgeBaseConfig>({
   enabled: false,
   vector_store_type: 'milvus',
-  vector_store_host: 'localhost',
+  vector_store_host: 'milvus-standalone',
   vector_store_port: 19530,
   vector_store_collection: 'autotestflow_knowledge',
   embedding_provider: 'openai_compatible',

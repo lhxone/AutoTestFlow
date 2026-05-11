@@ -101,7 +101,7 @@ $sha = (git rev-parse --short=40 HEAD); $env:BACKEND_IMAGE="ghcr.io/lhxone/auto-
 
 说明：
 
-- 该命令会直接使用当前提交对应的 GHCR 镜像并启动 `mysql + backend + frontend`
+- 该命令会直接使用当前提交对应的 GHCR 镜像并启动 `mysql + etcd + minio + milvus + backend + frontend`
 - 若该提交镜像尚未发布，可改用已发布的 tag（把 `$sha` 替换成具体 tag）
 
 #### 1) 启动前检查
@@ -125,6 +125,11 @@ docker compose version
 
 - `BACKEND_IMAGE`
 - `FRONTEND_IMAGE`
+- `MILVUS_IMAGE`
+- `ETCD_IMAGE`
+- `MINIO_IMAGE`
+- `MINIO_ROOT_USER`
+- `MINIO_ROOT_PASSWORD`
 
 在 GitLab CI 部署中，这两个变量会自动写入 `.env.deploy`；手动部署时需要你自行设置。
 
@@ -140,6 +145,9 @@ $env:FRONTEND_PORT='80'
 $env:BACKEND_PORT='8080'
 $env:MYSQL_PORT='3306'
 $env:ATF_MYSQL_DATA_DIR='/data/AutoTestFlow/mysql'
+$env:ATF_MILVUS_ETCD_DIR='/data/AutoTestFlow/milvus/etcd'
+$env:ATF_MILVUS_MINIO_DIR='/data/AutoTestFlow/milvus/minio'
+$env:ATF_MILVUS_DATA_DIR='/data/AutoTestFlow/milvus/data'
 $env:ATF_GIT_WORK_DIR='/data/AutoTestFlow/workspace/repos'
 $env:ATF_CLI_WORKSPACE_DIR='/data/AutoTestFlow/workspace/cli-runtime'
 $env:ATF_LOG_DIR='/data/AutoTestFlow/logs'
@@ -157,6 +165,9 @@ docker compose -f docker-compose.prod.yml up -d
 
 - `${DEPLOY_BASE_DIR}/app`：部署到服务器上的项目工作区
 - `${DEPLOY_BASE_DIR}/mysql`：MySQL 数据目录
+- `${DEPLOY_BASE_DIR}/milvus/etcd`：Milvus Etcd 数据目录
+- `${DEPLOY_BASE_DIR}/milvus/minio`：Milvus MinIO 数据目录
+- `${DEPLOY_BASE_DIR}/milvus/data`：Milvus 向量数据目录
 - `${DEPLOY_BASE_DIR}/workspace/repos`：Git 工作目录
 - `${DEPLOY_BASE_DIR}/workspace/cli-runtime`：CLI / Eino 运行时工作区
 - `${DEPLOY_BASE_DIR}/logs`：后端日志目录
@@ -174,6 +185,7 @@ docker compose -f docker-compose.prod.yml logs -f frontend
 - 前端：`http://localhost`（或你设置的 `FRONTEND_PORT`）
 - 后端健康检查：`http://localhost:8080/health`（或你设置的 `BACKEND_PORT`）
 - MySQL：`localhost:3306`（或你设置的 `MYSQL_PORT`）
+- Milvus：`milvus-standalone:19530`，由后端容器内部直连
 
 #### 6) 停止与清理
 

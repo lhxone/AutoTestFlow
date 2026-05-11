@@ -57,6 +57,29 @@ export interface KnowledgeGraphData {
   edges: Array<{ source: string; target: string; type: string; score: number }>
 }
 
+export interface KnowledgeSearchResult {
+  id: string
+  content: string
+  score: number
+  metadata: Record<string, any>
+}
+
+export interface KnowledgeChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface KnowledgeChatResponse {
+  answer: string
+  sources: KnowledgeSearchResult[]
+  agent?: {
+    id: number
+    name: string
+    provider: string
+    model: string
+  }
+}
+
 export function getKnowledgeConfig() {
   return request.get('/knowledge-base/config')
 }
@@ -115,6 +138,13 @@ export function rebuildKnowledgeBase(id: number, projectId: number) {
 
 export function queryKnowledgeBase(id: number, data: { project_id: number; query: string; top_k?: number; keywords?: string[] }) {
   return request.post(`/knowledge-bases/${id}/query`, data)
+}
+
+export function chatKnowledgeBase(
+  id: number,
+  data: { project_id: number; query: string; top_k?: number; keywords?: string[]; agent_id?: number; messages?: KnowledgeChatMessage[] },
+) {
+  return request.post(`/knowledge-bases/${id}/chat`, data, { timeout: 180000 })
 }
 
 export function getKnowledgeGraph(id: number, projectId: number) {

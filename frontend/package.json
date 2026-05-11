@@ -16,6 +16,7 @@
     "dayjs": "^1.11.10",
     "dompurify": "^3.3.3",
     "markdown-it": "^14.1.1",
+    "mermaid": "^11.4.1",
     "monaco-editor": "^0.47.0",
     "pinia": "^2.1.7",
     "three": "^0.184.0",

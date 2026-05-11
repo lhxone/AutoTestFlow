@@ -137,7 +137,7 @@ ON DUPLICATE KEY UPDATE `value` = VALUES(`value`), `encrypted` = VALUES(`encrypt
 INSERT INTO `system_setting` (`category`, `key`, `value`, `encrypted`, `description`) VALUES
   ('knowledge_base', 'enabled', 'false', 0, '是否启用 RAG 知识库'),
   ('knowledge_base', 'vector_store.type', 'milvus', 0, '向量存储类型'),
-  ('knowledge_base', 'vector_store.host', 'localhost', 0, 'Milvus 地址'),
+  ('knowledge_base', 'vector_store.host', 'milvus-standalone', 0, 'Milvus 地址'),
   ('knowledge_base', 'vector_store.port', '19530', 0, 'Milvus 端口'),
   ('knowledge_base', 'vector_store.collection', 'autotestflow_knowledge', 0, 'Milvus Collection'),
   ('knowledge_base', 'embedding.provider', 'openai_compatible', 0, 'Embedding 服务类型'),

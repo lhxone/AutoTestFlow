@@ -145,7 +145,7 @@ func defaultKnowledgeBaseConfig() KnowledgeBaseConfig {
 	return KnowledgeBaseConfig{
 		Enabled:               false,
 		VectorStoreType:       "milvus",
-		VectorStoreHost:       "localhost",
+		VectorStoreHost:       "milvus-standalone",
 		VectorStorePort:       19530,
 		VectorStoreCollection: "autotestflow_knowledge",
 		EmbeddingProvider:     "openai_compatible",

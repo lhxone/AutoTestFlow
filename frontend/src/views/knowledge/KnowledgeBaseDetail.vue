@@ -18,6 +18,9 @@
       <a-tab-pane key="retrieve" tab="检索测试">
         <RetrieveTest :kb-id="kb.id" :project-id="projectId" />
       </a-tab-pane>
+      <a-tab-pane key="chat" tab="AI 对话">
+        <KnowledgeChat :kb-id="kb.id" :project-id="projectId" />
+      </a-tab-pane>
       <a-tab-pane key="stats" tab="统计">
         <a-row :gutter="16">
           <a-col v-for="item in statItems" :key="item.label" :xs="12" :md="6">
@@ -51,6 +54,7 @@ import {
 import DocumentUpload from './components/DocumentUpload.vue'
 import DocumentTable from './components/DocumentTable.vue'
 import RetrieveTest from './components/RetrieveTest.vue'
+import KnowledgeChat from './components/KnowledgeChat.vue'
 import KnowledgeGraph from './components/KnowledgeGraph.vue'
 
 const props = defineProps<{ kb: KnowledgeBase; projectId: number }>()

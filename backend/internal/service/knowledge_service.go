@@ -17,9 +17,11 @@ import (
 
 type KnowledgeService struct {
 	repo          *repository.KnowledgeRepo
+	agentRepo     *repository.AgentRepo
 	configService *KnowledgeBaseConfigService
 	pipeline      *RAGPipeline
 	vectorStore   VectorStore
+	einoRuntime   *EinoGenTestRuntime
 	logger        *zap.Logger
 }
 
@@ -59,6 +61,33 @@ type KnowledgeQueryRequest struct {
 	Query     string   `json:"query" binding:"required"`
 	TopK      int      `json:"top_k"`
 	Keywords  []string `json:"keywords"`
+}
+
+type KnowledgeChatMessage struct {
+	Role    string `json:"role" binding:"required"`
+	Content string `json:"content" binding:"required"`
+}
+
+type KnowledgeChatRequest struct {
+	ProjectID uint64                 `json:"project_id" binding:"required"`
+	Query     string                 `json:"query" binding:"required"`
+	TopK      int                    `json:"top_k"`
+	Keywords  []string               `json:"keywords"`
+	AgentID   *uint64                `json:"agent_id"`
+	Messages  []KnowledgeChatMessage `json:"messages"`
+}
+
+type KnowledgeChatResponse struct {
+	Answer  string               `json:"answer"`
+	Sources []VectorSearchResult `json:"sources"`
+	Agent   *KnowledgeChatAgent  `json:"agent,omitempty"`
+}
+
+type KnowledgeChatAgent struct {
+	ID       uint64 `json:"id"`
+	Name     string `json:"name"`
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
 }
 
 type KnowledgeGraph struct {
@@ -102,9 +131,11 @@ func NewKnowledgeService(logger *zap.Logger) *KnowledgeService {
 	}
 	return &KnowledgeService{
 		repo:          repository.NewKnowledgeRepo(),
+		agentRepo:     repository.NewAgentRepo(),
 		configService: cfgSvc,
 		vectorStore:   store,
 		pipeline:      NewRAGPipeline(cfgSvc, store),
+		einoRuntime:   NewEinoGenTestRuntime(logger),
 		logger:        logger,
 	}
 }
@@ -350,7 +381,218 @@ func (s *KnowledgeService) Query(ctx context.Context, kbID uint64, req Knowledge
 	if _, err := s.repo.GetKB(req.ProjectID, kbID); err != nil {
 		return nil, err
 	}
-	return s.pipeline.Retrieve(ctx, req.ProjectID, kbID, strings.TrimSpace(req.Query), req.TopK, req.Keywords)
+	return s.retrieveWithRetry(ctx, req.ProjectID, kbID, strings.TrimSpace(req.Query), req.TopK, req.Keywords)
+}
+
+func (s *KnowledgeService) Chat(ctx context.Context, kbID uint64, req KnowledgeChatRequest) (*KnowledgeChatResponse, error) {
+	query := strings.TrimSpace(req.Query)
+	if query == "" {
+		return nil, fmt.Errorf("query 不能为空")
+	}
+	if err := s.ensureVectorStore(ctx); err != nil {
+		return nil, err
+	}
+	kb, err := s.repo.GetKB(req.ProjectID, kbID)
+	if err != nil {
+		return nil, err
+	}
+	results, err := s.retrieveWithRetry(ctx, req.ProjectID, kbID, query, req.TopK, req.Keywords)
+	if err != nil {
+		return nil, err
+	}
+
+	agent, err := s.resolveKnowledgeChatAgent(req.AgentID)
+	if err != nil {
+		return nil, err
+	}
+	execCfg := ResolveAgentExecutionConfig(agent)
+	if strings.TrimSpace(execCfg.APIKey) == "" {
+		return nil, fmt.Errorf("Agent %s 未配置可用 API Key", safeAgentName(agent))
+	}
+	if execCfg.MaxTokens <= 0 || execCfg.MaxTokens > 1536 {
+		execCfg.MaxTokens = 1536
+	}
+
+	history := []runtimeMessage{
+		{Role: "system", Text: buildKnowledgeChatSystemPrompt(kb, results)},
+	}
+	history = append(history, normalizeKnowledgeChatHistory(req.Messages, query)...)
+	history = append(history, runtimeMessage{Role: "user", Text: query})
+
+	runtime := s.einoRuntime
+	if runtime == nil {
+		runtime = NewEinoGenTestRuntime(s.logger)
+	}
+	chatModel, err := runtime.newEinoChatModel(ctx, execCfg, nil)
+	if err != nil {
+		return nil, err
+	}
+	msg, err := chatModel.Generate(ctx, runtimeHistoryToEinoMessages(history))
+	if err != nil {
+		return nil, err
+	}
+	answer := ""
+	if msg != nil {
+		answer = strings.TrimSpace(msg.Content)
+	}
+	if answer == "" {
+		answer = "未生成有效回答。"
+	}
+	return &KnowledgeChatResponse{
+		Answer:  answer,
+		Sources: results,
+		Agent: &KnowledgeChatAgent{
+			ID:       agent.ID,
+			Name:     agent.Name,
+			Provider: execCfg.Provider,
+			Model:    execCfg.Model,
+		},
+	}, nil
+}
+
+func (s *KnowledgeService) resolveKnowledgeChatAgent(agentID *uint64) (*model.Agent, error) {
+	if agentID != nil && *agentID > 0 {
+		return s.agentRepo.GetByID(*agentID)
+	}
+	if agent, err := s.agentRepo.GetDefaultActive(); err == nil {
+		return agent, nil
+	}
+	return s.agentRepo.GetFirstActive()
+}
+
+func buildKnowledgeChatSystemPrompt(kb *model.KnowledgeBase, results []VectorSearchResult) string {
+	var b strings.Builder
+	b.WriteString("你是 AutoTestFlow 知识库问答助手。请基于给定的知识库检索上下文回答用户问题。\n")
+	b.WriteString("要求：\n")
+	b.WriteString("1. 优先引用检索上下文，不要编造不存在的内容。\n")
+	b.WriteString("2. 如果上下文不足以回答，请明确说明缺少哪些信息，并给出可继续检索的建议。\n")
+	b.WriteString("3. 使用中文，结构清晰，回答尽量控制在 800 字以内。\n")
+	b.WriteString("4. 当用户询问流程图、时序图、架构图或状态流转时，优先输出一个简洁的 ```mermaid 代码块；节点文字应短，避免 HTML 标签。\n")
+	if kb != nil {
+		b.WriteString(fmt.Sprintf("\n当前知识库：%s\n", kb.Name))
+		if strings.TrimSpace(kb.Description) != "" {
+			b.WriteString(fmt.Sprintf("知识库说明：%s\n", strings.TrimSpace(kb.Description)))
+		}
+	}
+	if len(results) == 0 {
+		b.WriteString("\n检索上下文：未命中相关内容。\n")
+		return b.String()
+	}
+	b.WriteString("\n检索上下文：\n")
+	for index, item := range results {
+		title := metadataString(item.Metadata, "title")
+		if title == "" {
+			title = fmt.Sprintf("Chunk %s", firstDocString(metadataString(item.Metadata, "chunk_id"), item.ID))
+		}
+		b.WriteString(fmt.Sprintf("\n[%d] %s，score %.4f\n", index+1, title, item.Score))
+		b.WriteString(truncateKnowledgeChatContext(item.Content, 1200))
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+func truncateKnowledgeChatContext(value string, limit int) string {
+	text := strings.TrimSpace(value)
+	runes := []rune(text)
+	if len(runes) <= limit {
+		return text
+	}
+	return string(runes[:limit]) + "\n[该检索片段已截断]"
+}
+
+func normalizeKnowledgeChatHistory(messages []KnowledgeChatMessage, currentQuery string) []runtimeMessage {
+	if len(messages) == 0 {
+		return nil
+	}
+	for len(messages) > 0 {
+		last := messages[len(messages)-1]
+		if strings.EqualFold(strings.TrimSpace(last.Role), "user") && strings.TrimSpace(last.Content) == strings.TrimSpace(currentQuery) {
+			messages = messages[:len(messages)-1]
+			continue
+		}
+		break
+	}
+	const maxHistory = 12
+	if len(messages) > maxHistory {
+		messages = messages[len(messages)-maxHistory:]
+	}
+	history := make([]runtimeMessage, 0, len(messages))
+	for _, item := range messages {
+		role := strings.ToLower(strings.TrimSpace(item.Role))
+		content := strings.TrimSpace(item.Content)
+		if content == "" {
+			continue
+		}
+		switch role {
+		case "user", "assistant":
+			history = append(history, runtimeMessage{Role: role, Text: content})
+		}
+	}
+	return history
+}
+
+func metadataString(meta map[string]any, key string) string {
+	if len(meta) == 0 {
+		return ""
+	}
+	value, exists := meta[key]
+	if !exists || value == nil {
+		return ""
+	}
+	switch v := value.(type) {
+	case string:
+		return strings.TrimSpace(v)
+	case fmt.Stringer:
+		return strings.TrimSpace(v.String())
+	default:
+		return strings.TrimSpace(fmt.Sprint(v))
+	}
+}
+
+func (s *KnowledgeService) retrieveWithRetry(ctx context.Context, projectID, kbID uint64, query string, topK int, keywords []string) ([]VectorSearchResult, error) {
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		results, err := s.pipeline.Retrieve(ctx, projectID, kbID, query, topK, keywords)
+		if err == nil {
+			return results, nil
+		}
+		lastErr = err
+		if !isTransientKnowledgeRetrieveError(err) || attempt == 2 {
+			break
+		}
+		if s.logger != nil {
+			s.logger.Warn("知识库检索失败，短暂重试", zap.Uint64("project_id", projectID), zap.Uint64("kb_id", kbID), zap.Int("attempt", attempt+1), zap.Error(err))
+		}
+		if err := sleepWithContext(ctx, time.Duration(attempt+1)*2*time.Second); err != nil {
+			return nil, err
+		}
+	}
+	return nil, lastErr
+}
+
+func isTransientKnowledgeRetrieveError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if isModelConnectionError(err) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	for _, token := range []string{
+		"502",
+		"503",
+		"504",
+		"bad gateway",
+		"service unavailable",
+		"gateway timeout",
+		"too many requests",
+		"rate limit",
+	} {
+		if strings.Contains(msg, token) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *KnowledgeService) Stats(projectID, kbID uint64) (*repository.KnowledgeStats, error) {
