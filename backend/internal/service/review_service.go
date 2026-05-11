@@ -153,6 +153,9 @@ func (s *ReviewService) DoReview(reviewID, reviewerID uint64, req *dto.ReviewAct
 	rt.ReviewNote = req.Comment
 
 	gitSummary := "未执行"
+	closeZentaoBug := false
+	activateZentaoBug := false
+	devFlowFailureType := ""
 
 	switch req.Action {
 	case "approve":
@@ -165,25 +168,14 @@ func (s *ReviewService) DoReview(reviewID, reviewerID uint64, req *dto.ReviewAct
 		_ = s.issueRepo.ForceUpdateTestStatus(rt.IssueID, model.TestStatusReviewApproved)
 		// 记录状态变更日志
 		s.logStatusChange(rt.IssueID, model.TestStatusReviewPending, model.TestStatusReviewApproved, "manual", &reviewerID, "Review审核通过")
-		// 调用禅道 API 关闭 Bug
-		if issue, err := s.issueRepo.GetByID(rt.IssueID); err == nil && issue.ZentaoID > 0 {
-			closeComment := fmt.Sprintf("[AutoTestFlow] 回归测试确认成功，Review#%d 审核通过。%s", rt.ID, req.Comment)
-			if err := s.zentaoProxy.CloseBug(issue.ZentaoID, closeComment); err != nil {
-				s.logger.Warn("调用禅道关闭Bug API失败", zap.Error(err), zap.Uint64("issueID", rt.IssueID))
-			}
-		}
+		closeZentaoBug = true
 
 	case "reject":
 		rt.Status = model.ReviewStatusRejected
 		gitSummary = "审核驳回，未推送"
 		_ = s.issueRepo.ForceUpdateTestStatus(rt.IssueID, model.TestStatusReviewRejected)
 		s.logStatusChange(rt.IssueID, model.TestStatusReviewPending, model.TestStatusReviewRejected, "manual", &reviewerID, fmt.Sprintf("Review驳回: %s", req.Comment))
-		// 通知研发流水线
-		if issue, err := s.issueRepo.GetByID(rt.IssueID); err == nil && issue.DevTaskID != "" {
-			if err := s.notifyService.NotifyDevFlowFailure(issue.DevTaskID, issue, "review_rejected", req.Comment); err != nil {
-				s.logger.Warn("通知研发流水线失败", zap.Error(err), zap.Uint64("issueID", rt.IssueID))
-			}
-		}
+		devFlowFailureType = "review_rejected"
 
 	case "request_changes":
 		rt.Status = model.ReviewStatusChangesRequested
@@ -194,26 +186,12 @@ func (s *ReviewService) DoReview(reviewID, reviewerID uint64, req *dto.ReviewAct
 		go s.regenerateTestAsync(rt.TestTaskID)
 
 	case "fail_regression":
-		if err := s.pushReviewedContentWithTimeout(rt); err != nil {
-			return fmt.Errorf("Git推送失败，审核未完成: %w", err)
-		}
-		gitSummary = "已推送到Git仓库"
+		gitSummary = "回归失败，未推送"
 		rt.Status = model.ReviewStatusRejected
 		_ = s.issueRepo.ForceUpdateTestStatus(rt.IssueID, model.TestStatusReviewRejected)
 		s.logStatusChange(rt.IssueID, model.TestStatusReviewPending, model.TestStatusReviewRejected, "manual", &reviewerID, "回归测试失败，问题单重新激活")
-		// 调用禅道 API 重新激活 Bug
-		if issue, err := s.issueRepo.GetByID(rt.IssueID); err == nil && issue.ZentaoID > 0 {
-			activateComment := fmt.Sprintf("[AutoTestFlow] 回归测试失败，Review#%d 确认失败。%s", rt.ID, req.Comment)
-			if err := s.zentaoProxy.ActivateBug(issue.ZentaoID, activateComment); err != nil {
-				s.logger.Warn("调用禅道激活Bug API失败", zap.Error(err), zap.Uint64("issueID", rt.IssueID))
-			}
-			// 通知研发流水线
-			if issue.DevTaskID != "" {
-				if err := s.notifyService.NotifyDevFlowFailure(issue.DevTaskID, issue, "regression_failed", req.Comment); err != nil {
-					s.logger.Warn("通知研发流水线失败", zap.Error(err), zap.Uint64("issueID", rt.IssueID))
-				}
-			}
-		}
+		activateZentaoBug = true
+		devFlowFailureType = "regression_failed"
 
 	case "comment":
 		// 仅评论，不改变状态
@@ -234,6 +212,16 @@ func (s *ReviewService) DoReview(reviewID, reviewerID uint64, req *dto.ReviewAct
 		return err
 	}
 
+	if closeZentaoBug {
+		go s.closeZentaoBugAsync(rt.IssueID, rt.ID, req.Comment)
+	}
+	if activateZentaoBug {
+		go s.activateZentaoBugAsync(rt.IssueID, rt.ID, req.Comment)
+	}
+	if devFlowFailureType != "" {
+		go s.notifyDevFlowFailureAsync(rt.IssueID, devFlowFailureType, req.Comment)
+	}
+
 	if req.Action == "approve" || req.Action == "reject" || req.Action == "fail_regression" {
 		s.notifyService.SendReviewResult(rt, req.Action, gitSummary)
 	}
@@ -247,6 +235,38 @@ func (s *ReviewService) regenerateTestAsync(taskID uint64) {
 
 	if err := s.genTestService.RunTask(ctx, taskID); err != nil {
 		s.logger.Error("驳回后重新生成测试失败", zap.Uint64("task_id", taskID), zap.Error(err))
+	}
+}
+
+func (s *ReviewService) closeZentaoBugAsync(issueID, reviewID uint64, comment string) {
+	issue, err := s.issueRepo.GetByID(issueID)
+	if err != nil || issue.ZentaoID <= 0 {
+		return
+	}
+	closeComment := fmt.Sprintf("[AutoTestFlow] 回归测试确认成功，Review#%d 审核通过。%s", reviewID, comment)
+	if err := s.zentaoProxy.CloseBug(issue.ZentaoID, closeComment); err != nil {
+		s.logger.Warn("调用禅道关闭Bug API失败", zap.Error(err), zap.Uint64("issueID", issueID))
+	}
+}
+
+func (s *ReviewService) activateZentaoBugAsync(issueID, reviewID uint64, comment string) {
+	issue, err := s.issueRepo.GetByID(issueID)
+	if err != nil || issue.ZentaoID <= 0 {
+		return
+	}
+	activateComment := fmt.Sprintf("[AutoTestFlow] 回归测试失败，Review#%d 确认失败。%s", reviewID, comment)
+	if err := s.zentaoProxy.ActivateBug(issue.ZentaoID, activateComment); err != nil {
+		s.logger.Warn("调用禅道激活Bug API失败", zap.Error(err), zap.Uint64("issueID", issueID))
+	}
+}
+
+func (s *ReviewService) notifyDevFlowFailureAsync(issueID uint64, failureType, comment string) {
+	issue, err := s.issueRepo.GetByID(issueID)
+	if err != nil || issue.DevTaskID == "" {
+		return
+	}
+	if err := s.notifyService.NotifyDevFlowFailure(issue.DevTaskID, issue, failureType, comment); err != nil {
+		s.logger.Warn("通知研发流水线失败", zap.Error(err), zap.Uint64("issueID", issueID))
 	}
 }
 

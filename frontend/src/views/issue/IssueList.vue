@@ -335,6 +335,7 @@ const boardLoading = ref(false)
 let boardRequestSeq = 0
 let boardDirty = true
 const ISSUE_VIEW_MODE_STORAGE_KEY = 'atf.issue.list.viewMode'
+const ISSUE_LIST_STATE_STORAGE_KEY = 'atf.issue.list.state'
 const viewMode = ref<'table' | 'board'>(getInitialViewMode())
 const query = reactive({ keyword: '', zentao_status: undefined, test_status: undefined, project_id: undefined as number | undefined, branch: undefined as string | undefined })
 const pagination = reactive({ current: 1, pageSize: 20, total: 0, showTotal: (total: number) => `共 ${total} 条` })
@@ -365,6 +366,20 @@ const viewingTaskLoading = ref<number | null>(null)
 const detailModal = ref(false)
 const detailLoading = ref(false)
 const detailIssue = ref<Issue | null>(null)
+
+type IssueListState = {
+  query: {
+    keyword: string
+    zentao_status?: string
+    test_status?: string
+    project_id?: number
+    branch?: string
+  }
+  pagination: {
+    current: number
+    pageSize: number
+  }
+}
 
 const columns = computed(() => [
   { title: t('issue.list.columns.id'), dataIndex: 'zentao_id', key: 'zentao_id', width: 70 },
@@ -479,8 +494,12 @@ const activeIssueCount = computed(() =>
 const snapshotTime = computed(() => dayjs().format('YYYY/MM/DD HH:mm'))
 
 onMounted(() => {
-  fetchData()
+  restoreIssueListState()
   fetchProjects()
+  fetchData()
+  if (viewMode.value === 'board') {
+    fetchBoardData()
+  }
 })
 
 watch(viewMode, (mode) => {
@@ -544,6 +563,7 @@ async function fetchBoardData() {
 async function handleQuery() {
   pagination.current = 1
   boardDirty = true
+  saveIssueListState()
   await fetchData()
   if (viewMode.value === 'board') {
     await fetchBoardData()
@@ -553,6 +573,7 @@ async function handleQuery() {
 function handleTableChange(pag: any) {
   pagination.current = pag.current
   pagination.pageSize = pag.pageSize
+  saveIssueListState()
   fetchData()
 }
 
@@ -592,6 +613,7 @@ async function handleProjectChange(value: number | undefined) {
   query.branch = undefined
   pagination.current = 1
   boardDirty = true
+  saveIssueListState()
   await fetchData()
   if (viewMode.value === 'board') {
     await fetchBoardData()
@@ -762,6 +784,49 @@ function canGenerateTest(issue: Issue) {
 function getInitialViewMode(): 'table' | 'board' {
   const savedMode = localStorage.getItem(ISSUE_VIEW_MODE_STORAGE_KEY)
   return savedMode === 'board' ? 'board' : 'table'
+}
+
+function restoreIssueListState() {
+  const raw = sessionStorage.getItem(ISSUE_LIST_STATE_STORAGE_KEY)
+  if (!raw) return
+
+  try {
+    const saved = JSON.parse(raw) as Partial<IssueListState>
+    Object.assign(query, {
+      keyword: '',
+      zentao_status: undefined,
+      test_status: undefined,
+      project_id: undefined,
+      branch: undefined,
+      ...saved.query,
+    })
+
+    if (saved.pagination?.current) {
+      pagination.current = saved.pagination.current
+    }
+    if (saved.pagination?.pageSize) {
+      pagination.pageSize = saved.pagination.pageSize
+    }
+  } catch {
+    sessionStorage.removeItem(ISSUE_LIST_STATE_STORAGE_KEY)
+  }
+}
+
+function saveIssueListState() {
+  const state: IssueListState = {
+    query: {
+      keyword: query.keyword,
+      zentao_status: query.zentao_status,
+      test_status: query.test_status,
+      project_id: query.project_id,
+      branch: query.branch,
+    },
+    pagination: {
+      current: pagination.current,
+      pageSize: pagination.pageSize,
+    },
+  }
+  sessionStorage.setItem(ISSUE_LIST_STATE_STORAGE_KEY, JSON.stringify(state))
 }
 
 function updateBranches() {

@@ -169,9 +169,9 @@
               <a-textarea v-model:value="regressionComment" :rows="3" :placeholder="t('taskRun.regression.commentPlaceholder')" />
             </a-form-item>
             <a-space>
-              <a-button type="primary" @click="submitRegression('approve')" :loading="regressionSubmitting">{{ t('taskRun.regression.confirmSuccess') }}</a-button>
-              <a-button danger @click="submitRegression('fail_regression')" :loading="regressionSubmitting">{{ t('taskRun.regression.failRegression') }}</a-button>
-              <a-button @click="submitRegression('request_changes')" :loading="regressionSubmitting">{{ t('taskRun.regression.rejectAndRegenerate') }}</a-button>
+              <a-button type="primary" @click="submitRegression('approve')" :loading="regressionSubmittingAction === 'approve'" :disabled="!!regressionSubmittingAction && regressionSubmittingAction !== 'approve'">{{ t('taskRun.regression.confirmSuccess') }}</a-button>
+              <a-button danger @click="submitRegression('fail_regression')" :loading="regressionSubmittingAction === 'fail_regression'" :disabled="!!regressionSubmittingAction && regressionSubmittingAction !== 'fail_regression'">{{ t('taskRun.regression.failRegression') }}</a-button>
+              <a-button @click="submitRegression('request_changes')" :loading="regressionSubmittingAction === 'request_changes'" :disabled="!!regressionSubmittingAction && regressionSubmittingAction !== 'request_changes'">{{ t('taskRun.regression.rejectAndRegenerate') }}</a-button>
             </a-space>
           </a-form>
         </a-card>
@@ -369,7 +369,7 @@ const selfTestChecks = computed<string[]>(() => {
 const reviewInfo = ref<ReviewTask | null>(null)
 const reviewDetail = ref<ReviewDetail | null>(null)
 const regressionComment = ref('')
-const regressionSubmitting = ref(false)
+const regressionSubmittingAction = ref<string | null>(null)
 const reviewStatusMap = computed(() => getReviewStatusMap(t))
 const canIntervene = computed(() => userStore.hasPermission('test:intervene'))
 const canReviewList = computed(() => userStore.hasPermission('review:list'))
@@ -802,11 +802,12 @@ function regressionActionLabel(action: string) {
 
 async function submitRegression(action: string) {
   if (!reviewInfo.value) return
+  if (regressionSubmittingAction.value) return
   if ((action === 'fail_regression' || action === 'request_changes') && !regressionComment.value.trim()) {
     message.warning(t('taskRun.regression.commentRequired'))
     return
   }
-  regressionSubmitting.value = true
+  regressionSubmittingAction.value = action
   try {
     await doReview(reviewInfo.value.id, { action, comment: regressionComment.value })
     const msgMap: Record<string, string> = {
@@ -821,7 +822,7 @@ async function submitRegression(action: string) {
   } catch {
     message.error(t('taskRun.regression.actionFailed'))
   } finally {
-    regressionSubmitting.value = false
+    regressionSubmittingAction.value = null
   }
 }
 
