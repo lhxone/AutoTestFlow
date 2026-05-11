@@ -145,6 +145,43 @@
       "project": "Project",
       "branch": "Branch",
       "sync": "Sync Zentao",
+      "view": {
+        "table": "Table View",
+        "board": "Board View"
+      },
+      "board": {
+        "kicker": "BUG WORK BOARD",
+        "title": "Bug Flow Board",
+        "subtitle": "A fixed-stage layout for test generation, review, execution, and exception handling with per-column search and card actions.",
+        "total": "Total Bugs",
+        "currentPage": "{count} on current page",
+        "inProgress": "In Progress",
+        "needFollow": "Needs follow-up",
+        "snapshot": "Snapshot",
+        "synced": "Loaded",
+        "empty": "No bugs",
+        "search": "Search {stage} title/reporter/assignee",
+        "noMatch": "No matching bugs",
+        "noDescription": "No description",
+        "stages": {
+          "pending": "Pending",
+          "pendingUpgrade": "Pending Upgrade",
+          "pendingGenerate": "Pending Generate",
+          "generating": "Generating",
+          "review": "Review",
+          "reviewApproved": "Review Approved",
+          "reviewRejected": "Review Rejected"
+        },
+        "emptyText": {
+          "pending": "No bugs are not started.",
+          "pendingUpgrade": "No bugs are pending upgrade.",
+          "pendingGenerate": "No bugs are pending generation.",
+          "generating": "No bugs are currently generating tests.",
+          "review": "No bugs are pending review.",
+          "reviewApproved": "No bugs are review approved.",
+          "reviewRejected": "No bugs are review rejected."
+        }
+      },
       "syncModal": {
         "title": "Sync Zentao Bugs",
         "selectProject": "Select Project",

@@ -145,6 +145,43 @@
       "project": "项目",
       "branch": "分支",
       "sync": "同步禅道",
+      "view": {
+        "table": "表格视图",
+        "board": "布局视图"
+      },
+      "board": {
+        "kicker": "BUG WORK BOARD",
+        "title": "Bug 流转看板",
+        "subtitle": "按测试生成、审核、执行和异常阶段固定分列展示，支持列内搜索和卡片操作。",
+        "total": "Bug 总数",
+        "currentPage": "当前页 {count} 条",
+        "inProgress": "处理中",
+        "needFollow": "需要持续跟进",
+        "snapshot": "快照时间",
+        "synced": "已加载",
+        "empty": "当前无Bug",
+        "search": "搜索{stage}标题/提出人/负责人",
+        "noMatch": "未找到匹配Bug",
+        "noDescription": "暂无问题描述",
+        "stages": {
+          "pending": "待生成",
+          "pendingUpgrade": "待升级",
+          "pendingGenerate": "待生成",
+          "generating": "生成中",
+          "review": "Review",
+          "reviewApproved": "审核通过",
+          "reviewRejected": "审核驳回"
+        },
+        "emptyText": {
+          "pending": "当前没有未开始的Bug。",
+          "pendingUpgrade": "当前没有待升级的Bug。",
+          "pendingGenerate": "当前没有待生成的Bug。",
+          "generating": "当前没有正在生成测试的Bug。",
+          "review": "当前没有待审核的Bug。",
+          "reviewApproved": "当前没有审核通过的Bug。",
+          "reviewRejected": "当前没有审核驳回的Bug。"
+        }
+      },
       "syncModal": {
         "title": "同步禅道Bug",
         "selectProject": "选择项目",
