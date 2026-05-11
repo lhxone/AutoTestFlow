@@ -1,6 +1,7 @@
 ARG RUNTIME_IMAGE=harbor.inspur.local/atf/auto-test-flow-backend-runtime:node20-bash-playwright-deps
+ARG GO_IMAGE=harbor.inspur.local/atf/golang:1.26.2
 
-FROM harbor.inspur.local/atf/golang:1.26.2 AS builder
+FROM ${GO_IMAGE} AS builder
 
 WORKDIR /build
 

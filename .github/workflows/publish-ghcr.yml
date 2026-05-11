@@ -14,6 +14,7 @@ env:
   GO_VERSION: "1.26.2"
   NODE_VERSION: "20"
   BACKEND_IMAGE_NAME: auto-test-flow-backend
+  BACKEND_RUNTIME_IMAGE_NAME: auto-test-flow-backend-runtime
   FRONTEND_IMAGE_NAME: auto-test-flow-frontend
 
 jobs:
@@ -77,9 +78,12 @@ jobs:
         run: |
           OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           echo "IMAGE_REPO=ghcr.io/${OWNER_LOWER}/${{ env.BACKEND_IMAGE_NAME }}" >> "$GITHUB_ENV"
+          echo "RUNTIME_IMAGE_REPO=ghcr.io/${OWNER_LOWER}/${{ env.BACKEND_RUNTIME_IMAGE_NAME }}" >> "$GITHUB_ENV"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker
 
       - name: Log in to GHCR
         if: github.event_name == 'push'
@@ -89,15 +93,30 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Build and (optionally) push backend runtime image
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          file: backend/Dockerfile.runtime-base
+          load: ${{ github.event_name != 'push' }}
+          push: ${{ github.event_name == 'push' }}
+          tags: |
+            ${{ env.RUNTIME_IMAGE_REPO }}:${{ github.sha }}
+          build-args: |
+            BASE_IMAGE=node:${{ env.NODE_VERSION }}
+
       - name: Build and (optionally) push backend image
         uses: docker/build-push-action@v6
         with:
           context: backend
           file: backend/Dockerfile
+          load: ${{ github.event_name != 'push' }}
           push: ${{ github.event_name == 'push' }}
           tags: |
             ${{ env.IMAGE_REPO }}:${{ github.sha }}
           build-args: |
+            GO_IMAGE=golang:${{ env.GO_VERSION }}
+            RUNTIME_IMAGE=${{ env.RUNTIME_IMAGE_REPO }}:${{ github.sha }}
             GOPROXY=https://goproxy.cn|https://proxy.golang.org|https://mirrors.aliyun.com/goproxy|direct
             GOSUMDB=sum.golang.google.cn
 
@@ -129,6 +148,9 @@ jobs:
         with:
           context: frontend
           file: frontend/Dockerfile.ci
+          load: ${{ github.event_name != 'push' }}
           push: ${{ github.event_name == 'push' }}
           tags: |
             ${{ env.IMAGE_REPO }}:${{ github.sha }}
+          build-args: |
+            NGINX_IMAGE=nginx:1.27-alpine
