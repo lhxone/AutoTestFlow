@@ -89,6 +89,21 @@ npm run dev
 - `frontend/Dockerfile`
 - `frontend/nginx.conf`
 
+#### 开发者本地 Docker 最简启动（使用 GHCR）
+
+前提：你已安装 Docker Desktop（含 `docker compose`）。
+
+在仓库根目录执行（PowerShell）：
+
+```powershell
+$sha = (git rev-parse --short=40 HEAD); $env:BACKEND_IMAGE="ghcr.io/lhxone/auto-test-flow-backend:$sha"; $env:FRONTEND_IMAGE="ghcr.io/lhxone/auto-test-flow-frontend:$sha"; docker compose -f docker-compose.prod.yml up -d
+```
+
+说明：
+
+- 该命令会直接使用当前提交对应的 GHCR 镜像并启动 `mysql + backend + frontend`
+- 若该提交镜像尚未发布，可改用已发布的 tag（把 `$sha` 替换成具体 tag）
+
 #### 1) 启动前检查
 
 ```powershell
@@ -118,9 +133,9 @@ docker compose version
 ```powershell
 $env:MYSQL_ROOT_PASSWORD='YourStrongPassword'
 $env:MYSQL_DATABASE='auto_test_flow'
-$env:MYSQL_IMAGE='harbor.example.com/library/mysql:8.0'
-$env:BACKEND_IMAGE='harbor.inspur.local/atf/auto-test-flow-backend:20260421'
-$env:FRONTEND_IMAGE='harbor.inspur.local/atf/auto-test-flow-frontend:20260421'
+$env:MYSQL_IMAGE='mysql:8.0'
+$env:BACKEND_IMAGE='ghcr.io/lhxone/auto-test-flow-backend:20260421'
+$env:FRONTEND_IMAGE='ghcr.io/lhxone/auto-test-flow-frontend:20260421'
 $env:FRONTEND_PORT='80'
 $env:BACKEND_PORT='8080'
 $env:MYSQL_PORT='3306'
@@ -133,7 +148,7 @@ $env:ATF_LOG_DIR='/data/AutoTestFlow/logs'
 #### 3) 拉取并启动
 
 ```powershell
-docker login harbor.inspur.local
+docker login ghcr.io
 docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d
 ```
