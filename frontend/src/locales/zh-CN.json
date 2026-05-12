@@ -1040,6 +1040,8 @@
       "failRegression": "回归测试失败",
       "reject": "驳回",
       "rejectAndRegenerate": "驳回并重新生成",
+      "rejectAndMarkError": "驳回并标记为异常",
+      "rejectAndMarkErrorSuccess": "已驳回并标记为异常",
       "approveSuccess": "回归测试已确认成功",
       "failSuccess": "回归测试失败，问题单已重新激活",
       "rejectSuccess": "已驳回并触发重新生成测试",
@@ -1050,6 +1052,7 @@
         "approve": "确认回归测试成功",
         "fail_regression": "回归测试失败",
         "request_changes": "驳回并重新生成了测试",
+        "reject_and_mark_error": "驳回并标记为异常",
         "comment": "发表了评论"
       }
     }

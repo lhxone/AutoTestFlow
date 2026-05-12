@@ -196,6 +196,12 @@ func (s *ReviewService) DoReview(reviewID, reviewerID uint64, req *dto.ReviewAct
 	case "comment":
 		// 仅评论，不改变状态
 		gitSummary = "仅评论，未推送"
+
+	case "reject_and_mark_error":
+		rt.Status = model.ReviewStatusRejected
+		gitSummary = "审核驳回并标记异常，未推送"
+		_ = s.issueRepo.ForceUpdateTestStatus(rt.IssueID, model.TestStatusError)
+		s.logStatusChange(rt.IssueID, model.TestStatusReviewPending, model.TestStatusError, "manual", &reviewerID, fmt.Sprintf("审核驳回并标记为异常: %s", req.Comment))
 	}
 
 	record := &model.ReviewRecord{
@@ -222,7 +228,7 @@ func (s *ReviewService) DoReview(reviewID, reviewerID uint64, req *dto.ReviewAct
 		go s.notifyDevFlowFailureAsync(rt.IssueID, devFlowFailureType, req.Comment)
 	}
 
-	if req.Action == "approve" || req.Action == "reject" || req.Action == "fail_regression" {
+	if req.Action == "approve" || req.Action == "reject" || req.Action == "fail_regression" || req.Action == "reject_and_mark_error" {
 		s.notifyService.SendReviewResult(rt, req.Action, gitSummary)
 	}
 

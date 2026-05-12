@@ -383,13 +383,11 @@ function initGlobalHelpers() {
       canvas.width = width * 2
       canvas.height = height * 2
       const img = new Image()
-      const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' })
-      const url = URL.createObjectURL(svgBlob)
+      const base64Svg = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)))
       img.onload = () => {
         ctx.fillStyle = '#ffffff'
         ctx.fillRect(0, 0, canvas.width, canvas.height)
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-        URL.revokeObjectURL(url)
         const pngUrl = canvas.toDataURL('image/png')
         const a = document.createElement('a')
         a.href = pngUrl
@@ -397,9 +395,9 @@ function initGlobalHelpers() {
         a.click()
       }
       img.onerror = () => {
-        URL.revokeObjectURL(url)
+        console.error('Failed to load SVG for export')
       }
-      img.src = url
+      img.src = base64Svg
     }
   })
 }
@@ -716,7 +714,7 @@ onMounted(() => {
 .markdown-body :deep(.mermaid-content) {
   padding: 12px;
   overflow: auto;
-  max-height: 500px;
+  max-height: 800px;
 }
 
 .markdown-body :deep(.mermaid-content svg) {

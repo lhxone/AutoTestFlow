@@ -443,7 +443,7 @@ const boardStageConfig = computed(() => [
   {
     key: 'review_rejected',
     title: testStatusMap.value.review_rejected?.label || t('issue.list.board.stages.reviewRejected'),
-    statuses: ['review_rejected'],
+    statuses: ['review_rejected', 'error'],
     tone: 'red',
     emptyText: t('issue.list.board.emptyText.reviewRejected'),
   },

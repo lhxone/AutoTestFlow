@@ -1040,6 +1040,8 @@
       "failRegression": "Regression Failed",
       "reject": "Reject",
       "rejectAndRegenerate": "Reject and Regenerate",
+      "rejectAndMarkError": "Reject and Mark as Error",
+      "rejectAndMarkErrorSuccess": "Rejected and marked as error",
       "approveSuccess": "Regression confirmed successful",
       "failSuccess": "Regression failed, issue reactivated",
       "rejectSuccess": "Rejected and regeneration has been triggered",
@@ -1050,6 +1052,7 @@
         "approve": "Confirmed regression success",
         "fail_regression": "Regression failed",
         "request_changes": "Rejected and regenerated tests",
+        "reject_and_mark_error": "Rejected and marked as error",
         "comment": "Left a comment"
       }
     }

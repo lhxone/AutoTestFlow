@@ -172,6 +172,7 @@
               <a-button type="primary" @click="submitRegression('approve')" :loading="regressionSubmittingAction === 'approve'" :disabled="!!regressionSubmittingAction && regressionSubmittingAction !== 'approve'">{{ t('taskRun.regression.confirmSuccess') }}</a-button>
               <a-button danger @click="submitRegression('fail_regression')" :loading="regressionSubmittingAction === 'fail_regression'" :disabled="!!regressionSubmittingAction && regressionSubmittingAction !== 'fail_regression'">{{ t('taskRun.regression.failRegression') }}</a-button>
               <a-button @click="submitRegression('request_changes')" :loading="regressionSubmittingAction === 'request_changes'" :disabled="!!regressionSubmittingAction && regressionSubmittingAction !== 'request_changes'">{{ t('taskRun.regression.rejectAndRegenerate') }}</a-button>
+              <a-button danger ghost @click="submitRegression('reject_and_mark_error')" :loading="regressionSubmittingAction === 'reject_and_mark_error'" :disabled="!!regressionSubmittingAction && regressionSubmittingAction !== 'reject_and_mark_error'">{{ t('taskRun.regression.rejectAndMarkError') }}</a-button>
             </a-space>
           </a-form>
         </a-card>
@@ -795,6 +796,7 @@ function regressionActionLabel(action: string) {
     approve: t('taskRun.regression.actions.approve'),
     fail_regression: t('taskRun.regression.actions.fail_regression'),
     request_changes: t('taskRun.regression.actions.request_changes'),
+    reject_and_mark_error: t('taskRun.regression.actions.reject_and_mark_error'),
     comment: t('taskRun.regression.actions.comment'),
   }
   return map[action] || action
@@ -803,7 +805,7 @@ function regressionActionLabel(action: string) {
 async function submitRegression(action: string) {
   if (!reviewInfo.value) return
   if (regressionSubmittingAction.value) return
-  if ((action === 'fail_regression' || action === 'request_changes') && !regressionComment.value.trim()) {
+  if ((action === 'fail_regression' || action === 'request_changes' || action === 'reject_and_mark_error') && !regressionComment.value.trim()) {
     message.warning(t('taskRun.regression.commentRequired'))
     return
   }
@@ -814,6 +816,7 @@ async function submitRegression(action: string) {
       approve: t('taskRun.regression.approveSuccess'),
       fail_regression: t('taskRun.regression.failSuccess'),
       request_changes: t('taskRun.regression.rejectSuccess'),
+      reject_and_mark_error: t('taskRun.regression.rejectAndMarkErrorSuccess'),
     }
     message.success(msgMap[action] || t('taskRun.regression.actionSuccess'))
     regressionComment.value = ''
