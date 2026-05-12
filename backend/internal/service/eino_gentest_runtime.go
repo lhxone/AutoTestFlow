@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/tls"
@@ -888,7 +889,109 @@ func (m *anthropicEinoChatModel) Generate(ctx context.Context, input []*schema.M
 }
 
 func (m *anthropicEinoChatModel) Stream(ctx context.Context, input []*schema.Message, opts ...einomodel.Option) (*schema.StreamReader[*schema.Message], error) {
-	return nil, fmt.Errorf("Anthropic Eino ChatModel 暂不支持流式调用")
+	options := einomodel.GetCommonOptions(&einomodel.Options{}, opts...)
+	cfg := m.cfg
+	if options.Model != nil {
+		cfg.Model = *options.Model
+	}
+	if options.MaxTokens != nil {
+		cfg.MaxTokens = *options.MaxTokens
+	}
+	if options.Temperature != nil {
+		cfg.Temperature = float64(*options.Temperature)
+	}
+	tools := m.tools
+	if options.Tools != nil {
+		tools = options.Tools
+	}
+
+	systemText, messages := buildAnthropicHistory(einoMessagesToRuntimeHistory(input))
+	reqBody := map[string]any{
+		"model":       cfg.Model,
+		"system":      systemText,
+		"messages":    messages,
+		"tools":       buildAnthropicToolInfoPayloads(tools),
+		"temperature": cfg.Temperature,
+		"max_tokens":  cfg.MaxTokens,
+		"stream":      true,
+	}
+	body, _ := json.Marshal(reqBody)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, resolveAnthropicMessagesEndpoint(cfg.BaseURL), bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("构建 Anthropic 请求失败: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", cfg.APIKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	httpClient := m.httpClient
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("请求 Anthropic 失败: %w", err)
+	}
+
+	if resp.StatusCode >= 400 {
+		respBody, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return nil, fmt.Errorf("Anthropic 返回错误 %d: %s", resp.StatusCode, truncateText(string(respBody), 400))
+	}
+
+	sr, sw := schema.Pipe[*schema.Message](64)
+
+	go func() {
+		defer resp.Body.Close()
+		defer sw.Close()
+
+		scanner := bufio.NewScanner(resp.Body)
+		currentEvent := ""
+		currentContent := ""
+
+		for scanner.Scan() {
+			line := scanner.Text()
+
+			if strings.HasPrefix(line, "event: ") {
+				currentEvent = strings.TrimPrefix(line, "event: ")
+				continue
+			}
+
+			if !strings.HasPrefix(line, "data: ") {
+				continue
+			}
+			data := strings.TrimPrefix(line, "data: ")
+			if data == "[DONE]" {
+				break
+			}
+
+			var event map[string]any
+			if err := json.Unmarshal([]byte(data), &event); err != nil {
+				continue
+			}
+
+			switch currentEvent {
+			case "content_block_delta":
+				if delta, ok := event["delta"].(map[string]any); ok {
+					if text, ok := delta["text"].(string); ok && text != "" {
+						currentContent += text
+						sw.Send(&schema.Message{
+							Role:    schema.Assistant,
+							Content: text,
+						}, nil)
+					}
+				}
+			case "message_stop":
+				return
+			}
+		}
+
+		if err := scanner.Err(); err != nil {
+			sw.Send(nil, err)
+		}
+	}()
+
+	return sr, nil
 }
 
 func (m *anthropicEinoChatModel) WithTools(tools []*schema.ToolInfo) (einomodel.ToolCallingChatModel, error) {

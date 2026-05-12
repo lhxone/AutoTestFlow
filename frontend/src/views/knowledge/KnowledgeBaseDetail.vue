@@ -1,34 +1,34 @@
 <template>
   <a-space direction="vertical" class="kb-detail" :size="16">
     <div class="detail-header">
-      <a-button @click="$emit('back')">返回</a-button>
+      <a-button @click="$emit('back')">{{ t('knowledge.detail.back') }}</a-button>
       <div>
         <h2>{{ kb.name }}</h2>
-        <p>{{ kb.description || '暂无描述' }}</p>
+        <p>{{ kb.description || t('knowledge.detail.noDescription') }}</p>
       </div>
-      <a-popconfirm title="确认删除该知识库?" @confirm="$emit('deleted')">
-        <a-button danger>删除</a-button>
+      <a-popconfirm :title="t('knowledge.detail.deleteConfirm')" @confirm="$emit('deleted')">
+        <a-button danger>{{ t('knowledge.detail.delete') }}</a-button>
       </a-popconfirm>
     </div>
     <a-tabs v-model:activeKey="activeTab" @change="onTabChange">
-      <a-tab-pane key="documents" tab="文档管理">
+      <a-tab-pane key="documents" :tab="t('knowledge.detail.tabs.documents')">
         <DocumentUpload :kb-id="kb.id" :project-id="projectId" @uploaded="loadDocuments" />
         <DocumentTable class="table-block" :documents="documents" :loading="docsLoading" :action-id="actionId" @rebuild="rebuildDoc" @delete="deleteDoc" />
       </a-tab-pane>
-      <a-tab-pane key="retrieve" tab="检索测试">
+      <a-tab-pane key="retrieve" :tab="t('knowledge.detail.tabs.retrieve')">
         <RetrieveTest :kb-id="kb.id" :project-id="projectId" />
       </a-tab-pane>
-      <a-tab-pane key="chat" tab="AI 对话">
+      <a-tab-pane key="chat" :tab="t('knowledge.detail.tabs.chat')">
         <KnowledgeChat :kb-id="kb.id" :project-id="projectId" />
       </a-tab-pane>
-      <a-tab-pane key="stats" tab="统计">
+      <a-tab-pane key="stats" :tab="t('knowledge.detail.tabs.stats')">
         <a-row :gutter="16">
           <a-col v-for="item in statItems" :key="item.label" :xs="12" :md="6">
             <a-statistic :title="item.label" :value="item.value" />
           </a-col>
         </a-row>
       </a-tab-pane>
-      <a-tab-pane key="graph" tab="知识图谱">
+      <a-tab-pane key="graph" :tab="t('knowledge.detail.tabs.graph')">
         <div class="graph-tab">
           <KnowledgeGraph :graph="graph" :loading="graphLoading" />
         </div>
@@ -39,6 +39,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import {
   deleteKnowledgeDocument,
@@ -57,6 +58,7 @@ import RetrieveTest from './components/RetrieveTest.vue'
 import KnowledgeChat from './components/KnowledgeChat.vue'
 import KnowledgeGraph from './components/KnowledgeGraph.vue'
 
+const { t } = useI18n()
 const props = defineProps<{ kb: KnowledgeBase; projectId: number }>()
 defineEmits<{ (e: 'back'): void; (e: 'deleted'): void }>()
 
@@ -69,10 +71,10 @@ const graph = ref<KnowledgeGraphData>()
 const graphLoading = ref(false)
 
 const statItems = computed(() => [
-  { label: '文档数', value: stats.value?.document_count || 0 },
-  { label: 'Chunk 数', value: stats.value?.chunk_count || 0 },
-  { label: '向量数', value: stats.value?.vector_count || 0 },
-  { label: '图谱边', value: stats.value?.graph_edges || 0 },
+  { label: t('knowledge.detail.stats.documents'), value: stats.value?.document_count || 0 },
+  { label: t('knowledge.detail.stats.chunks'), value: stats.value?.chunk_count || 0 },
+  { label: t('knowledge.detail.stats.vectors'), value: stats.value?.vector_count || 0 },
+  { label: t('knowledge.detail.stats.edges'), value: stats.value?.graph_edges || 0 },
 ])
 
 async function loadDocuments() {
@@ -104,7 +106,7 @@ async function rebuildDoc(id: number) {
   actionId.value = id
   try {
     await rebuildKnowledgeDocument(props.kb.id, id, props.projectId)
-    message.success('索引已重建')
+    message.success(t('knowledge.detail.messages.rebuildSuccess'))
     await loadDocuments()
   } finally {
     actionId.value = undefined
@@ -113,7 +115,7 @@ async function rebuildDoc(id: number) {
 
 async function deleteDoc(id: number) {
   await deleteKnowledgeDocument(props.kb.id, id, props.projectId)
-  message.success('文档已删除')
+  message.success(t('knowledge.detail.messages.deleteSuccess'))
   await loadDocuments()
 }
 

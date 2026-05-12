@@ -217,6 +217,7 @@ func Setup(logger *zap.Logger) *gin.Engine {
 				knowledgeBases.POST("/:id/chunks/rebuild", middleware.RequirePermission("knowledge:manage"), knowledgeH.RebuildKB)
 				knowledgeBases.POST("/:id/query", middleware.RequirePermission("knowledge:list"), knowledgeH.Query)
 				knowledgeBases.POST("/:id/chat", middleware.RequirePermission("knowledge:list"), knowledgeH.Chat)
+				knowledgeBases.POST("/:id/chat/stream", middleware.RequirePermission("knowledge:list"), knowledgeH.ChatStream)
 				knowledgeBases.GET("/:id/graph", middleware.RequirePermission("knowledge:list"), knowledgeH.Graph)
 			}
 

@@ -132,16 +132,27 @@ func (p *RAGPipeline) StoreChunks(ctx context.Context, projectID, kbID uint64, c
 	docs := make([]VectorDocument, 0, len(chunks))
 	for _, chunk := range chunks {
 		vectorID := vectorIDForChunk(chunk.ID)
+		meta := map[string]any{
+			"chunk_id":          chunk.ID,
+			"doc_id":            chunk.DocID,
+			"chunk_index":       chunk.ChunkIndex,
+			"project_id":        projectID,
+			"knowledge_base_id": kbID,
+		}
+		if len(chunk.Metadata) > 0 {
+			var chunkMeta map[string]any
+			if err := json.Unmarshal(chunk.Metadata, &chunkMeta); err == nil {
+				for k, v := range chunkMeta {
+					if _, exists := meta[k]; !exists {
+						meta[k] = v
+					}
+				}
+			}
+		}
 		docs = append(docs, VectorDocument{
-			ID:      vectorID,
-			Content: chunk.ChunkText,
-			Metadata: map[string]any{
-				"chunk_id":          chunk.ID,
-				"doc_id":            chunk.DocID,
-				"chunk_index":       chunk.ChunkIndex,
-				"project_id":        projectID,
-				"knowledge_base_id": kbID,
-			},
+			ID:       vectorID,
+			Content:  chunk.ChunkText,
+			Metadata: meta,
 		})
 	}
 	return p.vectorStore.Store(ctx, projectID, kbID, docs)

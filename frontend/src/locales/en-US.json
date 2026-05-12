@@ -1128,5 +1128,73 @@
       "builtin": "Built-in",
       "custom": "Custom"
     }
+  },
+  "knowledge": {
+    "title": "Knowledge Base",
+    "subtitle": "Managed by project standards, historical cases, and best practices for test generation retrieval.",
+    "tabs": {
+      "bases": "Knowledge Base",
+      "settings": "Configuration"
+    },
+    "list": {
+      "searchPlaceholder": "Search knowledge base",
+      "create": "Create Knowledge Base",
+      "enabled": "Active",
+      "disabled": "Disabled",
+      "noDescription": "No description",
+      "createTitle": "Create Knowledge Base",
+      "form": {
+        "name": "Name",
+        "description": "Description",
+        "chunkSize": "Chunk Size",
+        "chunkOverlap": "Chunk Overlap"
+      },
+      "messages": {
+        "createSuccess": "Knowledge base created"
+      }
+    },
+    "detail": {
+      "back": "Back",
+      "noDescription": "No description",
+      "deleteConfirm": "Delete this knowledge base?",
+      "delete": "Delete",
+      "tabs": {
+        "documents": "Documents",
+        "retrieve": "Retrieval Test",
+        "chat": "AI Chat",
+        "stats": "Statistics",
+        "graph": "Knowledge Graph"
+      },
+      "stats": {
+        "documents": "Documents",
+        "chunks": "Chunks",
+        "vectors": "Vectors",
+        "edges": "Graph Edges"
+      },
+      "messages": {
+        "rebuildSuccess": "Index rebuilt",
+        "deleteSuccess": "Document deleted",
+        "deleteKbSuccess": "Knowledge base deleted"
+      }
+    }
+  },
+  "knowledgeChat": {
+    "defaultAgent": "Default Agent",
+    "clear": "Clear",
+    "emptyHint": "Ask a question, and AI will answer based on knowledge base search results",
+    "ai": "AI",
+    "me": "Me",
+    "searchSources": "Found {count} relevant sources",
+    "viewSources": "View Sources",
+    "unknownFile": "Unknown File",
+    "thinking": "Generating answer...",
+    "send": "Send",
+    "placeholder": "Ask about the knowledge base, e.g.: What are the test generation standards for this project?",
+    "copy": "Copy",
+    "copied": "Copied",
+    "zoomIn": "Zoom In",
+    "zoomOut": "Zoom Out",
+    "reset": "Reset",
+    "exportPng": "Export PNG"
   }
 }

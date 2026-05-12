@@ -198,10 +198,21 @@ func (r *KnowledgeRepo) UpsertRelations(relations []model.ChunkRelation) error {
 	if len(relations) == 0 {
 		return nil
 	}
-	return r.db.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "source_chunk_id"}, {Name: "target_chunk_id"}, {Name: "relation_type"}},
-		DoUpdates: clause.AssignmentColumns([]string{"score"}),
-	}).Create(&relations).Error
+	const batchSize = 1000
+	for i := 0; i < len(relations); i += batchSize {
+		end := i + batchSize
+		if end > len(relations) {
+			end = len(relations)
+		}
+		batch := relations[i:end]
+		if err := r.db.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "source_chunk_id"}, {Name: "target_chunk_id"}, {Name: "relation_type"}},
+			DoUpdates: clause.AssignmentColumns([]string{"score"}),
+		}).Create(&batch).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *KnowledgeRepo) ClearRelationsByKB(kbID uint64) error {

@@ -147,6 +147,63 @@ export function chatKnowledgeBase(
   return request.post(`/knowledge-bases/${id}/chat`, data, { timeout: 180000 })
 }
 
+export function chatKnowledgeBaseStream(
+  id: number,
+  data: { project_id: number; query: string; top_k?: number; keywords?: string[]; agent_id?: number; messages?: KnowledgeChatMessage[] },
+  onEvent: (event: ChatStreamEvent) => void,
+  onError?: (error: Error) => void,
+) {
+  const token = localStorage.getItem('access_token') || ''
+  fetch(`/api/knowledge-bases/${id}/chat/stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(data),
+  })
+    .then(async (response) => {
+      if (!response.ok) {
+        const text = await response.text()
+        throw new Error(text || `HTTP ${response.status}`)
+      }
+      const reader = response.body?.getReader()
+      if (!reader) throw new Error('无法读取流')
+      const decoder = new TextDecoder()
+      let buffer = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const event = JSON.parse(line.slice(6)) as ChatStreamEvent
+              onEvent(event)
+            } catch {}
+          }
+        }
+      }
+    })
+    .catch((err) => {
+      onError?.(err)
+    })
+}
+
+export interface ChatStreamEvent {
+  type: 'sources' | 'thinking' | 'content' | 'done' | 'error'
+  sources?: KnowledgeSearchResult[]
+  content?: string
+  agent?: {
+    id: number
+    name: string
+    provider: string
+    model: string
+  }
+}
+
 export function getKnowledgeGraph(id: number, projectId: number) {
   return request.get(`/knowledge-bases/${id}/graph`, { params: { project_id: projectId } })
 }

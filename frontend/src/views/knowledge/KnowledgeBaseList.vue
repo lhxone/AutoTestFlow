@@ -1,17 +1,17 @@
 <template>
   <a-space direction="vertical" class="kb-list" :size="16">
     <div class="list-header">
-      <a-input-search v-model:value="keyword" placeholder="搜索知识库" class="search-input" @search="load" />
-      <a-button type="primary" @click="openCreate">新建知识库</a-button>
+      <a-input-search v-model:value="keyword" :placeholder="t('knowledge.list.searchPlaceholder')" class="search-input" @search="load" />
+      <a-button type="primary" @click="openCreate">{{ t('knowledge.list.create') }}</a-button>
     </div>
     <a-row :gutter="[16, 16]">
       <a-col v-for="kb in items" :key="kb.id" :xs="24" :md="12" :xl="8">
         <a-card hoverable :body-style="{ padding: '16px' }" @click="$emit('select', kb)">
           <div class="kb-card-title">
             <span>{{ kb.name }}</span>
-            <a-tag :color="kb.status === 1 ? 'success' : 'default'">{{ kb.status === 1 ? '启用' : '停用' }}</a-tag>
+            <a-tag :color="kb.status === 1 ? 'success' : 'default'">{{ kb.status === 1 ? t('knowledge.list.enabled') : t('knowledge.list.disabled') }}</a-tag>
           </div>
-          <p class="kb-desc">{{ kb.description || '暂无描述' }}</p>
+          <p class="kb-desc">{{ kb.description || t('knowledge.list.noDescription') }}</p>
           <a-space class="kb-meta">
             <span>Chunk {{ kb.chunk_size }}</span>
             <span>Overlap {{ kb.chunk_overlap }}</span>
@@ -20,18 +20,18 @@
       </a-col>
     </a-row>
     <a-empty v-if="!loading && items.length === 0" />
-    <a-modal v-model:open="modalOpen" title="新建知识库" @ok="submit" :confirm-loading="saving">
+    <a-modal v-model:open="modalOpen" :title="t('knowledge.list.createTitle')" @ok="submit" :confirm-loading="saving">
       <a-form layout="vertical" :model="form">
-        <a-form-item label="名称" required>
+        <a-form-item :label="t('knowledge.list.form.name')" required>
           <a-input v-model:value="form.name" />
         </a-form-item>
-        <a-form-item label="描述">
+        <a-form-item :label="t('knowledge.list.form.description')">
           <a-textarea v-model:value="form.description" :rows="3" />
         </a-form-item>
-        <a-form-item label="Chunk 大小">
+        <a-form-item :label="t('knowledge.list.form.chunkSize')">
           <a-input-number v-model:value="form.chunk_size" :min="100" :max="4000" class="number-input" />
         </a-form-item>
-        <a-form-item label="Chunk 重叠">
+        <a-form-item :label="t('knowledge.list.form.chunkOverlap')">
           <a-input-number v-model:value="form.chunk_overlap" :min="0" :max="1000" class="number-input" />
         </a-form-item>
       </a-form>
@@ -41,9 +41,11 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { createKnowledgeBase, getKnowledgeBases, type KnowledgeBase } from '@/api/knowledge'
 
+const { t } = useI18n()
 const props = defineProps<{ projectId?: number }>()
 defineEmits<{ (e: 'select', kb: KnowledgeBase): void }>()
 
@@ -76,7 +78,7 @@ async function submit() {
   saving.value = true
   try {
     await createKnowledgeBase({ ...form, project_id: props.projectId, status: 1 })
-    message.success('知识库已创建')
+    message.success(t('knowledge.list.messages.createSuccess'))
     modalOpen.value = false
     await load()
   } finally {

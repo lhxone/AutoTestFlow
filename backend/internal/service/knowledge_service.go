@@ -3,7 +3,9 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 	"time"
@@ -88,6 +90,13 @@ type KnowledgeChatAgent struct {
 	Name     string `json:"name"`
 	Provider string `json:"provider"`
 	Model    string `json:"model"`
+}
+
+type ChatStreamEvent struct {
+	Type    string               `json:"type"` // "sources", "thinking", "content", "done", "error"
+	Sources []VectorSearchResult `json:"sources,omitempty"`
+	Content string               `json:"content,omitempty"`
+	Agent   *KnowledgeChatAgent  `json:"agent,omitempty"`
 }
 
 type KnowledgeGraph struct {
@@ -450,6 +459,92 @@ func (s *KnowledgeService) Chat(ctx context.Context, kbID uint64, req KnowledgeC
 	}, nil
 }
 
+func (s *KnowledgeService) ChatStream(ctx context.Context, kbID uint64, req KnowledgeChatRequest, eventChan chan<- ChatStreamEvent) {
+	query := strings.TrimSpace(req.Query)
+	if query == "" {
+		eventChan <- ChatStreamEvent{Type: "error", Content: "query 不能为空"}
+		return
+	}
+	if err := s.ensureVectorStore(ctx); err != nil {
+		eventChan <- ChatStreamEvent{Type: "error", Content: err.Error()}
+		return
+	}
+	kb, err := s.repo.GetKB(req.ProjectID, kbID)
+	if err != nil {
+		eventChan <- ChatStreamEvent{Type: "error", Content: err.Error()}
+		return
+	}
+	results, err := s.retrieveWithRetry(ctx, req.ProjectID, kbID, query, req.TopK, req.Keywords)
+	if err != nil {
+		eventChan <- ChatStreamEvent{Type: "error", Content: err.Error()}
+		return
+	}
+
+	agent, err := s.resolveKnowledgeChatAgent(req.AgentID)
+	if err != nil {
+		eventChan <- ChatStreamEvent{Type: "error", Content: err.Error()}
+		return
+	}
+	execCfg := ResolveAgentExecutionConfig(agent)
+	if strings.TrimSpace(execCfg.APIKey) == "" {
+		eventChan <- ChatStreamEvent{Type: "error", Content: fmt.Sprintf("Agent %s 未配置可用 API Key", safeAgentName(agent))}
+		return
+	}
+	if execCfg.MaxTokens <= 0 || execCfg.MaxTokens > 1536 {
+		execCfg.MaxTokens = 1536
+	}
+
+	eventChan <- ChatStreamEvent{
+		Type:    "sources",
+		Sources: results,
+		Agent: &KnowledgeChatAgent{
+			ID:       agent.ID,
+			Name:     agent.Name,
+			Provider: execCfg.Provider,
+			Model:    execCfg.Model,
+		},
+	}
+
+	history := []runtimeMessage{
+		{Role: "system", Text: buildKnowledgeChatSystemPrompt(kb, results)},
+	}
+	history = append(history, normalizeKnowledgeChatHistory(req.Messages, query)...)
+	history = append(history, runtimeMessage{Role: "user", Text: query})
+
+	runtime := s.einoRuntime
+	if runtime == nil {
+		runtime = NewEinoGenTestRuntime(s.logger)
+	}
+	chatModel, err := runtime.newEinoChatModel(ctx, execCfg, nil)
+	if err != nil {
+		eventChan <- ChatStreamEvent{Type: "error", Content: err.Error()}
+		return
+	}
+
+	streamReader, err := chatModel.Stream(ctx, runtimeHistoryToEinoMessages(history))
+	if err != nil {
+		eventChan <- ChatStreamEvent{Type: "error", Content: fmt.Sprintf("流式调用失败: %v", err)}
+		return
+	}
+	defer streamReader.Close()
+
+	for {
+		msg, err := streamReader.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			eventChan <- ChatStreamEvent{Type: "error", Content: fmt.Sprintf("读取流式响应失败: %v", err)}
+			return
+		}
+		if msg != nil && msg.Content != "" {
+			eventChan <- ChatStreamEvent{Type: "content", Content: msg.Content}
+		}
+	}
+
+	eventChan <- ChatStreamEvent{Type: "done"}
+}
+
 func (s *KnowledgeService) resolveKnowledgeChatAgent(agentID *uint64) (*model.Agent, error) {
 	if agentID != nil && *agentID > 0 {
 		return s.agentRepo.GetByID(*agentID)
@@ -462,7 +557,7 @@ func (s *KnowledgeService) resolveKnowledgeChatAgent(agentID *uint64) (*model.Ag
 
 func buildKnowledgeChatSystemPrompt(kb *model.KnowledgeBase, results []VectorSearchResult) string {
 	var b strings.Builder
-	b.WriteString("你是 AutoTestFlow 知识库问答助手。请基于给定的知识库检索上下文回答用户问题。\n")
+	b.WriteString("你是知识库问答助手。请基于给定的知识库检索上下文回答用户问题。\n")
 	b.WriteString("要求：\n")
 	b.WriteString("1. 优先引用检索上下文，不要编造不存在的内容。\n")
 	b.WriteString("2. 如果上下文不足以回答，请明确说明缺少哪些信息，并给出可继续检索的建议。\n")

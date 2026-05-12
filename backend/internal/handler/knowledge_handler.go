@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"strconv"
 	"strings"
@@ -240,6 +242,39 @@ func (h *KnowledgeHandler) Chat(c *gin.Context) {
 	}
 	result, err := h.service.Chat(c.Request.Context(), kbID, req)
 	h.writeResult(c, result, err)
+}
+
+func (h *KnowledgeHandler) ChatStream(c *gin.Context) {
+	kbID, ok := parsePathUint64(c, "id")
+	if !ok {
+		return
+	}
+	var req service.KnowledgeChatRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.CodeParamError, "参数错误: "+err.Error())
+		return
+	}
+
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+
+	eventChan := make(chan service.ChatStreamEvent, 100)
+	go func() {
+		defer close(eventChan)
+		h.service.ChatStream(c.Request.Context(), kbID, req, eventChan)
+	}()
+
+	c.Stream(func(w io.Writer) bool {
+		event, ok := <-eventChan
+		if !ok {
+			return false
+		}
+		data, _ := json.Marshal(event)
+		fmt.Fprintf(w, "data: %s\n\n", data)
+		return true
+	})
 }
 
 func (h *KnowledgeHandler) Graph(c *gin.Context) {

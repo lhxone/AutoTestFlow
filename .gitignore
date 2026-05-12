@@ -26,6 +26,9 @@ frontend/dist/
 frontend/.env.local
 frontend/vite.config.ts
 
+# mobile_app
+mobile_app/
+
 # Logs
 logs/
 *.log
