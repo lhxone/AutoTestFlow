@@ -570,21 +570,21 @@ onMounted(() => {
 .markdown-body {
   white-space: pre-wrap;
   color: #1f2937;
-  line-height: 1.5;
+  line-height: 1.38;
 }
 
 .markdown-body :deep(p) {
-  margin: 0 0 6px;
+  margin: 0 0 4px;
 }
 
 .markdown-body :deep(ul),
 .markdown-body :deep(ol) {
-  margin: 0 0 6px 20px;
+  margin: 0 0 4px 18px;
   padding: 0;
 }
 
 .markdown-body :deep(li) {
-  margin-bottom: 2px;
+  margin-bottom: 0;
 }
 
 .markdown-body :deep(table) {
@@ -613,7 +613,7 @@ onMounted(() => {
 }
 
 .markdown-body :deep(.code-block) {
-  margin: 8px 0;
+  margin: 6px 0;
   border-radius: 8px;
   overflow: hidden;
   border: 1px solid #2d3748;
@@ -657,7 +657,7 @@ onMounted(() => {
 .markdown-body :deep(pre) {
   margin: 0;
   overflow: auto;
-  padding: 12px;
+  padding: 10px 12px;
   background: #1a202c;
   color: #e2e8f0;
 }

@@ -38,7 +38,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import {
@@ -69,6 +69,7 @@ const documents = ref<KnowledgeDocument[]>([])
 const stats = ref<KnowledgeStats>()
 const graph = ref<KnowledgeGraphData>()
 const graphLoading = ref(false)
+let docsRefreshTimer: ReturnType<typeof setTimeout> | undefined
 
 const statItems = computed(() => [
   { label: t('knowledge.detail.stats.documents'), value: stats.value?.document_count || 0 },
@@ -77,11 +78,37 @@ const statItems = computed(() => [
   { label: t('knowledge.detail.stats.edges'), value: stats.value?.graph_edges || 0 },
 ])
 
+function clearDocsRefreshTimer() {
+  if (docsRefreshTimer) {
+    clearTimeout(docsRefreshTimer)
+    docsRefreshTimer = undefined
+  }
+}
+
+function hasPendingDocuments(list: KnowledgeDocument[]) {
+  return list.some((item) => item.status === 'pending' || item.status === 'parsing')
+}
+
+function scheduleDocsRefresh() {
+  clearDocsRefreshTimer()
+  if (!hasPendingDocuments(documents.value)) {
+    return
+  }
+  docsRefreshTimer = setTimeout(async () => {
+    try {
+      await Promise.all([loadDocuments(), loadStats()])
+    } catch {
+      scheduleDocsRefresh()
+    }
+  }, 3000)
+}
+
 async function loadDocuments() {
   docsLoading.value = true
   try {
     const res = await getKnowledgeDocuments(props.kb.id, { project_id: props.projectId, page: 1, page_size: 100 })
     documents.value = res.data.data?.list || []
+    scheduleDocsRefresh()
   } finally {
     docsLoading.value = false
   }
@@ -124,9 +151,25 @@ function onTabChange(key: string) {
   if (key === 'graph') loadGraph()
 }
 
+watch(
+  () => [props.kb.id, props.projectId],
+  () => {
+    clearDocsRefreshTimer()
+    loadDocuments()
+    loadStats()
+    if (activeTab.value === 'graph') {
+      loadGraph()
+    }
+  },
+)
+
 onMounted(() => {
   loadDocuments()
   loadStats()
+})
+
+onBeforeUnmount(() => {
+  clearDocsRefreshTimer()
 })
 </script>
 

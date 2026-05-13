@@ -183,8 +183,10 @@ func extractChunkIDFromVectorID(id string) uint64 {
 }
 
 func stripHTML(input string) string {
-	reScript := regexp.MustCompile(`(?is)<(script|style).*?</\1>`)
+	reScript := regexp.MustCompile(`(?is)<script\b[^>]*>.*?</script>`)
 	input = reScript.ReplaceAllString(input, " ")
+	reStyle := regexp.MustCompile(`(?is)<style\b[^>]*>.*?</style>`)
+	input = reStyle.ReplaceAllString(input, " ")
 	reTag := regexp.MustCompile(`(?s)<[^>]+>`)
 	input = reTag.ReplaceAllString(input, " ")
 	reSpace := regexp.MustCompile(`\s+`)

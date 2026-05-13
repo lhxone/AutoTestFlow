@@ -8,6 +8,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"auto-test-flow/internal/model"
@@ -25,7 +26,17 @@ type KnowledgeService struct {
 	vectorStore   VectorStore
 	einoRuntime   *EinoGenTestRuntime
 	logger        *zap.Logger
+	rebuildSlots  chan struct{}
+	relationMu    sync.Mutex
+	relationJobs  map[uint64]kbRelationJobState
 }
+
+type kbRelationJobState struct {
+	running bool
+	pending bool
+}
+
+const knowledgeDocumentRebuildConcurrency = 2
 
 type CreateKnowledgeBaseRequest struct {
 	ProjectID    uint64 `json:"project_id" binding:"required"`
@@ -146,6 +157,8 @@ func NewKnowledgeService(logger *zap.Logger) *KnowledgeService {
 		pipeline:      NewRAGPipeline(cfgSvc, store),
 		einoRuntime:   NewEinoGenTestRuntime(logger),
 		logger:        logger,
+		rebuildSlots:  make(chan struct{}, knowledgeDocumentRebuildConcurrency),
+		relationJobs:  make(map[uint64]kbRelationJobState),
 	}
 }
 
@@ -272,10 +285,8 @@ func (s *KnowledgeService) AddDocument(ctx context.Context, kbID uint64, req Kno
 	if err := s.repo.CreateDocument(doc); err != nil {
 		return nil, err
 	}
-	if err := s.RebuildDocument(ctx, req.ProjectID, kb.ID, doc.ID); err != nil {
-		return doc, err
-	}
-	return s.repo.GetDocument(kbID, doc.ID)
+	s.enqueueDocumentRebuild(req.ProjectID, kb.ID, doc.ID)
+	return doc, nil
 }
 
 func (s *KnowledgeService) BatchAddDocuments(ctx context.Context, kbID uint64, req BatchKnowledgeDocumentRequest) ([]model.KnowledgeDocument, error) {
@@ -289,6 +300,25 @@ func (s *KnowledgeService) BatchAddDocuments(ctx context.Context, kbID uint64, r
 		docs = append(docs, *doc)
 	}
 	return docs, nil
+}
+
+func (s *KnowledgeService) enqueueDocumentRebuild(projectID, kbID, docID uint64) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		defer cancel()
+		s.rebuildSlots <- struct{}{}
+		defer func() {
+			<-s.rebuildSlots
+		}()
+		if err := s.RebuildDocument(ctx, projectID, kbID, docID); err != nil && s.logger != nil {
+			s.logger.Warn("异步重建知识库文档失败",
+				zap.Uint64("project_id", projectID),
+				zap.Uint64("kb_id", kbID),
+				zap.Uint64("doc_id", docID),
+				zap.Error(err),
+			)
+		}
+	}()
 }
 
 func (s *KnowledgeService) ListDocuments(projectID, kbID uint64, offset, limit int) ([]model.KnowledgeDocument, int64, error) {
@@ -320,15 +350,9 @@ func (s *KnowledgeService) RebuildDocument(ctx context.Context, projectID, kbID,
 		_ = s.repo.UpdateDocumentStatus(docID, model.KnowledgeDocumentStatusFailed, err.Error(), 0)
 		return err
 	}
-	storedChunks, err := s.repo.ListChunksByKB(kbID)
+	docChunks, err := s.repo.ListChunksByDocument(docID)
 	if err != nil {
 		return err
-	}
-	docChunks := make([]model.KnowledgeChunk, 0, len(chunks))
-	for _, chunk := range storedChunks {
-		if chunk.DocID == docID {
-			docChunks = append(docChunks, chunk)
-		}
 	}
 	if s.configService.Current().Enabled && s.vectorStore != nil {
 		ids := make([]string, 0, len(docChunks))
@@ -341,9 +365,7 @@ func (s *KnowledgeService) RebuildDocument(ctx context.Context, projectID, kbID,
 			return err
 		}
 	}
-	if err := s.rebuildRelations(kbID); err != nil && s.logger != nil {
-		s.logger.Warn("重建 chunk 关联失败", zap.Uint64("kb_id", kbID), zap.Error(err))
-	}
+	s.scheduleRelationRebuild(kbID)
 	return s.repo.UpdateDocumentStatus(docID, model.KnowledgeDocumentStatusIndexed, "", len(docChunks))
 }
 
@@ -813,6 +835,43 @@ func (s *KnowledgeService) rebuildRelations(kbID uint64) error {
 		}
 	}
 	return s.repo.UpsertRelations(relations)
+}
+
+func (s *KnowledgeService) scheduleRelationRebuild(kbID uint64) {
+	s.relationMu.Lock()
+	state := s.relationJobs[kbID]
+	if state.running {
+		state.pending = true
+		s.relationJobs[kbID] = state
+		s.relationMu.Unlock()
+		return
+	}
+	state.running = true
+	state.pending = false
+	s.relationJobs[kbID] = state
+	s.relationMu.Unlock()
+
+	go s.runRelationRebuild(kbID)
+}
+
+func (s *KnowledgeService) runRelationRebuild(kbID uint64) {
+	for {
+		if err := s.rebuildRelations(kbID); err != nil && s.logger != nil {
+			s.logger.Warn("重建 chunk 关联失败", zap.Uint64("kb_id", kbID), zap.Error(err))
+		}
+
+		s.relationMu.Lock()
+		state := s.relationJobs[kbID]
+		if state.pending {
+			state.pending = false
+			s.relationJobs[kbID] = state
+			s.relationMu.Unlock()
+			continue
+		}
+		delete(s.relationJobs, kbID)
+		s.relationMu.Unlock()
+		return
+	}
 }
 
 func workflowRAGEnabled(workflow *model.Skill) bool {

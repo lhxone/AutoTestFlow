@@ -188,6 +188,14 @@ func (r *KnowledgeRepo) ListChunksByKB(kbID uint64) ([]model.KnowledgeChunk, err
 	return chunks, err
 }
 
+func (r *KnowledgeRepo) ListChunksByDocument(docID uint64) ([]model.KnowledgeChunk, error) {
+	var chunks []model.KnowledgeChunk
+	err := r.db.Where("doc_id = ?", docID).
+		Order("chunk_index ASC").
+		Find(&chunks).Error
+	return chunks, err
+}
+
 func (r *KnowledgeRepo) ListActiveKBs(projectID uint64) ([]model.KnowledgeBase, error) {
 	var list []model.KnowledgeBase
 	err := r.db.Where("project_id = ? AND status = 1", projectID).Order("id DESC").Find(&list).Error
