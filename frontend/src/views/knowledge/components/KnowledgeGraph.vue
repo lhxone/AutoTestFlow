@@ -298,7 +298,7 @@ function buildSummarizedGraph(
       doc,
       chunks: chunkByDoc.get(doc.id) || [],
     }))
-    .sort((left, right) => right.chunks.length - left.chunks.length || right.size - left.size)
+    .sort((left, right) => right.chunks.length - left.chunks.length || right.doc.size - left.doc.size)
     .slice(0, limits.maxDocs)
 
   const keptDocIds = new Set(keptDocs.map((item) => item.doc.id))
