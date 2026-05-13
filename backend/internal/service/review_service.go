@@ -259,7 +259,7 @@ func (s *ReviewService) createRegeneratedTask(rt *model.ReviewTask, reviewerID u
 }
 
 func (s *ReviewService) regenerateTestAsync(taskID uint64) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), LoadRuntimeSettings().TaskTimeout)
 	defer cancel()
 
 	if err := s.genTestService.RunTask(ctx, taskID); err != nil {

@@ -140,7 +140,7 @@ func (h *TestTaskHandler) GenerateTest(c *gin.Context) {
 	}
 
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), service.LoadRuntimeSettings().TaskTimeout)
 		defer cancel()
 
 		if err := h.genTestService.RunTask(ctx, id); err != nil {

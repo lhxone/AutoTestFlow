@@ -112,7 +112,7 @@ func (s *ZentaoTestCaseGenService) GenerateScript(testCaseID uint64, agentID *ui
 	})
 
 	go func(taskID uint64) {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), LoadRuntimeSettings().TaskTimeout)
 		defer cancel()
 
 		if err := s.runTask(ctx, taskID); err != nil {

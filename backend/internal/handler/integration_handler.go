@@ -5,9 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"auto-test-flow/internal/dto"
@@ -21,25 +19,23 @@ import (
 
 // IntegrationHandler 流水线集成接口处理器
 type IntegrationHandler struct {
-	issueRepo      *repository.IssueRepo
-	projectRepo    *repository.ProjectRepo
-	settingRepo    *repository.SettingRepo
-	apiLogRepo     *repository.APIExchangeLogRepo
-	genTestService *service.GenTestService
-	projectService *service.ProjectService
-	logger         *zap.Logger
+	issueRepo              *repository.IssueRepo
+	projectRepo            *repository.ProjectRepo
+	apiLogRepo             *repository.APIExchangeLogRepo
+	pendingGenerateService *service.PendingGenerateService
+	projectService         *service.ProjectService
+	logger                 *zap.Logger
 }
 
 // NewIntegrationHandler 创建集成处理器
 func NewIntegrationHandler(logger *zap.Logger) *IntegrationHandler {
 	return &IntegrationHandler{
-		issueRepo:      repository.NewIssueRepo(),
-		projectRepo:    repository.NewProjectRepo(),
-		settingRepo:    repository.NewSettingRepo(),
-		apiLogRepo:     repository.NewAPIExchangeLogRepo(),
-		genTestService: service.NewGenTestService(logger),
-		projectService: service.NewProjectService(),
-		logger:         logger,
+		issueRepo:              repository.NewIssueRepo(),
+		projectRepo:            repository.NewProjectRepo(),
+		apiLogRepo:             repository.NewAPIExchangeLogRepo(),
+		pendingGenerateService: service.NewPendingGenerateService(logger),
+		projectService:         service.NewProjectService(),
+		logger:                 logger,
 	}
 }
 
@@ -280,12 +276,11 @@ func (h *IntegrationHandler) handleDeployComplete(c *gin.Context, start time.Tim
 		return
 	}
 
-	// 获取并行生成任务数量配置
-	maxConcurrent := h.getMaxConcurrentTasks()
+	runtimeSettings := service.LoadRuntimeSettings()
 
 	h.logger.Info("找到待升级的问题单，准备触发测试任务",
 		zap.Int("issue_count", len(issues)),
-		zap.Int("max_concurrent", maxConcurrent))
+		zap.Int("max_concurrent", runtimeSettings.MaxConcurrentTasks))
 
 	// 先将所有问题单状态更新为待生成
 	var issueIDs []uint64
@@ -299,8 +294,8 @@ func (h *IntegrationHandler) handleDeployComplete(c *gin.Context, start time.Tim
 		return
 	}
 
-	// 使用信号量控制并发数
-	go h.triggerTestTasks(issues, maxConcurrent)
+	// 与定时消费共用同一条触发链路，统一遵循运行时并发和超时设置。
+	go h.pendingGenerateService.DispatchIssues(context.Background(), issues)
 
 	h.respondCICDDeploy(c, start, rawBody, req, CICDDeployResponse{
 		Code:          0,
@@ -396,56 +391,4 @@ func redactHeaders(headers map[string][]string) map[string][]string {
 		result[key] = values
 	}
 	return result
-}
-
-// triggerTestTasks 触发测试任务
-func (h *IntegrationHandler) triggerTestTasks(issues []model.Issue, maxConcurrent int) {
-	sem := make(chan struct{}, maxConcurrent)
-	var wg sync.WaitGroup
-
-	for _, issue := range issues {
-		wg.Add(1)
-		go func(issueID uint64, issueTitle string) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-
-			h.logger.Info("开始为问题单触发测试任务",
-				zap.Uint64("issue_id", issueID))
-
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
-			defer cancel()
-
-			task, err := h.genTestService.Execute(issueID, nil, nil, "")
-			if err != nil {
-				h.logger.Error("触发测试任务失败",
-					zap.Uint64("issue_id", issueID),
-					zap.Error(err))
-				return
-			}
-
-			h.logger.Info("测试任务已创建",
-				zap.Uint64("issue_id", issueID),
-				zap.Uint64("task_id", task.ID))
-
-			// 等待任务完成
-			_ = h.genTestService.RunTask(ctx, task.ID)
-		}(issue.ID, issue.Title)
-	}
-
-	wg.Wait()
-	h.logger.Info("所有测试任务触发完成", zap.Int("total", len(issues)))
-}
-
-// getMaxConcurrentTasks 获取并行生成任务数量配置
-func (h *IntegrationHandler) getMaxConcurrentTasks() int {
-	value := h.settingRepo.GetValue("integration", "max_concurrent_tasks")
-	if value == "" {
-		return 1 // 默认值
-	}
-	n, err := strconv.Atoi(value)
-	if err != nil || n <= 0 {
-		return 1
-	}
-	return n
 }

@@ -15,22 +15,26 @@ import (
 
 // Scheduler 定时任务调度器
 type Scheduler struct {
-	cron            *cron.Cron
-	logger          *zap.Logger
-	zentaoService   *service.ZentaoService
-	zentaoTCService *service.ZentaoTestCaseSyncService
-	gitPullService  *service.GitPullService
-	gitPullRunning  atomic.Bool
+	cron                       *cron.Cron
+	logger                     *zap.Logger
+	zentaoService              *service.ZentaoService
+	zentaoTCService            *service.ZentaoTestCaseSyncService
+	gitPullService             *service.GitPullService
+	pendingGenerateService     *service.PendingGenerateService
+	gitPullRunning             atomic.Bool
+	pendingGenerateRunning     atomic.Bool
+	pendingGenerateLastRunUnix atomic.Int64
 }
 
 // NewScheduler 创建调度器
 func NewScheduler(logger *zap.Logger) *Scheduler {
 	return &Scheduler{
-		cron:            cron.New(cron.WithSeconds()),
-		logger:          logger,
-		zentaoService:   service.NewZentaoService(logger),
-		zentaoTCService: service.NewZentaoTestCaseSyncService(logger),
-		gitPullService:  service.NewGitPullService(logger),
+		cron:                   cron.New(cron.WithSeconds()),
+		logger:                 logger,
+		zentaoService:          service.NewZentaoService(logger),
+		zentaoTCService:        service.NewZentaoTestCaseSyncService(logger),
+		gitPullService:         service.NewGitPullService(logger),
+		pendingGenerateService: service.NewPendingGenerateService(logger),
 	}
 }
 
@@ -87,15 +91,41 @@ func (s *Scheduler) Start() {
 		s.logger.Info("项目 Git 拉取定时任务已注册", zap.String("cron", "0 * * * * *"))
 	}
 
-	// 自动触发生成已暂停，仅保留手动触发入口
-	// 如需启用，取消下方注释
-	// _, err = s.cron.AddFunc("0 0 * * * *", func() {
-	// 	s.logger.Info("定时任务: 检查已解决问题单并触发AI生成")
-	// 	s.autoTriggerGenTest()
-	// })
-	// if err != nil {
-	// 	s.logger.Error("注册自动生成定时任务失败", zap.Error(err))
-	// }
+	// 3. 待生成问题单巡检（每分钟检查一次，具体处理频率由运行时设置控制）
+	_, err = s.cron.AddFunc("0 * * * * *", func() {
+		settings := service.LoadRuntimeSettings()
+		now := time.Now()
+		lastRunUnix := s.pendingGenerateLastRunUnix.Load()
+		if lastRunUnix > 0 {
+			lastRun := time.Unix(lastRunUnix, 0)
+			interval := time.Duration(settings.PendingGenerateIntervalMinutes) * time.Minute
+			if now.Sub(lastRun) < interval {
+				return
+			}
+		}
+
+		if !s.pendingGenerateRunning.CompareAndSwap(false, true) {
+			s.logger.Warn("待生成问题单定时处理仍在执行，跳过本轮")
+			return
+		}
+		defer s.pendingGenerateRunning.Store(false)
+		s.pendingGenerateLastRunUnix.Store(now.Unix())
+
+		ctx := context.Background()
+
+		s.logger.Info("定时任务: 开始处理待生成问题单",
+			zap.Int("max_concurrent", settings.MaxConcurrentTasks),
+			zap.Duration("task_timeout", settings.TaskTimeout),
+			zap.Int("interval_minutes", settings.PendingGenerateIntervalMinutes))
+		if err := s.pendingGenerateService.ProcessPendingGenerate(ctx); err != nil {
+			s.logger.Error("待生成问题单定时处理失败", zap.Error(err))
+		}
+	})
+	if err != nil {
+		s.logger.Error("注册待生成问题单定时任务失败", zap.Error(err))
+	} else {
+		s.logger.Info("待生成问题单定时任务已注册", zap.String("cron", "0 * * * * *"))
+	}
 
 	s.cron.Start()
 	s.logger.Info("定时任务调度器已启动")

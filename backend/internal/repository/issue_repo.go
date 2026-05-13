@@ -169,6 +169,27 @@ func (r *IssueRepo) FindPendingUpgradeBeforeTime(ciStartTime time.Time) ([]model
 	return issues, err
 }
 
+// FindPendingGenerate 查询待生成测试的问题单
+func (r *IssueRepo) FindPendingGenerate() ([]model.Issue, error) {
+	var issues []model.Issue
+	err := r.db.Where("test_status = ?", model.TestStatusPendingGenerate).
+		Order("updated_at ASC").
+		Order("id ASC").
+		Find(&issues).Error
+	return issues, err
+}
+
+// TryClaimPendingGenerate 尝试抢占待生成问题单，避免重复创建任务
+func (r *IssueRepo) TryClaimPendingGenerate(id uint64) (bool, error) {
+	result := r.db.Model(&model.Issue{}).
+		Where("id = ? AND test_status = ?", id, model.TestStatusPendingGenerate).
+		Update("test_status", model.TestStatusGenerating)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
+}
+
 // BatchUpdateTestStatus 批量更新测试状态
 func (r *IssueRepo) BatchUpdateTestStatus(ids []uint64, newStatus string) error {
 	if len(ids) == 0 {

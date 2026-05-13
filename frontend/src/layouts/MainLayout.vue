@@ -38,6 +38,7 @@
           <a-menu-item key="/settings/zentao" v-if="isAdmin">{{ t('layout.menu.zentao') }}</a-menu-item>
           <a-menu-item key="/settings/gitlab" v-if="isAdmin">{{ t('layout.menu.gitlab') }}</a-menu-item>
           <a-menu-item key="/settings/mail" v-if="isAdmin">{{ t('layout.menu.mail') }}</a-menu-item>
+          <a-menu-item key="/settings/runtime" v-if="isAdmin">{{ t('layout.menu.runtime') }}</a-menu-item>
         </a-sub-menu>
       </a-menu>
     </a-layout-sider>
@@ -96,7 +97,7 @@ const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
 const { t, locale } = useI18n()
-const systemMenuPaths = ['/users', '/settings/zentao', '/settings/gitlab', '/settings/mail']
+const systemMenuPaths = ['/users', '/settings/zentao', '/settings/gitlab', '/settings/mail', '/settings/runtime']
 
 const collapsed = ref(false)
 const selectedKeys = computed(() => [route.path])

@@ -63,3 +63,12 @@ export function getCLIRuntimeSettings() {
 export function saveCLIRuntimeSettings(data: { settings: any[] }) {
   return request.put('/settings/cli-runtime', data)
 }
+
+// 运行时设置
+export function getRuntimeSettings() {
+  return request.get('/settings/runtime')
+}
+
+export function saveRuntimeSettings(data: { settings: any[] }) {
+  return request.put('/settings/runtime', data)
+}

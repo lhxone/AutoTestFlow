@@ -122,6 +122,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/settings/CLIRuntimeSettings.vue'),
         meta: { titleKey: 'layout.menu.cliRuntime', role: 'admin' },
       },
+      {
+        path: 'settings/runtime',
+        name: 'RuntimeSettings',
+        component: () => import('@/views/settings/RuntimeSettings.vue'),
+        meta: { titleKey: 'layout.menu.runtime', role: 'admin' },
+      },
     ],
   },
 ]

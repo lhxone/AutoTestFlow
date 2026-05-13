@@ -139,8 +139,8 @@ func (s *GenTestService) Execute(issueID uint64, agentID *uint64, createdBy *uin
 	}
 
 	go func(taskID uint64) {
-		// 给整个异步流程设置超时上限（30 分钟），避免无限挂起
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		// 给整个异步流程设置运行时上限，避免无限挂起。
+		ctx, cancel := context.WithTimeout(context.Background(), LoadRuntimeSettings().TaskTimeout)
 		defer cancel()
 
 		if err := s.RunTask(ctx, taskID); err != nil {

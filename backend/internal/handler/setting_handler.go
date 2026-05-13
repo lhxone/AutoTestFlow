@@ -175,3 +175,30 @@ func (h *SettingHandler) SaveCLIRuntimeSettings(c *gin.Context) {
 	}
 	pkg.OK(c, nil)
 }
+
+// GetRuntimeSettings 获取运行时配置
+// GET /api/settings/runtime
+func (h *SettingHandler) GetRuntimeSettings(c *gin.Context) {
+	settings, err := h.settingService.GetSettings("runtime")
+	if err != nil {
+		pkg.Fail(c, pkg.CodeInternalError, err.Error())
+		return
+	}
+	pkg.OK(c, settings)
+}
+
+// SaveRuntimeSettings 保存运行时配置
+// PUT /api/settings/runtime
+func (h *SettingHandler) SaveRuntimeSettings(c *gin.Context) {
+	var req dto.SaveSettingsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.Fail(c, pkg.CodeParamError, "参数错误: "+err.Error())
+		return
+	}
+	userID := middleware.GetCurrentUserID(c)
+	if err := h.settingService.SaveSettings("runtime", &req, userID); err != nil {
+		pkg.Fail(c, pkg.CodeInternalError, err.Error())
+		return
+	}
+	pkg.OK(c, nil)
+}

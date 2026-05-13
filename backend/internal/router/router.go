@@ -194,6 +194,9 @@ func Setup(logger *zap.Logger) *gin.Engine {
 				// CLI Runtime 配置
 				settings.GET("/cli-runtime", settingH.GetCLIRuntimeSettings)
 				settings.PUT("/cli-runtime", settingH.SaveCLIRuntimeSettings)
+
+				settings.GET("/runtime", settingH.GetRuntimeSettings)
+				settings.PUT("/runtime", settingH.SaveRuntimeSettings)
 			}
 
 			// 知识库配置

@@ -56,6 +56,7 @@
       "zentao": "Zentao Settings",
       "gitlab": "GitLab Settings",
       "mail": "Mail Settings",
+      "runtime": "Runtime Settings",
       "cliRuntime": "CLI Runtime",
       "syncLogs": "Sync Logs"
     },
@@ -147,7 +148,7 @@
       "sync": "Sync Zentao",
       "view": {
         "table": "Table View",
-        "board": "Board View"
+        "board": "Category View"
       },
       "board": {
         "kicker": "BUG WORK BOARD",
@@ -877,6 +878,21 @@
         "commandRequired": "Please fill in command first",
         "argsInvalid": "args_json must be a valid JSON array",
         "envInvalid": "env_json must be a valid JSON object"
+      }
+    },
+    "runtime": {
+      "title": "Runtime Settings",
+      "subtitle": "Control pending-generation scheduling and task execution limits",
+      "overview": "Task Scheduling",
+      "maxConcurrentTasks": "Max Concurrent Tasks",
+      "maxConcurrentTasksHint": "Both scheduled pending-generation work and CI/CD callbacks honor this limit.",
+      "taskTimeoutMinutes": "Max Task Timeout (minutes)",
+      "taskTimeoutHint": "Applied to generation tasks, reruns, and scheduled execution.",
+      "pendingGenerateIntervalMinutes": "Pending Generation Scan Interval (minutes)",
+      "pendingGenerateIntervalHint": "Background polling consumes issues in pending_generate status on this cadence.",
+      "save": "Save Settings",
+      "messages": {
+        "positiveInteger": "Please enter an integer greater than 0"
       }
     }
   },
