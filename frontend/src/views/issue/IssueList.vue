@@ -691,16 +691,17 @@ async function doGenTest() {
 }
 
 async function handleViewTask(record: Issue) {
-  // 优先用本地缓存，没有则查最新任务
-  if (issueTaskCache[record.id]) {
-    router.push({ name: 'TaskRunDetail', params: { id: String(issueTaskCache[record.id]) } })
-    return
-  }
+  // 每次都优先查询最新任务，避免本地缓存命中过期 taskId。
+  // 常见场景：驳回并重新生成后，问题单状态已更新但旧 taskId 仍在缓存中。
   viewingTaskLoading.value = record.id
   try {
     const res = await getTestTaskList({ issue_id: record.id, page: 1, page_size: 1 })
     const tasks = res.data.data?.list || []
     if (tasks.length === 0) {
+      if (issueTaskCache[record.id]) {
+        router.push({ name: 'TaskRunDetail', params: { id: String(issueTaskCache[record.id]) } })
+        return
+      }
       message.warning(t('issue.list.messages.noTaskFound'))
       return
     }

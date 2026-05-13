@@ -811,7 +811,8 @@ async function submitRegression(action: string) {
   }
   regressionSubmittingAction.value = action
   try {
-    await doReview(reviewInfo.value.id, { action, comment: regressionComment.value })
+    const reviewRes = await doReview(reviewInfo.value.id, { action, comment: regressionComment.value })
+    const newTaskId = reviewRes.data?.data?.new_task_id
     const msgMap: Record<string, string> = {
       approve: t('taskRun.regression.approveSuccess'),
       fail_regression: t('taskRun.regression.failSuccess'),
@@ -820,6 +821,10 @@ async function submitRegression(action: string) {
     }
     message.success(msgMap[action] || t('taskRun.regression.actionSuccess'))
     regressionComment.value = ''
+    if (action === 'request_changes' && newTaskId) {
+      router.push({ name: 'TaskRunDetail', params: { id: String(newTaskId) } })
+      return
+    }
     await fetchReviewData()
     await fetchDetail()
   } catch {

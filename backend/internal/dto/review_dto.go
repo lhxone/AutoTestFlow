@@ -16,6 +16,11 @@ type ReviewActionRequest struct {
 	Comment string `json:"comment"`
 }
 
+// ReviewActionResult Review审核操作结果
+type ReviewActionResult struct {
+	NewTaskID *uint64 `json:"new_task_id,omitempty"`
+}
+
 // ReviewDetailResponse Review详情响应
 type ReviewDetailResponse struct {
 	ID          uint64           `json:"id"`

@@ -83,10 +83,11 @@ func (h *ReviewHandler) DoReview(c *gin.Context) {
 	}
 
 	reviewerID := middleware.GetCurrentUserID(c)
-	if err := h.reviewService.DoReview(id, reviewerID, &req); err != nil {
+	result, err := h.reviewService.DoReview(id, reviewerID, &req)
+	if err != nil {
 		pkg.Fail(c, pkg.CodeInternalError, err.Error())
 		return
 	}
 
-	pkg.OK(c, nil)
+	pkg.OK(c, result)
 }

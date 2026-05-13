@@ -132,19 +132,21 @@ func (s *ReviewService) GetDetail(reviewID uint64) (*dto.ReviewDetailResponse, e
 }
 
 // DoReview 执行审核操作
-func (s *ReviewService) DoReview(reviewID, reviewerID uint64, req *dto.ReviewActionRequest) error {
+func (s *ReviewService) DoReview(reviewID, reviewerID uint64, req *dto.ReviewActionRequest) (*dto.ReviewActionResult, error) {
 	rt, err := s.reviewRepo.GetByID(reviewID)
 	if err != nil {
-		return errors.New("Review任务不存在")
+		return nil, errors.New("Review任务不存在")
 	}
 
 	if rt.Status != model.ReviewStatusPending && rt.Status != model.ReviewStatusChangesRequested {
-		return errors.New("Review任务当前状态不允许审核")
+		return nil, errors.New("Review任务当前状态不允许审核")
 	}
 
 	if (req.Action == "fail_regression" || req.Action == "request_changes") && strings.TrimSpace(req.Comment) == "" {
-		return errors.New("审核意见不能为空")
+		return nil, errors.New("审核意见不能为空")
 	}
+
+	result := &dto.ReviewActionResult{}
 
 	// 创建审核记录
 	now := time.Now()
@@ -160,7 +162,7 @@ func (s *ReviewService) DoReview(reviewID, reviewerID uint64, req *dto.ReviewAct
 	switch req.Action {
 	case "approve":
 		if err := s.pushReviewedContentWithTimeout(rt); err != nil {
-			return fmt.Errorf("Git推送失败，审核未完成: %w", err)
+			return nil, fmt.Errorf("Git推送失败，审核未完成: %w", err)
 		}
 		gitSummary = "已推送到Git仓库"
 		rt.Status = model.ReviewStatusApproved
@@ -182,8 +184,14 @@ func (s *ReviewService) DoReview(reviewID, reviewerID uint64, req *dto.ReviewAct
 		gitSummary = "要求修改，未推送"
 		_ = s.issueRepo.ForceUpdateTestStatus(rt.IssueID, model.TestStatusReviewRejected)
 		s.logStatusChange(rt.IssueID, model.TestStatusReviewPending, model.TestStatusReviewRejected, "manual", &reviewerID, fmt.Sprintf("Review驳回(需修改): %s", req.Comment))
-		// 驳回后自动重新生成测试，不通知研发流水线。
-		go s.regenerateTestAsync(rt.TestTaskID)
+		// 驳回后创建新的运行任务并异步重新生成测试，不复用旧 task。
+		newTask, createErr := s.createRegeneratedTask(rt, reviewerID)
+		if createErr != nil {
+			return nil, fmt.Errorf("创建重新生成任务失败: %w", createErr)
+		}
+		newTaskID := newTask.ID
+		result.NewTaskID = &newTaskID
+		go s.regenerateTestAsync(newTaskID)
 
 	case "fail_regression":
 		gitSummary = "回归失败，未推送"
@@ -211,11 +219,11 @@ func (s *ReviewService) DoReview(reviewID, reviewerID uint64, req *dto.ReviewAct
 		Comment:      req.Comment,
 	}
 	if err := s.reviewRepo.CreateRecord(record); err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := s.reviewRepo.Update(rt); err != nil {
-		return err
+		return nil, err
 	}
 
 	if closeZentaoBug {
@@ -232,7 +240,22 @@ func (s *ReviewService) DoReview(reviewID, reviewerID uint64, req *dto.ReviewAct
 		s.notifyService.SendReviewResult(rt, req.Action, gitSummary)
 	}
 
-	return nil
+	return result, nil
+}
+
+func (s *ReviewService) createRegeneratedTask(rt *model.ReviewTask, reviewerID uint64) (*model.TestTask, error) {
+	if rt == nil {
+		return nil, errors.New("Review任务不存在")
+	}
+
+	currentTask, err := s.testTaskRepo.GetByID(rt.TestTaskID)
+	if err != nil {
+		return nil, fmt.Errorf("原测试任务不存在: %w", err)
+	}
+
+	createdBy := reviewerID
+	workflowName := strings.TrimSpace(currentTask.SkillName)
+	return s.genTestService.CreatePendingTask(rt.IssueID, currentTask.AgentID, &createdBy, workflowName)
 }
 
 func (s *ReviewService) regenerateTestAsync(taskID uint64) {
