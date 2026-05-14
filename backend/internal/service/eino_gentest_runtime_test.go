@@ -748,6 +748,7 @@ func TestBuildADKTools_AppliesRoleAllowListAndDeduplicates(t *testing.T) {
 	tools, err := runtime.buildADKTools(nil, []genTestToolSpec{
 		{Name: "Read", Description: "read", Schema: map[string]any{"type": "object"}},
 		{Name: "Read", Description: "duplicate", Schema: map[string]any{"type": "object"}},
+		{Name: "Write", Description: "write file", Schema: map[string]any{"type": "object"}},
 		{Name: "WriteTestScript", Description: "write", Schema: map[string]any{"type": "object"}},
 		{Name: "SubmitGenTestResult", Description: "submit", Schema: map[string]any{"type": "object"}},
 	}, genTestWriterToolSet(), &sync.Mutex{}, new(*GenTestOutput))
@@ -763,8 +764,20 @@ func TestBuildADKTools_AppliesRoleAllowListAndDeduplicates(t *testing.T) {
 		names = append(names, info.Name)
 	}
 	got := strings.Join(names, ",")
-	if got != "Read,WriteTestScript" {
+	if got != "Read,Write,WriteTestScript" {
 		t.Fatalf("unexpected tool list: %s", got)
+	}
+}
+
+func TestADKWriterToolSetAllowsGenericWriteButNotSubmit(t *testing.T) {
+	allow := genTestWriterToolSet()
+	for _, name := range []string{"Write", "WriteTestScript", "WriteTestDoc", "Edit"} {
+		if _, ok := allow[name]; !ok {
+			t.Fatalf("expected writer tool set to allow %s", name)
+		}
+	}
+	if _, ok := allow["SubmitGenTestResult"]; ok {
+		t.Fatalf("writer sub-agent must not be allowed to submit final result")
 	}
 }
 

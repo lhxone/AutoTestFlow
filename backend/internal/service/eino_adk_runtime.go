@@ -479,7 +479,7 @@ func (r *EinoGenTestRuntime) buildADKSubAgents(
 	writer, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name:             genTestADKWriterAgentName,
 		Description:      "根据已知事实生成或修订测试脚本和测试文档，负责写入测试资产草稿。",
-		Instruction:      "你是测试资产写入子代理。使用 WriteTestScript 和 WriteTestDoc 写入测试脚本与文档；不要调用 SubmitGenTestResult。",
+		Instruction:      "你是测试资产写入子代理。使用 WriteTestScript 和 WriteTestDoc 写入测试脚本与文档；配置、环境变量、说明等非测试资产文件使用 Write；不要调用 SubmitGenTestResult。",
 		Model:            baseModel,
 		ToolsConfig:      adk.ToolsConfig{ToolsNodeConfig: toolsNodeConfig(writerTools), EmitInternalEvents: adkCfg.EmitInternalEvents},
 		Handlers:         writerHandlers,
@@ -674,7 +674,7 @@ func genTestReadonlyToolSet() map[string]struct{} {
 }
 
 func genTestWriterToolSet() map[string]struct{} {
-	return map[string]struct{}{"Read": {}, "Glob": {}, "Grep": {}, "WriteTestScript": {}, "WriteTestDoc": {}, "Edit": {}}
+	return map[string]struct{}{"Read": {}, "Glob": {}, "Grep": {}, "Write": {}, "WriteTestScript": {}, "WriteTestDoc": {}, "Edit": {}}
 }
 
 func genTestReviewerToolSet() map[string]struct{} {
